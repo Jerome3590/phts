@@ -1,0 +1,15 @@
+action_id: trunk-upgrade-available
+date: 2025-10-11 12:16:05
+run: trunk upgrade --notify --allow-daemon-start=false
+run_from: ""
+trigger: schedule 1h
+result:
+  exit_code: 1
+  out: ""
+  err: Exception occurred while executing 'trunk-upgrade-available'. See .trunk\out\2awn1.yaml for details.
+  error_path: C:\Projects\phts\graft-loss-parallel-processing\.trunk\out\2awn1.yaml
+timestamp: 1760184965
+full_timestamp:
+  nanos: 195156000
+  seconds: 1760184965
+trunk_version: 1.25.0

@@ -1,0 +1,10 @@
+Cohort,Model,C_Index
+original,LASSO,0.379924566574752
+original,AORSF,0.3888730415306435
+original,CatBoost,0.558006613630841
+full_with_covid,LASSO,0.3186733816161842
+full_with_covid,AORSF,0.3179970715115859
+full_with_covid,CatBoost,0.6572092687314918
+non_covid_full,LASSO,0.3284494324594842
+non_covid_full,AORSF,0.35504823561982235
+non_covid_full,CatBoost,0.5873139255063142

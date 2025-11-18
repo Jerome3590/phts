@@ -1,0 +1,459 @@
+---
+title: "Defining General, Hypothetical Interventions"
+engine: knitr
+date-modified: last-modified
+filters:
+  - webr
+webr:
+  packages: ['lmtp', 'dplyr']
+  autoload-packages: true
+bibliography: references.bib
+nocite: |
+  @haneuse2013estimation, @diaz2023nonparametric, @diaz2024causal, @rudolph2022effects, @kennedy2019nonparametric, @wen2023intervention, @rudolph2022buprenorphine
+editor: 
+  markdown: 
+    wrap: 72
+---
+
+{{< include macros.qmd >}}
+
+Have you ever begun reading a paper in the methodological causal
+inference literature and encountered the phrase "assume the treatment or
+exposure is a binary..."? (Most papers we read assume this!!) While
+assuming exposure variables are binary can simplify the definition of
+causal effects, many exposures of interest in reality are not binary.
+
+**Instead, we will work in situations where** $A$ **is a binary,
+categorical, multivariate, or continuous variable!**
+
+------------------------------------------------------------------------
+
+In the previous section, we defined $\dd(a_t, h_t, \epsilon_t)$ as a
+function that maps values $a_t$, $h_t$, and potentially a randomizer
+$\epsilon_t$ to a new value of treatment. Let us see how this function
+is used to define a treatment effect. Our focus henceforth is estimating
+the causal effect of an intervention, characterized by $\dd$ on the
+outcome $Y$, through the causal parameter
+
+$$
+\theta = \E[Y^{\bar A^{\dd}}]\text{,}
+$$
+
+where $Y^{\bar A^{\dd}}$ is the counterfactual outcome in a world, where
+possibly contrary to fact, each entry of
+$\bar{A} = (A_1, \ldots, A_\tau)$ was modified according to the function
+$\dd$ as follows.
+
+-   At time point $t=1$, the post-intervention treatment is assigned as
+    $A_1^\dd = \dd(A_1, H_1)$. This generates a *counterfactual*
+    treatment at time $t=2$, denoted by $A_2^{A_1^\dd}$. This is the
+    treatment an individual would have gotten had the intervention been
+    performed at time $t=1$ but not at time $t=2$.
+
+-   At time point $t=2$, the post-intervention treatment is assigned as
+    $A_2^\dd = \dd(A_2^{A_1^\dd}, L_2^{A_1^\dd}, A_1^\dd, L1)$. This
+    generates a counterfactual treatment at time $t=3$.
+
+-   This process is iteratively repeated until the end of the study. At
+    that time, the counterfactual outcome $Y^{\bar A^{\dd}}$ is
+    generated.
+
+This definition is agnostic to the type of outcome:
+
+-   When $Y$ is continuous, $\theta$ is the mean population value of $Y$
+    under intervention $\dd$.
+
+-   When $Y$ is dichotomous, $\theta$ is the population proportion of
+    event $Y$ under intervention $\dd$.
+
+-   When $Y$ is the indicator of an event by end of the study, $\theta$
+    is defined as the cumulative incidence of $Y$ under intervention
+    $\dd$.
+
+But what is this function $\dd$, how can it be defined, and how does
+using this function to define interventions solve the problem? Let's
+start from simple to more complex examples of functions $\dd$.
+
+## Static Interventions
+
+Let $A$ denote a binary vector, such as receiving a medication, and
+define $\dd(a_t, h_t, \epsilon) = 1$. This intervention characterizes a
+hypothetical world where all members of the population receive treatment
+at all times.
+
+::: {.callout-note appearance="simple"}
+An intervention is static if the function $\dd_t$ always returns the
+same value regardless of the input.
+:::
+
+#### Example
+
+> Let's say we were interested in the effect of randomizing patients
+> with opioid use disorder to injection naltrexone ($A=1$) vs.
+> sublingual buprenorphine ($A=0$). We would contrast the counterfactual
+> outcomes in a hypothetical world in which all units were treated with
+> injection naltrexone $\dd_1=1$ versus a hypothetical world in which
+> all units were treated with buprenorphine $\dd_0=0$. This gives us the
+> well-known average (comparative) treatment effect (ATE).
+> $$\E[Y^{\bar A^{\dd_1}} - Y^{\bar A^{\dd_0}}] = \E[Y^{A=1} - Y^{A=0}]$$
+
+## Dynamic Treatment Regime
+
+Let $A_t$ denote a binary vector, such as receiving a medication, and
+$H_t$ a numeric vector, such as a measure of discomfort. For a given
+value of $\delta$, define $$
+\dd(a_t, h_t, \epsilon) = \begin{cases}
+1 &\text{ if } h_t > \delta \\
+0 &\text{ otherwise.}
+\end{cases}
+$$
+
+::: {.callout-note appearance="simple"}
+Interventions where the output of the function $\dd$ depends **only**
+**on the covariates** $H_t$ are referred to as being dynamic.
+:::
+
+#### Example
+
+> @rudolph2022buprenorphine examined a Buprenorphine (BUP-NX) dosing
+> strategy among a population of patients who were taking BUP-NX for
+> opioid use disorder. Under the hypothetical intervention, patients who
+> reported opioid use during the week prior to a physicians exam
+> received a BUP-NX dose increase while patients who did not report
+> prior-week opioid use maintained the same dose. Let $A_t$ be a binary
+> indicator for BUP-NX dose increase at week $t$ compared to week $t-1$
+> and $X_t$ be an indicator for opioid use at week $t$. Then, $$
+> \dd(a_t, h_t, \epsilon) = \begin{cases}
+> 1 \text{ if } x_{t-1} = 1\\
+> 0 \text{ otherwise}
+> \end{cases}
+> $$
+
+## Modified Treatment Policies
+
+While much attention is given to static and dynamic interventions, their
+use is often accompanied by a few key problems.
+
+1.  **Defining causal effects in terms of hypothetical interventions
+    where treatment is applied to all units may be inconceivable.** For
+    example, we may be interested to know if reducing surgery time
+    reduces surgical complications. However, it's inconceivable to set
+    all surgeries to a given duration, even if this duration depends on
+    patient covariates.
+
+2.  **Defining causal effects in terms of hypothetical interventions
+    where treatment is applied to all units may induce positivity
+    violations.**
+
+A solution to these problems is to instead define causal effects using
+**modified treatment policies (MTP).**
+
+::: {.callout-note appearance="simple"}
+An intervention characterized by a hypothetical world where the
+*natural* value of treatment is modified is called a *modified treatment
+policy*.
+:::
+
+### Additive and multiplicative shift MTP
+
+Let $A_t$ denote a numeric vector. Assume that $A_t$ has support in the
+data such that $P(A_t \leq u(h_t) \mid H_t = h_t) = 1$. For an
+analyst-defined value of $\delta$, define $$
+\dd(a_t, h_t, \epsilon) = \begin{cases}
+a_t + \delta &\text{ if } a_t + \delta \leq u(h_t) \\
+a_t &\text{ otherwise.}
+\end{cases}
+$$
+
+Under this intervention, the natural value of exposure at time $t$ is
+increased by the analyst-defined value $\delta$, whenever such an
+increase is feasible. This MTP is referred to as an *additive shift*
+*MTP.*
+
+#### Example
+
+> @diaz2023nonparametric estimated the effect of increasing P/F ratio (a
+> measure of hypoxemia) by 50 units on survival among those patients
+> with acute respiratory failure (a P/F ratio \< 300). $$
+> \dd_t(a_t, h_t, \epsilon) = \begin{cases}
+> a_t + 50 &\text{ if } a_t \leq 300 \\
+> a_t &\text{ otherwise}
+> \end{cases}
+> $$
+
+We can similarly define a *multiplicative shift MTP* as
+
+$$
+\dd(a_t, h_t, \epsilon) = \begin{cases}
+a_t \times \delta &\text{ if } a_t \times \delta \leq u(h_t) \\
+a_t &\text{ otherwise}.
+\end{cases}
+$$
+
+#### Example
+
+> @nugent2023demonstration evaluated the association between
+> county-level measures of mobility and incident COVID-19 cases in the
+> United States in the Summer and Fall of 2022. They considered both
+> hypothetical additive and multiplicative MTPs; for example, they
+> defined a multiplicative MTP where a measure for the density of mobile
+> devices visiting commercial locations was decreased by 25%: $$
+> \dd(a_t, h_t, \epsilon) = a_t \times 0.75.
+> $$
+
+## Randomized Interventions
+
+Let $A$ denote a binary vector, $\epsilon \sim U(0, 1)$, and $\epsilon$
+be an analyst-defined value between 0 and 1. We may then define
+randomized interventions. For example, imagine we are interested in a
+hypothetical world where half of all smokers quit smoking. This
+intervention would be defined as
+
+$$
+\dd(a_t, \epsilon_t) = \begin{cases}
+0 &\text{ if } \epsilon_t < 0.5 \text{ and } a_t = 1 \\
+a_t &\text{ otherwise}
+\end{cases}.
+$$
+
+## Incremental Propensity Score Interventions Based on the Risk Ratio
+
+Let $A$ denote a binary variable, $\epsilon \sim U(0, 1)$, and $\delta$
+be an analyst-defined risk ratio limited to be between $0$ and $1$. In
+addition, define $P(A_t = a_t\mid H_t)= \g(a_t \mid H_t)$.
+
+If we were interested in an intervention that decreased the likelihood
+of receiving treatment, define
+
+$$
+\dd_t(a_t, h_t, \epsilon_t) = \begin{cases}
+a_t &\text{ if } \epsilon_t < \delta \\
+0 &\text{ otherwise}
+\end{cases}.
+$$ In this case, we have
+$\g^\dd(a_t \mid H_t) = a_t \delta \g_t(1 \mid H_t) + (1 - a_t) (1 - \delta \g_t(1\mid H_t))$,
+which leads to a risk ratio of
+$\g_t^\dd(1 \mid H_t)/\g_t(1\mid H_t) = \delta$ for comparing the
+propensity score post- vs pre-intervention.
+
+::: {.callout-note appearance="simple"}
+An intervention where the conditional probability of treatment is
+shifted is referred to as an incremental propensity score intervention.
+:::
+
+Conversely, if we were interested in an intervention that increased the
+likelihood of receiving treatment, define
+
+$$
+\dd_t(a_t, h_t, \epsilon_t) = \begin{cases}
+a_t &\text{ if } \epsilon_t < \delta \\
+1 &\text{ otherwise.}
+\end{cases}
+$$
+
+Now
+$\g_t^\dd(a_t \mid H_t) = a_t (1 - \delta \g_t(0\mid H_t)) + (1 - a_t) \delta \g_t(0 \mid H_t)$,
+which implies a risk ratio $\g_t^\dd(0\mid H_t)/\g(0\mid H_t) = \delta$.
+
+::: {.callout-caution appearance="simple"}
+Interventions where the shift is in the odds ratio scale were previously
+proposed, but the effects of odds-ratio shifts should not be estimated
+with `lmtp`, we will discuss this more later.
+:::
+
+#### Example
+
+> Using electronic health record data, @wen2023intervention estimated
+> the effect of increasing the proportion of PrEP uptake on bacterial
+> STI among cis-gender males being tested for STIs and that do not have
+> HIV. Let $A_t$ be a binary indicator for PrEP initiation at week $t$,
+> and $L_t$ be a binary indicator for any STI testing and being HIV-free
+> at week $t$. They defined a "medium" successful PrEP uptake
+> intervention as $$
+> \dd(a_t, h_t, \epsilon) = \begin{cases}
+> a_t &\text{ if } l_t = 1 \text{ and } \epsilon_t < 0.85 \\
+> 1 &\text{ otherwise}.
+> \end{cases}
+> $$
+
+## Identification of the causal parameter
+
+Recall that the fundamental problem of causal inference is that we can't
+observe the alternative worlds which we use to define causal effects. If
+we can't observe counterfactual variables, then how can we learn a
+causal effect? Under a set of certain assumptions, we can *identify* a
+causal parameter from observed data. These assumptions are called
+identification assumptions.
+
+### Identification Assumptions
+
+1.  *Positivity*. If $(a_t, h_t) \in \text{supp}\{A_t, H_t\}$ then
+    $\dd(a_t, h_t) \in \text{supp}\{A_t, H_t\}$ for
+    $t \in \{1, ..., \tau\}$.
+
+    > If there is a unit with observed treatment value $a_t$ and
+    > covariates $h_t$, there must also be a unit with treatment value
+    > $\dd(a_t, h_t)$ and covariates $h_t$.
+
+2.  *No unmeasured confounders.* All the common causes of $A_t$ and
+    $(L_s, A_s, Y)$ are measured and contained in $H_t$ for all
+    $s \in \{t+1, ..., \tau\}$.
+
+    > For all times $t$, the history $H_t$ contains sufficient variables
+    > to adjust for confounding of $A_t$ and any subsequent variables,
+    > including future treatment.
+
+::: {.callout-tip appearance="minimal"}
+**Question**: When might these assumptions be violated?
+:::
+
+Assuming the above, $\theta$ is identified from the observed data with:
+
+Set $\m_{\tau+1} = Y$. In a slight abuse of notation, let
+$A_t^\dd = \dd(A_t, H_t)$. For $t = \tau, ..., 1$, recursively define
+
+$$
+\m_t: (a_t, h_t) \rightarrow \E[\m_{t + 1}(A^{\dd}_{t+1}, H_{t + 1}) \mid A_t = a_t, H_t = h_t],
+$$
+
+and define $\theta = E[\m_1(A^{\dd}_1, L_1)]$.
+
+### Example
+
+Consider the following data where $\tau = 2$.
+
+```{webr-r}
+#| context: setup
+set.seed(786543)
+n <- 500
+l0 <- rnorm(n)
+a1 <- rbinom(n, 1, plogis(-1 + l0*1.5))
+l1 <- rnorm(n)
+a2 <- rbinom(n, 1, plogis(-1 + l1*1.5 + a1*2))
+y <- rnorm(n, -1 - 1.2*l0 + 2.4*a1 - 2*l1 + 1.2*a2)
+foo <- data.frame(
+  L1 = l0, 
+  A1 = a1, 
+  L2 = l1, 
+  A2 = a2, 
+  Y = y
+)
+```
+
+```{r echo=FALSE}
+set.seed(786543)
+n <- 500
+l0 <- rnorm(n)
+a1 <- rbinom(n, 1, plogis(-1 + l0*1.5))
+l1 <- rnorm(n)
+a2 <- rbinom(n, 1, plogis(-1 + l1*1.5 + a1*2))
+y <- rnorm(n, -1 - 1.2*l0 + 2.4*a1 - 2*l1 + 1.2*a2)
+foo <- data.frame(
+  L1 = l0, 
+  A1 = a1, 
+  L2 = l1, 
+  A2 = a2, 
+  Y = y
+)
+DT::datatable(foo, class = "compact", 
+                options = list(
+                  searching = FALSE, 
+                  lengthChange = FALSE, 
+                  ordering = FALSE, 
+                  info = FALSE, 
+                  columnDefs = list(
+                    list(targets = 0, visible = FALSE),
+                    list(className = 'dt-left', targets = "_all")  # apply to all columns
+                  )
+                )) |> 
+  DT::formatRound(columns = c("L1", "L2", "Y"), digits = 2)
+```
+
+\
+We can compute the identification formula in the following steps:
+
+1.  Set $\m_3(A_3^\dd, H_3) = Y$
+
+    ```{webr-r}
+    m3_d <- foo$Y
+    ```
+
+2.  Compute the regression of $\m_3(A_3^\dd, H_3)$ on $(A_2, H_2)$. This
+    gives a predictive function, call that predictive function
+    $\m_2(A_2,H_2)$.
+
+    ```{webr-r}
+    m2 <- glm(m3_d ~ L1 + A1 + L2 + A2, 
+              data = dplyr::rename(foo, m3_d = Y))
+    ```
+
+3.  Use the predictive function to compute what would have occurred if
+    the intervention had been implemented at time $t=2$, i.e., compute
+    $\m_2(A_2^\dd,H_2)$.
+
+    ```{webr-r}
+    m2_d <- predict(m2, dplyr::mutate(foo, A2 = 1))
+    ```
+
+4.  Compute the regression of $\m_2(A_2^\dd,H_2)$ on $(A_1, H_1)$. This
+    gives a predictive function, call that predictive function
+    $\m_1(A_1,H_1)$.
+
+    ```{webr-r}
+    m1 <- glm(m2_d ~ L1 + A1, data = dplyr::mutate(foo, m2_d = m2_d))
+    ```
+
+5.  Use the predictive function to compute what would have occurred if
+    the intervention had been implemented at time $t=1$, i.e., compute
+    $\m_1(A_1^\dd,H_1)$.
+
+    ```{webr-r}
+    m1_d <- predict(m1, dplyr::mutate(foo, A1 = 1))
+    ```
+
+6.  Compute the mean of $\m_1(A_1^\dd,H_1)$. This mean is equal to
+    $\theta$.
+
+    ```{webr-r}
+    mean(m1_d)
+    ```
+
+### Identification proof (for two time points)
+
+Here we show the proof for identification in a very simple setup. Though
+simple, this contains the main elements of the proof, which is shown in
+the original papers.
+
+Consider a setup with no baseline covariates and an intervention that
+does not depend on covariates but depends on the natural value of
+treatment:
+
+\begin{align*}
+    A_1&=f_{A,1}(U_{A,1})\\
+    A_1^d&=\dd_1(A_1)\\
+    L_2&=f_{L,2}(A_1, U_{L,2})\\
+    L_2^{A_1^\dd}&=f_{L,2}(A_1^d, U_{L,2})\\
+    A_2&=f_{A,2}(A_1, L_1, U_{A,2})\\
+    A_2(A_1^\dd)&=f_{A,2}(A_1^\dd, L_1^{A_1^\dd}, U_{A,2})\\
+    A_2^d&=d_2(A_2(A_1^\dd))\\
+    Y&=f_{Y}(A_2, L_1, A_1, U_{Y})\\
+    Y(\bar A^\dd)&=f_{Y}(A_2^\dd, L_1(A_1^\dd), A_1^\dd, U_{Y})
+\end{align*}
+
+Then identification proceeds as:
+
+\begin{align*}
+    E[Y^{\bar A^\dd}]&=\int E[f_{Y}(\dd(A_2(\dd(a_1))), L_2(\dd(a_1)), \dd(a_1), U_{Y})\mid A_1=a_1]dP(a_1)\\
+    &=\int E[f_{Y}(f_{Y}(\dd(A_2(\dd(a_1))), L_2(\dd(a_1)), \dd(a_1)), U_{Y})\mid A_1=\dd(a_1)]dP(a_1)\\
+    &=\int E[f_{Y}(f_{Y}(\dd(A_2(A_1)), L_2(A_1), A_1), U_{Y})\mid A_1=\dd(a_1)]dP(a_1)\\
+    &=\int E[f_{Y}(f_{Y}(\dd(A_2), L_2, A_1), U_{Y})\mid A_1=\dd(a_1)]dP(a_1)\\
+    &=\int E[f_{Y}(f_{Y}(\dd(a_2), L_2, A_1), U_{Y})\mid A_1=\dd(a_1), A_2=a_2, L_2=l_2]dP(a_2, l_2)dP(a_1)\\
+    &=\int E[f_{Y}(f_{Y}(\dd(a_2), L_2, A_1), U_{Y})\mid A_1=\dd(a_1), A_2=\dd(a_2), L_2=l_2]dP(a_2, l_2)dP(a_1)\\
+    &=\int E[f_{Y}(f_{Y}(A_2, L_2, A_1), U_{Y})\mid A_1=\dd(a_1), A_2=\dd(a_2), L_2=l_2]dP(a_2, l_2)dP(a_1)\\
+    &=\int E[Y\mid A_1=\dd(a_1), A_2=\dd(a_2), L_2=l_2]dP(a_2, l_2)dP(a_1)\\
+      &= E[Y\mid A_1, A_2=\dd(A_2), L_2]dP(a_2, l_2)dP(a_1)\\
+       &=\int m_2(d(a_2), l_2, d(a_1))dP(a_2, l_2)dP(a_1)\\
+      &= \int E[Y\mid A_1, A_2=\dd(A_2), L_2]dP(a_2, l_2)dP(a_1)\\
+             &=\int E[ m_2(d(A_2), L_2, A_1)\mid A_1=d(a_1)]dP(a_1)\\
+&=\int m_1(d(a_1)]dP(a_1)
+\end{align*}

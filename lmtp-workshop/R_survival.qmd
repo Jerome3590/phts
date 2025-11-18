@@ -1,0 +1,267 @@
+---
+title: "Survival Analysis"
+engine: knitr
+date-modified: last-modified
+filters:
+  - webr
+webr:
+  packages: ['lmtp', 'SuperLearner', 'ife', 'dplyr', 'tidyr', 'purrr', 'ggplot2', 'DT', 'broom']
+  autoload-packages: true
+  repos: 
+    - https://nt-williams.r-universe.dev
+bibliography: references.bib
+nocite: |
+  @diaz2023nonparametric, @diaz2024causal, @young2020causal
+---
+
+{{< include macros.qmd >}}
+
+```{webr-r}
+#| context: setup
+# Load hoffman toy data
+download.file("https://raw.githubusercontent.com/nt-williams/lmtp-workshop/main/data/hoffman_toy.csv", "hoffman_toy.csv")
+intubation <- read.csv("hoffman_toy.csv")
+# Load williams toy data
+download.file("https://raw.githubusercontent.com/nt-williams/lmtp-workshop/main/data/williams_synthetic.csv", "williams_synthetic.csv")
+covid <- read.csv("williams_synthetic.csv")
+```
+
+## Data considerations
+
+-   Similar to when the outcome is binary, survival outcomes should be coded using 0's and 1's where 1 indicates the occurrence of an event and 0 otherwise.
+
+-   Similar to how we encode censoring variables, we consider the outcome to be degenerate. Meaning that once an observation experiences an outcome, all future outcome variables should also be coded with a 1 ("last-observation-carried-forward").
+
+## Point-treatment survival problems
+
+Up to this point, we've been ignoring that the `covid` dataset should be treated as a point-treatment survival problem. Let's re-estimate the effect of the randomized treatment with a survival framework.
+
+-   We need to transform the data from long to wide format
+
+-   and impute the outcome using last-observation-carried-forward.
+
+Our modified dataset should look like this:
+
+![Structure of data with survival outcome and point-treatment. Adapted from Hoffman et al., 2022.](images/data_survival.png){fig-align="center" width="85%"}
+
+```{webr-r}
+library(dplyr)
+library(tidyr)
+
+covid <- pivot_wider(
+  covid, 
+  values_from = "event", 
+  names_from = "days", 
+  names_prefix = "day_", 
+  names_sort = TRUE
+)
+
+covid <- 
+  event_locf(covid, paste0("day_", 1:15)) |> 
+  mutate(across(starts_with("day_"), ~ replace_na(.x, 0))) |> 
+  as.data.frame()
+
+head(covid)
+```
+
+::: {.callout-note appearance="simple"}
+Use the function `event_locf()` to make sure the outcome variables are correctly recorded.
+:::
+
+-   Instead of just estimating the effect of treatment on the outcome at the last time point, we can estimate the effect of a treatment on an outcome at all follow-up intervals.
+
+Let's estimate the effect of the treatment on intubation at each day. To do so, we can use the function `lmtp_survival()` .
+
+```{webr-r}
+W <- c("age", "sex", "bmi", "smoke", "o2", 
+       "num_comorbid", "num_symptoms", "bilat", "dyspnea", "hyper")
+
+fit <- lmtp_survival(
+  data = covid, 
+  trt = "A", 
+  outcomes = grep("^day", names(covid), value = TRUE),
+  baseline = W, 
+  shift = static_binary_on, 
+  folds = 1, 
+  estimator = "lmtp_sdr", 
+  control = lmtp_control(.learners_outcome_folds = 2, 
+                         .learners_trt_folds = 2)
+)
+```
+
+We can now visualize our results using a survival plot.
+
+::: {.callout-note appearance="simple"}
+The main result of an `lmtp` object can be extracted using the `tidy()` function from the `broom` package.
+:::
+
+```{webr-r}
+library(ggplot2)
+
+results <- tidy(fit)
+
+ggplot(results, aes(x = time, y = estimate)) + 
+  geom_step() + 
+  labs(x = "Days", y = "Survival probability") + 
+  scale_y_continuous(limits = c(0.65, 1), 
+                     n.breaks = 10, 
+                     expand = c(0, 0)) + 
+  scale_x_continuous(limits = c(1, 15), 
+                     n.breaks = 15, 
+                     expand = c(0.01, 0))
+```
+
+## Time-varying treatment
+
+@hoffman2023introducing demonstrated the use of modified treatment policies for survival outcomes to assess the effect of preventing invasive mechanical ventilation (IMV) on mortality among patients hospitalized with COVID-19 in New York City during the first COVID-19 wave. A synthetic version of the data used for that analysis has been loaded into R as `intubation`.
+
+![Structure of data with survival outcome and time-varying treatment. Adapted from Hoffman et al., 2022.](images/data_complex.png){fig-align="center"}
+
+-   The data consists of $n = 2000$ observations hospitalized with COVID-19 and who were followed for $\tau = 14$ days.
+
+-   There are 10 baseline confounders and 4 time-varying confounders.
+
+-   The outcome of interest is an indicator for death on day $t$.
+
+-   Observations are subject to loss-to-follow-up due to either hospital discharge or transfer.
+
+```{r echo=FALSE}
+intubation <- read.csv("data/hoffman_toy.csv")
+DT::datatable(intubation, class = "compact custom-dt", 
+                options = list(
+                  searching = FALSE, 
+                  lengthChange = FALSE, 
+                  ordering = FALSE, 
+                  info = FALSE, 
+                  columnDefs = list(
+                    list(targets = 0, visible = FALSE),
+                    list(className = 'dt-left', targets = "_all")  # apply to all columns
+                  )
+                )) |> 
+  DT::formatRound(columns = "age", digits = 0)
+```
+\
+
+Let's consider the following intervention
+
+$$
+\dd_t(a_t, h_t) = \begin{cases}
+1 \text{ if } a_t = 2\\
+a_t \text{ otherwise},
+\end{cases}
+$$
+
+where $A_t$ is a 3-level categorical variable: 0, no supplemental oxygen; 1, non-IMV supplemental oxygen support; 2, IMV.
+
+In words, this function corresponds to an intervention where patients who were naturally observed as receiving IMV on day $t$ instead receive non-IMV supplemental oxygen. Let's translate this policy to an R function that we can use with `lmtp`.
+
+```{webr-r}
+d <- function(data, trt) {
+  ifelse(data[[trt]] == "2", factor("1", levels = 0:2), data[[trt]])
+}
+```
+
+<!-- ::: {.callout-tip  appearance="minimal"} -->
+<!-- **Question**: Why might defining an intervention in terms of an MTP instead of a static intervention be more useful to answer a question about the effect of IMV on death among patients hospitalized with COVID-19? -->
+
+<!-- <details> -->
+
+<!-- <summary style="color: grey; font-weight: 400;"> -->
+
+<!-- ✅ Answer  -->
+
+<!-- </summary> -->
+
+<!-- <p>Intubation may increase the likelihood of mortality through factors separate from COVID (by increasing the likelihood of AKI, for example); however, not intubating a patient who is in respiratory distress may also increase the likelihood of mortality. Thus, some patients do need to be intubated and an intervention that eliminated intubation all together would be non-nonsensical.</p> -->
+
+<!-- </details> -->
+<!-- ::: -->
+
+We can now estimate the effect of preventing IMV on 14-day mortality.
+
+```{webr-r}
+#| results: 'asis'
+day <- 14
+intubated <- paste0("I_", sprintf("%02d", 0:(day - 1)))
+confounders <- names(intubation)[1:10]
+death <- paste0("Y_", sprintf("%02d", 1:day))
+discharge <- paste0("C_", sprintf("%02d", 0:(day - 1)))
+timevary <- grep("^L_", names(intubation), value = TRUE)
+timevary <- lapply(0:(day - 1), \(x) timevary[grepl(sprintf("%02d", x), timevary)])
+
+lmtp_sdr(
+  intubation,
+  trt = intubated,
+  outcome = death,
+  baseline = confounders,
+  time_vary = timevary,
+  cens = discharge,
+  shift = d, 
+  mtp = TRUE,
+  outcome_type = "survival",
+  folds = 1,
+  k = 2
+)
+```
+
+## Competing risks
+
+In the context of survival analysis, competing risks refer to events that preclude the occurrence of the primary event of interest. In the previous example, we treated hospital discharge or transfer as censoring events. These events, however, are actually competing risks because we know that if a patients was discharged or transferred out of the ICU on day $t$ they didn't die on that day. 
+
+::: {.callout-caution appearance="simple"}
+Treating competing risks as censoring events involves estimating the effect of an intervention that eliminates the competing event. The identification assumptions for this intervention are stronger than intervention that doesn't consider eliminating the competing event.
+:::
+
+In the presence of competing risks, `lmtp` can estimate cumulative incidence effects. Cumulative incidence effect can be interpreted as the _total effect_ of treatment operating through pathways that include the competing events. Let's re-evaluate the effect of the previous intervention on 14-day mortality but instead treat discharge or transfer as a competing risk. We first need to modify the data:
+
+- Flip the columns corresponding to discharge or transfer so that a 1 indicates a discharge or transfer occurred
+- Impute missing values for discharge and death using last-observation carried forward because they are both deterministic variables once they have occurred (i.e., if a patient died, their probability of discharge or transfer is 0 and vice-versa)
+
+```{webr-r}
+# Function to impute missing values with the last observed observation
+locf <- function(data, columns) {
+  for (col in columns) {
+    # Get the column index
+    index <- which(names(data) == col)
+    
+    # Skip the first column
+    if (index == 1) {
+      next
+    }
+    
+    # Find rows with values
+    na_rows <- is.na(data[[index]])
+    # Replace NA values with the value from the column to the left
+    data[[index]][na_rows] <- data[[index - 1]][na_rows]
+  }
+  
+  return(data)
+}
+
+intubation <- 
+  mutate(intubation, across(starts_with("C_"), function(x) {
+    case_when(x == 1 ~ 0, x == 0 ~ 1, TRUE ~ x)
+  })) |> 
+  locf(discharge) |> 
+  locf(death) |>
+  mutate(across(all_of(death), \(x) ifelse(is.na(x), 0, x)))
+```
+
+We can now re-estimate the effect of the intervention. Instead of passing the `discharge` vector to the `cens` argument, we pass it to the `compete` argument.
+
+```{webr-r}
+#| results: 'asis'
+lmtp_sdr(
+  intubation,
+  trt = intubated,
+  outcome = death,
+  baseline = confounders,
+  time_vary = timevary,
+  compete = discharge,
+  shift = d, 
+  mtp = TRUE,
+  outcome_type = "survival",
+  folds = 1,
+  k = 2
+)
+```

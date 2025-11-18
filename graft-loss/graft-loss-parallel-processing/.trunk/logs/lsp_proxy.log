@@ -1,0 +1,19 @@
+[09-28 18:23:19] [login.cc:52] GetUserRequest failed with status 16: No session provided 
+[09-28 23:08:58] [login.cc:52] GetUserRequest failed with status 16: No session provided 
+[09-28 23:29:53] [login.cc:52] GetUserRequest failed with status 16: No session provided 
+[09-29 00:43:29] [login.cc:52] GetUserRequest failed with status 16: No session provided 
+[09-29 04:52:08] [login.cc:52] GetUserRequest failed with status 16: No session provided 
+[10-07 13:19:54] [login.cc:52] GetUserRequest failed with status 16: No session provided 
+[10-07 19:18:19] [client.cc:19] GRPC Failed (error code UNAVAILABLE): failed to connect to all addresses; last error: UNAVAILABLE: ipv4:127.0.0.1:61628: WSAGetOverlappedResult: Connection refused (No connection could be made because the target machine actively refused it.
+ -- 10061)
+[10-07 19:18:19] [client.cc:19] GRPC Failed (error code UNAVAILABLE): failed to connect to all addresses; last error: UNAVAILABLE: ipv4:127.0.0.1:61628: WSAGetOverlappedResult: Connection refused (No connection could be made because the target machine actively refused it.
+ -- 10061)
+[10-07 19:18:24] [login.cc:52] GetUserRequest failed with status 16: No session provided 
+[10-07 19:36:23] [text_indent.cc:26] Attempting to resolve line number 690 in buffer
+[10-07 19:36:23] [text_indent.cc:26] Attempting to resolve line number 696 in buffer
+[10-07 19:36:25] [text_indent.cc:26] Attempting to resolve line number 690 in buffer
+[10-07 19:36:25] [text_indent.cc:26] Attempting to resolve line number 696 in buffer
+[10-07 19:40:37] [text_indent.cc:26] Attempting to resolve line number 690 in buffer
+[10-07 19:40:37] [text_indent.cc:26] Attempting to resolve line number 696 in buffer
+[10-07 19:40:38] [text_indent.cc:26] Attempting to resolve line number 690 in buffer
+[10-07 19:40:38] [text_indent.cc:26] Attempting to resolve line number 696 in buffer

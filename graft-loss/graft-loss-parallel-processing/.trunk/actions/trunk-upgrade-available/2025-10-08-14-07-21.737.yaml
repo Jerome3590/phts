@@ -1,0 +1,15 @@
+action_id: trunk-upgrade-available
+date: 2025-10-08 14:07:21
+run: trunk upgrade --notify --allow-daemon-start=false
+run_from: ""
+trigger: schedule 1h
+result:
+  exit_code: 1
+  out: ""
+  err: Exception occurred while executing 'trunk-upgrade-available'. See .trunk\out\KGzEU.yaml for details.
+  error_path: C:\Projects\phts\graft-loss-parallel-processing\.trunk\out\KGzEU.yaml
+timestamp: 1759932441
+full_timestamp:
+  nanos: 737638000
+  seconds: 1759932441
+trunk_version: 1.25.0

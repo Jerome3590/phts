@@ -1,0 +1,254 @@
+/* css styles */
+
+--ff: "Inter", sans-serif;
+
+.sourceCode {
+  font-size: 1rem;
+}
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap');
+
+h1 {
+  font-weight: bold;
+  font-size: 1.25rem;
+  line-height: 1.4em;
+  font-family: var(--ff);
+}
+
+h2 {
+  font-weight: bold;
+  font-size: 1.125rem;
+  line-height: 1.4em;
+  font-family: var(--ff);
+  border-bottom: 0px solid;
+  padding-top: 0.5em;
+}
+
+h3 {
+  font-weight: bold;
+  font-size: 1rem;
+  line-height: 1.4em;
+  font-family: var(--ff);
+  border-bottom: 0px solid;
+  padding-top: 0.5em;
+}
+
+h4 {
+  font-style: italic;
+  font-size: 1rem;
+  line-height: 1.4em;
+  font-family: var(--ff);
+  border-bottom: 0px solid;
+  padding-top: 0.5em;
+}
+
+p, li, blockquote {
+  font-family: var(--ff);
+  font-size: 1rem;
+  font-weight: regular;
+  line-height: 1.7em;
+}
+
+.qwebr-console-area {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.9rem;
+}
+
+.table {
+  font-size: 0.9rem;
+  width: 75%;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.qwebr-output-code-area {
+  background-color: #fbfbfb;
+}
+
+.callout.callout-style-default .callout-body {
+  font-size: 1rem;
+  font-weight: 400;
+}
+
+.callout.callout-style-simple .callout-body {
+  font-size: 1rem;
+  font-weight: 400;
+}
+
+.callout-title-container {
+  font-size: 1.2rem;
+  color: black;
+  padding-bottom: 3px
+}
+
+.navbar {
+  background-color: hsl(0 0% 100%);
+}
+
+#navbarCollapse .menu-text {
+  font-family: var(--ff);
+  font-size: 1rem;
+  font-weight: 300;
+  color: hsl(0,0%,50%) !important;
+}
+
+.navbar-title {
+  font-family: var(--ff);
+  font-size: 1rem;
+  font-weight: 400;
+  color: hsl(0,0%,20%) !important;
+}
+
+#quarto-margin-sidebar {
+  font-family: var(--ff);
+  font-size: 1rem;
+  font-weight: 300;
+  color: hsl(0,0%,50%) !important;
+}
+
+.nav-link {
+  border: none !important;
+}
+
+#quarto-sidebar {
+  font-family: var(--ff);
+  font-size: 1rem;
+  font-weight: 300;
+  color: hsl(0,0%,50%) !important;
+}
+
+.menu-text {
+  padding: 0.5rem;
+  line-height: 1.2em;
+}
+
+.sidebar nav[role=doc-toc] ul>li>a.active {
+  background-color: hsl(0, 0%, 100%);
+  color: hsl(0,0%,0%) !important;
+  font-weight: 400;
+}
+
+.sidebar nav[role=doc-toc]>h2 {
+  font-family: var(--ff);
+  font-size: 0.875rem;
+  font-weight: 400;
+  color: hsl(0,0%,50%);
+}
+
+div.sidebar-item-container .active {
+  background-color: hsl(0, 0%, 100%);
+  color: hsl(0,0%,0%) !important;
+  font-weight: 400;
+}
+
+.table {
+  font-family: var(--ff);
+  font-size: 0.875rem;
+  width: 75%;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+div.tldr {
+    padding: 1em;
+    margin: 2em 0;
+    background-size: 70px;
+    color: black;
+    background-color: hsl(0 0% 100%);
+    border: solid 2px hsl(0 0% 0%);
+    border-radius: 0.15rem;
+    font-family: var(--ff);
+    font-size: 1rem;
+}
+
+div.prize {
+  display: flex;
+  align-items: center;
+  margin: 1em 0;
+  padding-left: 100px;
+  background-size: 50px;
+  background-repeat: no-repeat;
+  background-position: 15px center;
+  color: black;
+  background-color: white;
+  border: solid 3px black;
+  font-size: 1.1rem;
+}
+  
+div.prize {
+  background-image: url("static/prize-icon.png");
+}
+
+div.algorithm {
+  margin: 1em 0;
+  border-left: 5px solid #364958; 
+  border-radius: .25rem;
+  border-right: solid 1px silver;
+  border-top: solid 1px silver;
+  border-bottom: solid 1px silver;
+  line-height: 1.5em !important;
+}
+
+.algorithm-header {
+  border-bottom: none;
+  font-weight: 600;
+  font-size: 1.2rem;
+  padding-left: 50px;
+  padding-right: 0.5em;
+  background-color: #B4D4EE !important;  
+  background-size: 25px;
+  background-repeat: no-repeat;
+  background-position: 15px center;
+  background-image: url('static/settings-line-icon.png');
+}
+
+.algorithm-body {
+  font-size: 0.875rem;
+  font-weight: 300;
+  padding: 0.5em;
+  margin-bottom: 0;
+}
+
+div.problem {
+  margin: 1em 0;
+  border: 1px solid silver; 
+  border-radius: .25rem;
+  line-height: 1.5em !important;
+}
+
+.problem-body {
+  font-size: 1rem;
+  padding: 0.5em;
+  margin-bottom: 0;
+}
+
+/* Custom font size for the entire table */
+.custom-dt {
+  font-size: 0.75rem;
+}
+
+/* Font size for pagination buttons (Previous, Next, page numbers) */
+.dataTables_wrapper .dataTables_paginate .paginate_button {
+  font-size: 0.75rem !important;
+}
+
+/* Font size for 'Show N entries' dropdown, search box, and info text */
+.dataTables_wrapper .dataTables_length,
+.dataTables_wrapper .dataTables_filter,
+.dataTables_wrapper .dataTables_info {
+  font-size: 0.75rem !important;
+}
+
+/* Callout Types */
+
+div.callout-warning {
+  border-left-color: #F18805 !important;
+}
+
+div.callout-warning .callout-header {
+  background-color: #FDC85D !important;
+}
+
+div.callout-warning.callout-style-default .callout-title {
+  background-color: #FDC85D
+}

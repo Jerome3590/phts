@@ -1,0 +1,15 @@
+action_id: trunk-share-with-everyone
+date: 2025-10-09 23:18:22
+run: trunk config share --notify --allow-daemon-start=false
+run_from: ""
+trigger: schedule 24h
+result:
+  exit_code: 1
+  out: ""
+  err: Exception occurred while executing 'trunk-share-with-everyone'. See .trunk\out\ntBi2.yaml for details.
+  error_path: C:\Projects\phts\graft-loss-parallel-processing\.trunk\out\ntBi2.yaml
+timestamp: 1760051902
+full_timestamp:
+  nanos: 377443000
+  seconds: 1760051902
+trunk_version: 1.25.0

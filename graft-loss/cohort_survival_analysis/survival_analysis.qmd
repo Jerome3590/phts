@@ -1,0 +1,1347 @@
+---
+title: "Survival Analysis Models"
+author: "R. Jerome Dixon"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+format:
+  html:
+    toc: true
+    toc-depth: 6
+    code-fold: true
+    code-summary: "Show the code"
+    embed-resources: true
+    default-image-extension: svg
+    dpi: 600
+editor:
+  markdown:
+    wrap: 72
+---
+
+## Overview
+
+This analysis examines predictive models for pediatric heart transplant outcomes using a comprehensive suite of modern survival modeling approaches. We implement and compare the following models to provide robust risk assessment and identify predictive factors:
+
+- **LASSO (Cox proportional hazards with L1 regularization)**: A linear, interpretable model with automatic feature selection.
+- **CatBoost (Cox loss)**: Gradient boosting with Cox partial likelihood, capturing non-linearities and handling categorical variables efficiently.
+- **AORSF (Accelerated Oblique Random Survival Forests)**: An ensemble of oblique survival trees optimized for concordance, offering flexible modeling of interactions and non-linear effects.
+- **XGBoost-Cox**: Gradient-boosted trees trained with Cox partial likelihood, combining efficiency and strong performance for tabular data.
+- **RSF (ranger)**: Random Survival Forests using log-rank splitting, providing non-parametric survival modeling and variable importance.
+- **Deep Learning (pycox: DeepSurv and DeepHit)**: Neural network-based survival models for highly flexible, non-linear risk prediction, including models that relax the proportional hazards assumption.
+
+Collectively, these models provide complementary perspectives: LASSO for interpretability, boosted and forest models for non-linear interactions, and neural models for flexible risk dynamics. All methods are evaluated on identical data splits using C-index as the primary metric.
+
+Benchmark context (Wisotzkey et al., Pediatric Transplantation 2023): At 1 year post‑transplant, the reported time‑dependent C‑index (Uno) was 0.74 (95% CI 0.72–0.76) for random forests and 0.71 (0.69–0.73) for Cox PH, with a 1‑year cumulative incidence of graft loss or mortality of 7.6%. CHD diagnosis increased 1‑year predicted risk by about 1.7 percentage points (from 7.6% to 9.3%). To enable an apples‑to‑apples comparison, our workflow now reports both Harrell’s C and Uno’s C at τ = 1 year for each model.
+
+### Modeling Approaches
+
+This study employs multiple survival modeling methodologies, each
+offering unique advantages for pediatric heart transplant outcome
+prediction. We evaluate the following models:
+
+**1. LASSO (Least Absolute Shrinkage and Selection Operator) with Cox**
+
+-   **Method**: Cox proportional hazards model regularized with an L1
+    penalty for feature selection and time-to-event prediction.
+-   **Strengths**:
+    -   **Clinical interpretability** with clear log-hazard ratios
+    -   **Automatic feature selection** reducing model complexity
+    -   **Regulatory familiarity** and extensive clinical literature
+-   **Limitations**:
+    -   **Proportional hazards** assumption may be violated
+    -   **Linear effects** can miss non-linear relationships or
+        interactions without explicit specification
+
+**2. CatBoost (Cox loss)**
+
+-   **Method**: Gradient boosting with Cox partial likelihood for
+    time-to-event prediction.
+-   **Strengths**:
+    -   Handles high-cardinality categorical features with minimal
+        preprocessing
+    -   Captures complex non-linear interactions
+    -   Robust regularization, good performance on tabular medical data
+-   **Limitations**:
+    -   Lower interpretability vs linear models
+    -   More compute and tuning required; still relies on PH through Cox
+
+**3. AORSF (Accelerated Oblique Random Survival Forests)**
+
+-   **Method**: Ensemble of oblique survival trees optimized for
+    concordance.
+-   **Strengths**:
+    -   Non-parametric, flexible interactions and non-linearities
+    -   Strong C-index optimization and robust predictions
+-   **Limitations**:
+    -   Less interpretable than linear models
+    -   Computationally heavier, requires tuning
+
+**4. XGBoost-Cox**
+
+-   **Method**: Gradient-boosted trees trained with Cox partial
+    likelihood.
+-   **Strengths**:
+    -   Efficient, scalable boosting with strong tabular performance
+    -   Captures non-linearities and interactions
+-   **Limitations**:
+    -   Tuning complexity; inherits PH assumption from Cox loss
+
+**5. RSF (ranger)**
+
+-   **Method**: Random Survival Forests using log-rank splitting
+    implemented in `ranger`.
+-   **Strengths**:
+    -   Non-parametric survival modeling with variable importance
+    -   Naturally handles complex interactions
+-   **Limitations**:
+    -   Hyperparameter tuning and reduced interpretability
+
+**6. Deep Learning (pycox): DeepSurv and DeepHit**
+
+-   **Method**: Neural survival models via `pycox` — DeepSurv optimizes
+    Cox partial likelihood; DeepHit uses a discrete-time formulation.
+-   **Strengths**:
+    -   High flexibility for complex non-linear effects
+    -   Can model non-proportional hazards (DeepHit)
+-   **Limitations**:
+    -   Higher computational cost and lower interpretability
+    -   Larger data requirements and careful regularization needed
+
+Collectively, these models provide complementary perspectives: LASSO for
+interpretability, boosted/forest models for non-linear interactions,
+and neural models for flexible risk dynamics. All methods are evaluated
+on identical splits using C-index as the primary metric.
+
+### Censored Data Handling
+
+Each modeling approach handles censored observations appropriately:
+
+-   **LASSO**: Uses `Surv(time, status)` objects where status=0
+    indicates censored observations, properly incorporated into the Cox
+    regression partial likelihood.
+
+-   **CatBoost**: The Cox loss function incorporates censored data by
+    encoding the label with a negative sign, correctly accounting for
+    patients who were alive at last follow-up.
+
+-   **AORSF**: Ensemble survival forests handle censoring through
+    modified splitting criteria that account for incomplete observations
+    using proper survival analysis methodology.
+
+-   **RSF (ranger)**: Random Survival Forests use log-rank splitting
+    criteria that directly account for censoring when building trees.
+
+-   **XGBoost-Cox**: Optimizes the negative log partial likelihood,
+    which naturally incorporates censored observations.
+
+-   **DeepSurv / DeepHit**: DeepSurv uses Cox partial likelihood for
+    censored data; DeepHit models discrete-time event probabilities with
+    a likelihood that accounts for censoring.
+
+All methods properly utilize both event times and censoring information,
+ensuring that patients lost to follow-up or alive at study end
+contribute appropriate information to model training.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+
+library(readr)
+library(rlang)
+library(dplyr)
+library(glmnet)
+library(caret)
+library(tidyverse)
+library(tibble)
+library(DT)
+library(aorsf)
+library(survival)
+library(catboost)
+library(ranger)
+library(xgboost)
+library(survAUC)
+
+set.seed(1997)
+
+source("helpers.R")
+
+```
+
+### Model Data
+
+```{r echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+# Load directly from SAS and standardize survival variables
+tx <- load_phts_transplant_dataset()
+
+model_data <- tx %>%
+  mutate(
+    outcome = as.integer(ev_type == 1),
+    ev_time = suppressWarnings(as.numeric(ev_time))
+  )
+
+cat("Dataset dimensions:", paste(dim(model_data), collapse = " x "), "\n")
+cat("Columns:", paste(names(model_data), collapse = ", "), "\n")
+
+# Replace bad times for censored rows using helper
+model_data <- fix_non_positive_times(model_data, time_col = "ev_time", status_col = "outcome")
+
+
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+model_features <- model_data %>% 
+  colnames() %>% 
+  as_tibble()
+
+# View 
+datatable(
+  model_features,
+  rownames = FALSE,
+  options = list(
+    pageLength = 15,
+    columnDefs = list(
+      list(className = 'dt-left', targets = "_all")
+    )
+  )
+)
+```
+
+
+### Methods: Pipeline Summary
+
+```{r survival-lagging-keywords}
+
+# Unified survival modeling keywords (variables to exclude from all models)
+
+survival_lagging_keywords <- c(
+  # Identifiers and outcomes
+  #"ptid_e",
+  "transplant_year", "primary_etiology",
+  
+  # Survival variables (handled separately)
+  # "ev_time", "ev_type",
+  
+  # Donor-specific variables
+  "graft_loss", "int_graft_loss", "dtx_", "cc_", "isc_oth",
+  "dcardiac", "dcon", "dpri", "dpricaus", "rec_", "papooth",
+  "dneuro", "sdprathr", "int_dead", "listing_year", "cpathneg",
+  "dcauseod",
+  
+  # Demographics (if not clinically relevant)
+  "race", "sex", "drace_b", "rrace_a", "hisp", "Iscntry",
+  
+  # Transplant-specific variables
+  "dreject", "dsecaccsEmpty", "dmajbldEmpty", "pishltgr1R", 
+  "drejectEmpty", "drejectHyperacute", "pishltgrEmpty",
+  "pishltgr", "dmajbld", "dsecaccs", "dsecaccs_bin", 
+  
+  # Clinical variables to exclude
+  "dx_cardiomyopathy", "deathspc", "dlist", "pmorexam", 
+  "patsupp", "concod", "pcadrem", "pcadrec", "pathero", 
+  "pdiffib", "dmalcanc", "alt_tx", "age_death", "pacuref",
+  
+  # Additional variables
+  "lsvcma"
+)
+
+
+```
+
+#### External deep learning integration
+
+- Deep learning (pycox): We export aligned train/test CSVs (one‑hot features
+  and (duration, event)) and call Python chunks that train DeepSurv/DeepHit via
+  pycox. The Python scripts write C‑indices to
+  cohort_analysis/pycox_metrics.csv, which are appended to the R comparison
+  tables so DL models are evaluated identically (C‑index as the primary metric).
+
+### Modeling Pipeline
+
+```{r}
+
+# Apply cleaning to the full dataset
+catboost_df <- clean_survival_data_for_catboost(model_data)
+
+# Create or load a persistent unified train/test split for the full dataset
+split <- get_or_create_unified_split(model_data, "Full Dataset", seed = 1997)
+
+# Extract split info
+train_indices <- split$split_info$train_indices
+test_indices <- split$split_info$test_indices
+train_data <- split$train_data
+test_data <- split$test_data
+
+# Verify the cleaned data
+cat("\n=== Full Dataset Cleaned Data ===\n")
+summary(catboost_df$ev_time)
+summary(catboost_df$outcome)
+
+
+# Check for any remaining issues
+cat("\n=== Final Quality Check ===\n")
+cat("Full Dataset - Any NaN in time:", any(is.nan(catboost_df$ev_time)), "\n")
+cat("Full Dataset - Any NaN in status:", any(is.nan(catboost_df$outcome)), "\n")
+
+```
+
+##### LASSO Model
+
+```{r lasso-df, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+surv_data <- model_data %>%
+  # Create standard 'time' and 'status' columns first
+  mutate(
+    time = ev_time,
+    status = outcome
+  ) %>%
+  # Central leakage filter utility (drops ev_time/outcome, keeps time/status)
+  remove_leakage_predictors() %>%
+  # Handle infinite values by converting them to NA
+  mutate(across(where(is.numeric), ~if_else(is.infinite(.), NA_real_, .))) %>%
+  # d. Remove any columns that are entirely empty
+  select(-where(~all(is.na(.)))) %>%
+  # e. Remove identifier and original time/status columns
+  select(-any_of(c("ptid_e", "ev_time", "outcome"))) %>%
+  # f. Ensure all predictors are numeric for glmnet
+  mutate(across(where(is.character), as.factor)) %>%
+  mutate(across(where(is.factor), as.numeric))
+
+# Remove constant columns
+constant_cols <- names(surv_data)[sapply(surv_data, function(x) {
+  length(unique(na.omit(x))) == 1
+})]
+if(length(constant_cols) > 0) {
+  surv_data <- surv_data %>% select(-all_of(constant_cols))
+}
+
+# Impute any remaining missing values
+surv_data <- surv_data %>%
+  mutate(across(everything(), ~if_else(is.na(.), median(., na.rm = TRUE), .)))
+
+# Final check for non-finite values
+if (any(!is.finite(as.matrix(surv_data)))) {
+  stop("Data still contains NA/NaN/Inf values after cleaning. Please check the data source.")
+}
+
+cat("Survival LASSO - Final data dimensions:", paste(dim(surv_data), collapse = " x "), "\n")
+
+```
+
+```{r lasso-train-test-split}
+
+train <- surv_data[train_indices, ]
+test  <- surv_data[test_indices, ]
+
+# Create matrices and survival objects for TRAIN set
+y_train <- Surv(train$time, train$status)
+x_train <- as.matrix(train %>% select(-time, -status))
+
+# Create matrices and survival objects for TEST set
+y_test <- Surv(test$time, test$status)
+x_test <- as.matrix(test %>% select(-time, -status))
+
+
+# Verify the size of the new data frames
+cat("Training set size:", nrow(train), "\n")
+cat("Test set size:", nrow(test), "\n")
+cat("X_train dim:", paste(dim(x_train), collapse = " x "), "\n")
+cat("X_test dim:", paste(dim(x_test), collapse = " x "), "\n")
+
+
+```
+
+
+```{r survival-lasso-model-fit}
+
+lasso_res <- run_lasso_cox(
+  train_df = train,
+  test_df = test,
+  time_col = "time",
+  status_col = "status",
+  cohort_name = "Full Dataset",
+  model_name = "LASSO (Survival)"
+)
+surv_risk_scores <- lasso_res$risk_scores
+surv_c_index <- lasso_res$concordance
+surv_lasso_model <- lasso_res$model
+surv_lasso_cv <- lasso_res$cv
+surv_optimal_lambda <- lasso_res$lambda_min
+lasso_metrics <- create_survival_metrics("Full Dataset","LASSO (Survival)", lasso_res$concordance)
+surv_nonzero_coefs <- lasso_res$nonzero_coefs
+
+```
+
+```{r lasso-model-prediction}
+
+## Use risk scores returned by run_lasso_cox
+# Calculate C-Index on the TEST data
+surv_c_index <- survival::concordance(y_test ~ surv_risk_scores)
+log_survival_cindex("Full Dataset", "LASSO (Survival)", test$time, test$status, as.numeric(surv_risk_scores))
+
+cat("Survival LASSO - C-Index on Test Set:", round(as.numeric(surv_c_index$concordance), 4), "\n")
+
+# Get non-zero coefficients for feature importance from the CV model
+surv_coefs <- coef(surv_lasso_cv, s = "lambda.min")
+surv_nonzero_coefs <- data.frame(
+  feature = rownames(surv_coefs)[surv_coefs@i + 1], # Using sparse matrix indexing
+  coefficient = surv_coefs@x
+) %>%
+  filter(feature != "(Intercept)") %>%
+  arrange(desc(abs(coefficient)))
+
+cat("Survival LASSO - Number of selected features:", nrow(surv_nonzero_coefs), "\n")
+
+
+```
+
+###### Accuracy
+
+```{r survival-lasso-prediction-accuracy, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+## Risk scores already computed; just recompute metrics if needed
+# Calculate C-Index
+surv_c_index <- survival::concordance(y_test ~ surv_risk_scores)
+
+cat("Survival LASSO - C-Index:", round(as.numeric(surv_c_index$concordance), 4), "\n")
+
+## Get non-zero coefficients for feature importance at the chosen lambda
+surv_coefs_matrix <- as.matrix(coef(surv_lasso_model, s = surv_optimal_lambda))
+
+
+surv_nonzero_coefs <- data.frame(
+  feature = rownames(surv_coefs_matrix),
+  coefficient = as.numeric(surv_coefs_matrix[, 1]) # Use as.numeric to get the vector
+) %>%
+  filter(coefficient != 0 & feature != "(Intercept)") %>%
+  arrange(desc(abs(coefficient)))
+
+
+# Create a standardized metrics list
+lasso_metrics <- create_survival_metrics(
+  "Full Dataset", 
+  "LASSO (Survival)", 
+  surv_c_index
+)
+
+# Add Harrell vs Uno comparison for LASSO
+c_pair_lasso <- compute_concordance_pair(
+  train_time = train$time, train_status = train$status,
+  test_time = test$time,   test_status  = test$status,
+  risk = as.numeric(surv_risk_scores),
+  tau = 1
+)
+cat("LASSO - Harrell C:", round(c_pair_lasso$harrell, 4),
+    "| Uno C(1yr):", round(c_pair_lasso$uno, 4), "\n")
+
+```
+
+###### Feature Importance
+
+```{r lasso-features, warning=FALSE, message=FALSE, eval=TRUE, echo=FALSE}
+
+# Display LASSO coefficients
+cat("LASSO Model - Number of selected features:", nrow(surv_nonzero_coefs), "\n")
+  
+  datatable(
+    surv_nonzero_coefs,
+    caption = "LASSO Feature Coefficients",
+    rownames = FALSE,
+    options = list(
+      pageLength = 15,
+      columnDefs = list(
+        list(className = 'dt-left', targets = "_all")
+      )
+    )
+  )
+
+```
+
+##### CatBoost Survival Model
+
+```{r catboost-model-df, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+catboost_res <- run_catboost_cox(
+  train_df = train_data,
+  test_df = test_data,
+  time_col = 'ev_time',
+  status_col = 'outcome',
+  cohort_name = 'Full Dataset',
+  model_name = 'CatBoost',
+  params = list(loss_function = 'Cox', eval_metric = 'Cox', iterations = 2000, depth = 4, verbose = 500)
+)
+
+
+```
+
+###### Accuracy
+
+```{r catboost-accuracy, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+predictions_test <- catboost_res$risk_scores
+
+test_time <- test_data$ev_time
+test_status <- test_data$outcome
+
+# Survival object for the test set
+surv_obj_test <- Surv(test_time, test_status)
+
+
+inverted_predictions <- predictions_test
+
+# Concordance score
+concordance_score <- survival::concordance(surv_obj_test ~ inverted_predictions)
+
+print("Model Performance on Test Set:")
+print(concordance_score)
+
+```
+
+```{r catboost-survival-metrics}
+
+# Get risk scores from the trained CatBoost model
+catboost_risk_scores <- predictions_test
+inverted_scores <- predictions_test
+test_time <- test$time
+test_status <- test$status
+
+# Create a survival object for the test set
+surv_obj_test <- Surv(test_time, test_status)
+
+# Calculate the full concordance object
+concordance_score <- survival::concordance(surv_obj_test ~ inverted_scores)
+log_survival_cindex("Full Dataset", "CatBoost", test_time, test_status, as.numeric(inverted_scores))
+
+
+# Pass the concordance object to the streamlined function
+catboost_surv_metrics <- create_survival_metrics(
+  "Full Dataset",
+  "CatBoost",
+  concordance_score
+)
+
+# Print Results
+cat("CatBoost Model Performance:\n")
+print(concordance_score)
+cat("\nMetrics List Created:\n")
+print(catboost_surv_metrics)
+
+# Harrell vs Uno for CatBoost (use unified train/test split)
+c_pair_cat <- compute_concordance_pair(
+  train_time = train$time, train_status = train$status,
+  test_time = test$time,   test_status  = test$status,
+  risk = as.numeric(inverted_scores),
+  tau = 1
+)
+cat("CatBoost - Harrell C:", round(c_pair_cat$harrell, 4),
+    "| Uno C(1yr):", round(c_pair_cat$uno, 4), "\n")
+
+```
+
+###### Feature Importance
+
+```{r catboost-feature-importance, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+importance_df <- catboost_res$importance
+
+  
+  datatable(
+    importance_df,
+    caption = "CatBoost Feature Importance",
+    rownames = FALSE,
+    options = list(
+      pageLength = 15,
+      columnDefs = list(
+        list(className = 'dt-left', targets = "_all")
+      )
+    )
+  )
+
+```
+
+##### AORSF Model
+
+```{r aorsf-fit-model, warning=FALSE, message=FALSE, echo=FALSE, eval=TRUE}
+
+
+aorsf_model_data <- model_data
+
+
+if(nrow(model_data) > 0) {
+  
+  # Check if survival variables exist in the data
+  if(all(c("ev_time", "outcome") %in% colnames(aorsf_model_data))) {
+    
+    # Prepare data with standard 'time' and 'status' columns for survival analysis
+    aorsf_data <- aorsf_model_data %>%
+      # Safely handle infinite values across all numeric columns
+      mutate(across(where(is.numeric), ~if_else(is.infinite(.), NA_real_, .))) %>%
+      mutate(
+        time = ev_time,
+        status = as.integer(outcome == 1)
+      ) %>%
+      # Apply leakage filter after creating time/status
+      remove_leakage_predictors() %>%
+      select(time, status, everything()) %>% 
+      mutate(across(where(is.character), as.factor)) %>% 
+      select(-any_of(c("ev_time", "outcome")))
+      
+    aorsf_train <- aorsf_data[train_indices, ]
+    aorsf_test  <- aorsf_data[test_indices, ]
+    
+    if(nrow(aorsf_train) > 0 && nrow(aorsf_test) > 0) {
+      
+      # Remove constant columns
+      constant_cols <- names(aorsf_train)[sapply(aorsf_train, function(x) {
+        length(unique(na.omit(x))) == 1
+      })]
+      
+      if(length(constant_cols) > 0) {
+        aorsf_train <- aorsf_train %>% select(-all_of(constant_cols))
+        aorsf_test  <- aorsf_test  %>% select(-all_of(constant_cols))
+      }
+      
+      # Ensure consistent features between train and test
+      common_features <- intersect(colnames(aorsf_train), colnames(aorsf_test))
+      aorsf_train <- aorsf_train %>% select(all_of(common_features))
+      aorsf_test <- aorsf_test %>% select(all_of(common_features))
+      
+      
+      # --- Train AORSF model (wrapper) ---
+      aorsf_res <- run_aorsf(
+        train_df = aorsf_train,
+        test_df = aorsf_test,
+        time_col = 'time',
+        status_col = 'status',
+        cohort_name = 'Full Dataset',
+        model_name = 'AORSF',
+        n_tree = 100
+      )
+      aorsf_model <- aorsf_res$model
+      
+    } else {
+      cat("Insufficient data after splitting for AORSF modeling\n")
+    }
+    
+  } else {
+    cat("Survival variables (ev_time, outcome) not found in data\n")
+  }
+  
+} else {
+  cat("Initial data frame is empty\n")
+}
+
+```
+
+###### Accuracy
+
+```{r aorsf-survival-metrics}
+
+# Get risk predictions on the test data
+aorsf_risk_scores <- aorsf_res$risk_scores
+
+# Create survival object
+aorsf_surv_obj_test <- Surv(aorsf_test$time, aorsf_test$status)
+
+# Calculate the full concordance object
+aorsf_c_index <- survival::concordance(aorsf_surv_obj_test ~ aorsf_risk_scores)
+log_survival_cindex("Full Dataset", "AORSF", aorsf_test$time, aorsf_test$status, as.numeric(aorsf_risk_scores))
+
+
+# Build standardized metrics for AORSF and print
+aorsf_metrics <- create_survival_metrics(
+  "Full Dataset",
+  "AORSF",
+  aorsf_c_index
+)
+
+cat("AORSF Model Performance:\n")
+print(aorsf_c_index)
+cat("\nMetrics List Created:\n")
+print(aorsf_metrics)
+
+# Harrell vs Uno for AORSF
+c_pair_aorsf <- compute_concordance_pair(
+  train_time = aorsf_train$time, train_status = aorsf_train$status,
+  test_time = aorsf_test$time,   test_status  = aorsf_test$status,
+  risk = as.numeric(aorsf_risk_scores),
+  tau = 1
+)
+cat("AORSF - Harrell C:", round(c_pair_aorsf$harrell, 4),
+    "| Uno C(1yr):", round(c_pair_aorsf$uno, 4), "\n")
+
+```
+
+###### Feature Importance
+
+```{r echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+aorsf_importance_df <- aorsf_res$vi
+
+
+datatable(
+  aorsf_importance_df,
+  caption = "AORSF Feature Importance",
+  rownames = FALSE,
+  options = list(pageLength = 15)
+)
+      
+```
+
+##### XGBoost-Cox Model
+
+```{r xgb-cox-fit, warning=FALSE, message=FALSE, echo=FALSE, eval=TRUE}
+
+# Train XGBoost-Cox on the same LASSO train/test (numeric one-hot inside the wrapper)
+xgb_res <- run_xgb_cox(
+  train_df = train,
+  test_df = test,
+  time_col = 'time',
+  status_col = 'status',
+  cohort_name = 'Full Dataset',
+  model_name = 'XGBoost-Cox',
+  nrounds = 500,
+  early_stopping_rounds = 25
+)
+
+```
+
+###### Accuracy
+
+```{r xgb-cox-accuracy, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+xgb_risk_scores <- xgb_res$risk_scores
+xgb_c_index <- xgb_res$concordance
+
+cat("XGBoost-Cox - C-Index:", round(as.numeric(xgb_c_index$concordance), 4), "\n")
+log_survival_cindex("Full Dataset", "XGBoost-Cox", test$time, test$status, as.numeric(xgb_risk_scores))
+
+# Create standardized metrics for comparison table
+xgb_surv_metrics <- create_survival_metrics(
+  "Full Dataset",
+  "XGBoost-Cox",
+  xgb_c_index
+)
+
+# Harrell vs Uno for XGB
+c_pair_xgb <- compute_concordance_pair(
+  train_time = train$time, train_status = train$status,
+  test_time = test$time,   test_status  = test$status,
+  risk = as.numeric(xgb_risk_scores),
+  tau = 1
+)
+cat("XGBoost-Cox - Harrell C:", round(c_pair_xgb$harrell, 4),
+    "| Uno C(1yr):", round(c_pair_xgb$uno, 4), "\n")
+
+```
+
+###### Feature Importance
+
+```{r xgb-cox-feature-importance, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+xgb_importance_df <- xgb_res$importance
+
+if (!is.null(xgb_importance_df) && nrow(xgb_importance_df) > 0) {
+  datatable(
+    xgb_importance_df,
+    caption = "XGBoost-Cox Feature Importance",
+    rownames = FALSE,
+    options = list(pageLength = 15, columnDefs = list(list(className = 'dt-left', targets = "_all")))
+  )
+} else {
+  cat("No XGBoost-Cox feature importance available.\n")
+}
+
+```
+
+##### RSF (ranger) Model
+
+```{r rsf-fit, warning=FALSE, message=FALSE, echo=FALSE, eval=TRUE}
+
+rsf_res <- run_rsf_ranger(
+  train_df = aorsf_train,
+  test_df = aorsf_test,
+  time_col = 'time',
+  status_col = 'status',
+  cohort_name = 'Full Dataset',
+  model_name = 'RSF (ranger)',
+  num.trees = 500
+)
+
+```
+
+###### Accuracy
+
+```{r rsf-accuracy, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+rsf_risk_scores <- rsf_res$risk_scores
+rsf_c_index <- rsf_res$concordance
+
+cat('RSF (ranger) - C-Index:', round(as.numeric(rsf_c_index$concordance), 4), '\n')
+log_survival_cindex('Full Dataset', 'RSF (ranger)', aorsf_test$time, aorsf_test$status, as.numeric(rsf_risk_scores))
+
+# Create standardized metrics for comparison table
+rsf_surv_metrics <- create_survival_metrics(
+  'Full Dataset',
+  'RSF (ranger)',
+  rsf_c_index
+)
+
+# Harrell vs Uno for RSF
+c_pair_rsf <- compute_concordance_pair(
+  train_time = aorsf_train$time, train_status = aorsf_train$status,
+  test_time = aorsf_test$time,   test_status  = aorsf_test$status,
+  risk = as.numeric(rsf_risk_scores),
+  tau = 1
+)
+cat('RSF (ranger) - Harrell C:', round(c_pair_rsf$harrell, 4),
+    '| Uno C(1yr):', round(c_pair_rsf$uno, 4), '\n')
+
+```
+
+###### Feature Importance
+
+```{r rsf-feature-importance, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+rsf_importance_df <- rsf_res$importance
+
+if (!is.null(rsf_importance_df) && nrow(rsf_importance_df) > 0) {
+  datatable(
+    rsf_importance_df,
+    caption = 'RSF (ranger) Feature Importance',
+    rownames = FALSE,
+    options = list(pageLength = 15, columnDefs = list(list(className = 'dt-left', targets = "_all")))
+  )
+} else {
+  cat('No RSF feature importance available.\n')
+}
+
+```
+
+##### DeepSurv/DeepHit Survival Model
+
+```{r pycox-export, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+# Export aligned data for DeepSurv/DeepHit (pycox)
+export_pycox_dataset(
+  train_df = train,
+  test_df = test,
+  time_col = 'time',
+  status_col = 'status',
+  out_dir = file.path('cohort_analysis', 'pycox_full')
+)
+
+```
+
+```{python}
+
+# DeepSurv / DeepHit training with pycox on exported CSVs
+
+import os
+import random
+import pandas as pd
+import numpy as np
+import torch
+import torch.nn as nn
+from sklearn.preprocessing import StandardScaler
+from pycox.models import CoxPH, DeepHitSingle
+from pycox.evaluation import EvalSurv
+import torchtuples as tt
+
+
+def train_pycox_models(data_dir, cohort_name, metrics_path='cohort_analysis/pycox_metrics.csv', epochs=128, bs=128):
+    # Reproducibility
+    random.seed(1997)
+    np.random.seed(1997)
+    torch.manual_seed(1997)
+    try:
+        torch.set_num_threads(1)
+    except Exception:
+        pass
+
+    # IO
+    Xtr = pd.read_csv(os.path.join(data_dir, 'X_train.csv'))
+    Xte = pd.read_csv(os.path.join(data_dir, 'X_test.csv'))
+    ytr = pd.read_csv(os.path.join(data_dir, 'y_train.csv'))
+    yte = pd.read_csv(os.path.join(data_dir, 'y_test.csv'))
+
+    durations_train = ytr['duration'].values.astype('float32')
+    events_train = ytr['event'].values.astype('int64')
+    durations_test = yte['duration'].values.astype('float32')
+    events_test = yte['event'].values.astype('int64')
+
+    scaler = StandardScaler()
+    Xtrn = scaler.fit_transform(Xtr.values.astype('float32'))
+    Xten = scaler.transform(Xte.values.astype('float32'))
+
+    in_features = Xtrn.shape[1]
+    feature_names = list(Xtr.columns)
+    results = []
+
+    # Ensure output dir always exists
+    os.makedirs('cohort_analysis', exist_ok=True)
+
+    # DeepSurv (CoxPH)
+    net = tt.practical.MLPVanilla(in_features, [128, 64], 1, batch_norm=True, dropout=0.2)
+    model = CoxPH(net, tt.optim.Adam(0.01), device='cpu')
+    _ = model.fit(Xtrn, (durations_train, events_train), batch_size=bs, epochs=epochs, verbose=False)
+    # Required to predict survival curves for EvalSurv
+    try:
+        model.compute_baseline_hazards(Xtrn, (durations_train, events_train))
+    except TypeError:
+        model.compute_baseline_hazards()
+
+    surv_ds = model.predict_surv_df(Xten)
+    ev_ds = EvalSurv(surv_ds, durations_test, events_test, censor_surv='km')
+    cidx_ds = float(ev_ds.concordance_td('antolini'))
+    results.append(dict(Cohort=cohort_name, Model='DeepSurv (pycox)', C_Index=round(cidx_ds, 6)))
+
+    # DeepSurv importance (proxy: first Linear layer weights)
+    try:
+        first_linear = next((m for m in net.modules() if isinstance(m, nn.Linear)), None)
+        if first_linear is None:
+            raise RuntimeError('no Linear layer found')
+        w = first_linear.weight.detach().cpu().numpy()     # [hidden, in_features]
+        importances = np.abs(w).sum(axis=0)                # per-input feature importance
+        pd.DataFrame({
+            'feature': feature_names,
+            'importance': importances,
+            'Model': 'DeepSurv (pycox)',
+            'Cohort': cohort_name
+        }).sort_values('importance', ascending=False).to_csv(
+            'cohort_analysis/pycox_deepsurv_importance.csv', index=False
+        )
+    except Exception as e:
+        print('DeepSurv importance export skipped:', e)
+
+    # DeepHit
+    risk_dh = None
+    try:
+        num_nodes = [128, 64]
+        labtrans = DeepHitSingle.label_transform(100)
+        y_tr = labtrans.fit_transform(durations_train, events_train)
+        y_te = labtrans.transform(durations_test, events_test)
+        net_dh = tt.practical.MLPVanilla(in_features, num_nodes, labtrans.out_features, batch_norm=True, dropout=0.3)
+        model_dh = DeepHitSingle(net_dh, tt.optim.Adam(0.01), duration_index=labtrans.cuts)
+        _ = model_dh.fit(Xtrn, y_tr, batch_size=bs, epochs=epochs, verbose=False)
+
+        surv_dh = model_dh.predict_surv_df(Xten)
+        ev_dh = EvalSurv(surv_dh, durations_test, events_test, censor_surv='km')
+        cidx_dh = float(ev_dh.concordance_td('antolini'))
+        results.append(dict(Cohort=cohort_name, Model='DeepHit (pycox)', C_Index=round(cidx_dh, 6)))
+
+        # Scalar risk for DeepHit: 1 - survival at last timepoint
+        risk_dh = 1 - surv_dh.iloc[-1, :].values.astype('float32')
+    except Exception:
+        # If DeepHit fails, skip gracefully
+        pass
+
+    # Export scalar risks for Harrell/Uno in R
+    try:
+        rows = []
+        # DeepSurv scalar risk (partial hazards)
+        try:
+            risk_ds_scalar = model.predict(Xten).reshape(-1)
+            rows.append(pd.DataFrame({
+                'idx': np.arange(len(Xten)),
+                'Cohort': cohort_name,
+                'Model': 'DeepSurv (pycox)',
+                'risk': risk_ds_scalar
+            }))
+        except Exception:
+            pass
+        # DeepHit scalar risk if available
+        if risk_dh is not None:
+            rows.append(pd.DataFrame({
+                'idx': np.arange(len(Xten)),
+                'Cohort': cohort_name,
+                'Model': 'DeepHit (pycox)',
+                'risk': risk_dh
+            }))
+        if rows:
+            risk_df = pd.concat(rows, ignore_index=True)
+            risk_path = 'cohort_analysis/pycox_risk_scores.csv'
+            if os.path.exists(risk_path):
+                risk_df.to_csv(risk_path, mode='a', index=False, header=False)
+            else:
+                risk_df.to_csv(risk_path, index=False)
+    except Exception as e:
+        print('Risk export skipped:', e)
+
+    # Append metrics
+    os.makedirs(os.path.dirname(metrics_path), exist_ok=True)
+    dfm = pd.DataFrame(results)
+    if os.path.exists(metrics_path):
+        dfm.to_csv(metrics_path, mode='a', index=False, header=False)
+    else:
+        dfm.to_csv(metrics_path, index=False)
+    return dfm
+
+
+# Run for full dataset export
+train_pycox_models('cohort_analysis/pycox_full', 'Full Dataset')
+```
+
+###### Deep Learning Feature Importance
+
+```{r echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+library(DT)
+library(readr)
+
+dl_imp_files <- list(
+  deepsurv = 'cohort_analysis/pycox_deepsurv_importance.csv',
+  deephit  = 'cohort_analysis/pycox_deephit_importance.csv'
+)
+
+if (file.exists(dl_imp_files$deepsurv)) {
+  deepsurv_df <- readr::read_csv(dl_imp_files$deepsurv, show_col_types = FALSE) %>%
+    dplyr::arrange(dplyr::desc(importance))
+  datatable(
+    deepsurv_df,
+    caption = "DeepSurv (pycox) Feature Importances",
+    rownames = FALSE,
+    options = list(pageLength = 15, columnDefs = list(list(className = 'dt-left', targets = "_all")))
+  )
+}
+
+if (file.exists(dl_imp_files$deephit)) {
+  deephit_df <- readr::read_csv(dl_imp_files$deephit, show_col_types = FALSE) %>%
+    dplyr::arrange(dplyr::desc(importance))
+  datatable(
+    deephit_df,
+    caption = "DeepHit (pycox) Feature Importances",
+    rownames = FALSE,
+    options = list(pageLength = 15, columnDefs = list(list(className = 'dt-left', targets = "_all")))
+  )
+}
+
+if (!file.exists(dl_imp_files$deepsurv) && !file.exists(dl_imp_files$deephit)) {
+  cat("No deep learning feature importance files found.\n")
+}
+
+```
+
+```{r}
+# Compare Harrell vs Uno C for DeepSurv/DeepHit using exported scalar risks
+if (file.exists('cohort_analysis/pycox_risk_scores.csv')) {
+  pycox_risk <- readr::read_csv('cohort_analysis/pycox_risk_scores.csv', show_col_types = FALSE)
+
+  # Ensure we only analyze rows that align with the current test set length
+  # (idx column is present for traceability; here we rely on order/length)
+  out_list <- list()
+  for (mdl in unique(pycox_risk$Model)) {
+    vec <- pycox_risk |>
+      dplyr::filter(Model == mdl) |>
+      dplyr::pull(risk)
+
+    # Truncate or align to test length if needed
+    n_test <- nrow(test)
+    if (length(vec) > n_test) vec <- vec[seq_len(n_test)]
+    if (length(vec) < n_test) next
+
+    c_pair <- compute_concordance_pair(
+      train_time   = train$time, train_status = train$status,
+      test_time    = test$time,  test_status  = test$status,
+      risk         = as.numeric(vec)
+    )
+
+    out_list[[mdl]] <- data.frame(
+      Model     = mdl,
+      Harrell_C = round(c_pair$harrell, 4),
+      Uno_C     = round(c_pair$uno, 4),
+      Tau       = c_pair$tau
+    )
+  }
+
+  if (length(out_list)) {
+    comp_df <- dplyr::bind_rows(out_list)
+    print(DT::datatable(
+      comp_df,
+      caption = "Deep Learning Concordance: Harrell vs Uno (Unified Test Split)",
+      rownames = FALSE,
+      options = list(pageLength = 10, columnDefs = list(list(className = 'dt-left', targets = "_all")))
+    ))
+  } else {
+    cat("No aligned DL risk rows found to compute concordance.\n")
+  }
+} else {
+  cat("No pycox_risk_scores.csv found; skip DL Harrell/Uno comparison.\n")
+}
+
+```
+
+### Model Performance Comparison
+
+Note: Deep learning metrics (DeepSurv/DeepHit via pycox) are appended
+from `cohort_analysis/pycox_metrics.csv` when available.
+
+```{r warning=FALSE, message=FALSE, echo=FALSE, eval=TRUE}
+
+# Initialize a list to hold all metrics data frames
+all_metrics_list <- list()
+
+# Add metrics if they exist and are non-null
+if (exists("lasso_metrics") && !is.null(lasso_metrics)) {
+  all_metrics_list[["lasso"]] <- lasso_metrics
+}
+if (exists("catboost_surv_metrics") && !is.null(catboost_surv_metrics)) {
+  all_metrics_list[["catboost"]] <- catboost_surv_metrics
+}
+if (exists("aorsf_metrics") && !is.null(aorsf_metrics)) {
+  all_metrics_list[["aorsf"]] <- aorsf_metrics
+}
+if (exists("rsf_surv_metrics") && !is.null(rsf_surv_metrics)) {
+  all_metrics_list[["rsf"]] <- rsf_surv_metrics
+}
+if (exists("xgb_surv_metrics") && !is.null(xgb_surv_metrics)) {
+  all_metrics_list[["xgb"]] <- xgb_surv_metrics
+}
+
+# Drop any NULLs just in case
+all_metrics_list <- Filter(Negate(is.null), all_metrics_list)
+
+if (length(all_metrics_list) > 0) {
+  # Combine all data frames into one
+  metrics_df <- dplyr::bind_rows(all_metrics_list)
+  # Append external pycox metrics if present
+  if (file.exists('cohort_analysis/pycox_metrics.csv')) {
+    pycox_df <- readr::read_csv('cohort_analysis/pycox_metrics.csv', show_col_types = FALSE)
+    pycox_df <- pycox_df %>% rename(C_Index = C_Index)
+    metrics_df <- bind_rows(metrics_df, pycox_df)
+  }
+  
+  # Display comparison table (force print to ensure rendering)
+  print(
+    DT::datatable(
+      metrics_df,
+      caption = "Model Performance Comparison - Survival Models",
+      rownames = FALSE,
+      options = list(
+        pageLength = 10,
+        columnDefs = list(
+          list(className = 'dt-left', targets = "_all")
+        )
+      )
+    )
+  )
+  # Persist metrics
+  readr::write_csv(metrics_df, file.path('cohort_analysis', 'metrics_full.csv'))
+} else {
+  cat("No metrics available for comparison\n")
+}
+
+```
+
+### Best Model by C-index (Full Dataset)
+
+```{r}
+
+if (exists("metrics_df")) {
+  best_row <- metrics_df %>% arrange(desc(C_Index)) %>% slice_head(n = 1)
+  datatable(best_row, caption = "Best Model by C-index - Full Dataset", rownames = FALSE,
+            options = list(pageLength = 5, columnDefs = list(list(className = 'dt-left', targets = "_all"))))
+  out_path <- file.path('cohort_analysis', 'best_model_full.csv')
+  readr::write_csv(best_row, out_path)
+  cat('Saved best model to: ', normalizePath(out_path, winslash = '/', mustWork = FALSE), '\n', sep = '')
+} else {
+  cat('No metrics to select best model from.\n')
+}
+
+best_row
+
+```
+
+### Feature Importance Summary
+
+```{r echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+# Comprehensive summary table with top 25 features for each model
+comprehensive_summary <- list()
+
+# Function to get top 25 features with normalized importance
+get_top_features <- function(feature_df, model_name, cohort_name = "Full Dataset") {
+  if (nrow(feature_df) > 0) {
+    # Get top 25 features
+    top_features <- feature_df %>%
+      slice_head(n = 25) %>%
+      mutate(
+        Model = model_name,
+        Cohort = cohort_name,
+        Rank = row_number()
+      )
+    
+    # Normalize importance to 0-1 scale for Sankey diagram
+    if ("importance" %in% colnames(top_features)) {
+      top_features <- top_features %>%
+        mutate(
+          Normalized_Importance = (importance - min(importance)) / (max(importance) - min(importance))
+        )
+    } else if ("coefficient" %in% colnames(top_features)) {
+      # For LASSO coefficients, use absolute values and normalize
+      top_features <- top_features %>%
+        mutate(
+          importance = abs(coefficient),
+          Normalized_Importance = (importance - min(importance)) / (max(importance) - min(importance))
+        )
+    }
+    
+    return(top_features)
+  }
+  return(NULL)
+}
+
+## --- Collect Feature Importance ---
+
+# 1. LASSO
+if (exists("surv_nonzero_coefs")) {
+  lasso_features <- get_top_features(surv_nonzero_coefs, "LASSO")
+  if (!is.null(lasso_features)) comprehensive_summary <- append(comprehensive_summary, list(lasso_features))
+}
+
+# 2. CatBoost
+if (exists("importance_df")) {
+  catboost_features <- get_top_features(importance_df, "CatBoost")
+  if (!is.null(catboost_features)) comprehensive_summary <- append(comprehensive_summary, list(catboost_features))
+}
+
+# 3. AORSF
+if (exists("aorsf_importance_df")) {
+  aorsf_features <- get_top_features(aorsf_importance_df, "AORSF")
+  if (!is.null(aorsf_features)) comprehensive_summary <- append(comprehensive_summary, list(aorsf_features))
+}
+
+# 4. RSF (ranger)
+if (exists("rsf_importance_df") && !is.null(rsf_importance_df)) {
+  rsf_features <- get_top_features(rsf_importance_df, "RSF (ranger)")
+  if (!is.null(rsf_features)) comprehensive_summary <- append(comprehensive_summary, list(rsf_features))
+}
+
+# 5. XGBoost-Cox
+if (exists("xgb_importance_df") && !is.null(xgb_importance_df)) {
+  xgb_features <- get_top_features(xgb_importance_df, "XGBoost-Cox")
+  if (!is.null(xgb_features)) comprehensive_summary <- append(comprehensive_summary, list(xgb_features))
+}
+
+# 6. DeepSurv (pycox)
+if (file.exists('cohort_analysis/pycox_deepsurv_importance.csv')) {
+  deepsurv_df <- readr::read_csv('cohort_analysis/pycox_deepsurv_importance.csv', show_col_types = FALSE)
+  deepsurv_features <- get_top_features(deepsurv_df, "DeepSurv (pycox)")
+  if (!is.null(deepsurv_features)) comprehensive_summary <- append(comprehensive_summary, list(deepsurv_features))
+}
+
+# 7. DeepHit (pycox)
+if (file.exists('cohort_analysis/pycox_deephit_importance.csv')) {
+  deephit_df <- readr::read_csv('cohort_analysis/pycox_deephit_importance.csv', show_col_types = FALSE)
+  deephit_features <- get_top_features(deephit_df, "DeepHit (pycox)")
+  if (!is.null(deephit_features)) comprehensive_summary <- append(comprehensive_summary, list(deephit_features))
+}
+
+# Combine all feature importance data (robust to NULLs)
+comprehensive_summary <- Filter(Negate(is.null), comprehensive_summary)
+if (length(comprehensive_summary) > 0) {
+  all_features_df <- dplyr::bind_rows(comprehensive_summary)
+}
+  
+```
+
+```{r}
+
+library(dplyr)
+library(DT)
+
+# Select and arrange columns for a clear feature-focused view
+if (exists("all_features_df") && !is.null(all_features_df) && nrow(all_features_df) > 0) {
+  feature_summary_df <- all_features_df %>%
+    dplyr::select(Rank, feature, Model, importance, Normalized_Importance) %>%
+    dplyr::arrange(Rank, Model)
+
+  # Display the interactive table (force print)
+  print(
+    DT::datatable(
+      feature_summary_df,
+      caption = "Feature Importances by Model",
+      rownames = FALSE,
+      options = list(
+        pageLength = 25,
+        columnDefs = list(
+          list(className = 'dt-left', targets = "_all")
+        )
+      )
+    )
+  )
+  # Persist feature importances
+  readr::write_csv(feature_summary_df, file.path('cohort_analysis', 'feature_importance_full.csv'))
+} else {
+  cat("No feature importance data to display.\n")
+}
+
+```
+
+### Sankey Chart: Model to Features
+
+```{r sankey-plot, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+library(dplyr)
+library(plotly)
+
+if (exists("all_features_df")) {
+# Prepare data for the Sankey diagram
+sankey_data <- all_features_df %>%
+  select(source = Model, target = feature, value = Normalized_Importance) %>%
+  filter(!is.na(value) & value > 0)
+
+if(nrow(sankey_data) > 0) {
+  
+  # Create a unique list of all nodes (models and features)
+  all_nodes <- unique(c(sankey_data$source, sankey_data$target))
+  
+  # Create a links data frame with 0-based indices
+  links <- sankey_data %>%
+    mutate(
+      source = match(source, all_nodes) - 1,
+      target = match(target, all_nodes) - 1
+    )
+
+  # Create the Sankey plot
+sankey_plot <- plot_ly(
+    type = "sankey",
+    orientation = "h",
+    node = list(
+      label = all_nodes,
+      pad = 15,
+      thickness = 20,
+      line = list(color = "black", width = 0.5)
+    ),
+    link = list(
+      source = links$source,
+      target = links$target,
+      value = links$value
+    )
+  ) %>%
+    layout(
+      title = "Feature Importance Flow: Models to Features",
+      font = list(size = 10)
+    )
+    
+} else {
+  cat("No data available to generate Sankey diagram.\n")
+}
+
+sankey_plot
+} else {
+    cat("No feature importance data to generate Sankey plot.\n")
+}
+```
+
+```{r eval=FALSE, echo=FALSE}
+
+if (exists("sankey_plot")) {
+  htmlwidgets::saveWidget(
+    sankey_plot,
+    file = "sankey_time_to_event_feature_importance.html",
+    selfcontained = TRUE
+  )
+}
+
+
+```
+
+

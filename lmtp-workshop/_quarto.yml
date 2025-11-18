@@ -1,0 +1,58 @@
+project:
+  type: website
+  output-dir: docs
+  
+filters:
+  - webr
+
+website:
+  title: "Beyond the \n Average Treatment Effect"
+  bread-crumbs: false
+  navbar:
+    left:
+      - href: instructors.qmd
+        text: Instructors
+  sidebar:
+    style: "floating"
+    search: true
+    contents:
+      - href: index.qmd
+        text: Welcome!
+      - href: info_tldr.qmd
+        text: 1. Introduction
+      - href: info_d.qmd
+        text: 2. Defining Interventions
+      - href: info_estimators.qmd
+        text: 3. Estimators
+      - section: 4. Estimating Effects with lmtp
+        contents:
+          - href: lmtp.qmd
+            text: The lmtp package
+          - href: R_static.qmd
+            text: Static effects and the ATE
+          - href: R_dtr.qmd
+            text: Dynamic Treatment Regimes
+          - href: R_mtp.qmd
+            text: Modified Treatment Policies
+          - href: R_ipsi.qmd
+            text: IPSI
+          - href: R_survival.qmd
+            text: Survival Analysis
+          - href: R_multivariate.qmd
+            text: Multivariate Exposures
+      - href: info_conclusion.qmd
+        text: 5. Final Remarks
+        
+    tools:
+      - icon: github
+        menu:
+          - text: Source Code
+            url:  https://github.com/nt-williams/lmtp-workshop
+
+format:
+  html:
+    theme: [default,callout_tweet.scss]
+    css: styles.css
+    toc: true
+    include-in-body: macros.qmd
+

@@ -1,0 +1,15 @@
+action_id: trunk-upgrade-available
+date: 2025-10-10 19:16:05
+run: trunk upgrade --notify --allow-daemon-start=false
+run_from: ""
+trigger: schedule 1h
+result:
+  exit_code: 1
+  out: ""
+  err: Exception occurred while executing 'trunk-upgrade-available'. See .trunk\out\Rd3V9.yaml for details.
+  error_path: C:\Projects\phts\graft-loss-parallel-processing\.trunk\out\Rd3V9.yaml
+timestamp: 1760123765
+full_timestamp:
+  nanos: 180257000
+  seconds: 1760123765
+trunk_version: 1.25.0

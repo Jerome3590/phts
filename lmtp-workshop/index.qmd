@@ -1,0 +1,52 @@
+---
+title: "Estimating the causal effects of binary, categorical, continuous, and multivariate exposures in R"
+engine: knitr
+date-modified: last-modified
+---
+
+
+In this workshop, we present methods to define and estimate the causal effects of categorical, continuous, and multivariate exposures. The methods are based on a generalization of the static and dynamic interventions that may be familiar to some of you. This generalization has been recently called modified treatment policies (MTPs). MTPs are hypothetical interventions where the post-intervention exposure is defined as a modification of the natural value of the exposure that can also depend on the unit’s history. This short course will introduce the **lmtp** R package for estimating the causal effects of these general estimand in both point-treatment and longitudinal studies. We will discuss identification of MTPs, estimation with a targeted minimum-loss based estimator and a sequentially doubly-robust estimator, and provide guidance on estimator choice and software usage.
+
+| Conference | Year  | 📍Location     |
+|------------|-------|----------------|
+| SER        | 2024  | Austin, TX     |
+| ACIC       | 2025  | Detroit, MI    |
+| SER        | 2025  | Boston, MA     |
+| LiDS        | 2025  | Brooklyn, NY     |
+
+### Learning objectives
+
+By the end of the workshop, participants will be able to:
+
+1.  Generalize static and dynamic interventions intuitively and using notation.
+
+2.  Estimate the effect of a static or dynamic intervention with **lmtp** for point-treatment and longitudinal studies.
+
+3.  Estimate the effect of an MTP on a continuous-valued exposure with **lmtp** for point-treatment and longitudinal studies.
+
+4.  Estimate the effect of multivariate exposures with **lmtp** for point-treatment and longitudinal studies.
+
+::: {.callout-warning appearance="simple"}
+This workshop assumes the participant has a basic understanding of fundamental concepts in causal inference such as the concept of counterfactuals, and some experience with the R programming language.
+:::
+
+### Tentative Schedule
+
+| Topic                                       | Duration       |
+|---------------------------------------------|----------------|
+| Introductions                               | 15 minutes     |
+| From observed data to causal estimands      | 15 minutes     |
+| Defining causal effects using MTPs          | 1 hour         |
+| The estimator landscape                     | 20 minutes     |
+| **Break**                                   | 10 minutes     |
+| Setting up the correct data structure       | 15 minutes     |
+| Estimating effects using the `lmtp` package | 1 hour 30 min  |
+| Q + A                                       | 15 minutes     |
+
+### webR
+
+This workshop was prepared using [Quarto](https://quarto.org/) and [webR](https://docs.r-wasm.org/webr/latest/). The source code is available on [GitHub](https://github.com/nt-williams/lmtp-workshop). webR is a version of the R programming language compiled to be run directly in the browser. Using webR for this workshop avoids having to spend time setting up a computing environment and making sure workshop participants are using the same version of R and R packages.
+
+```{webr-r}
+print("Welcome to SER 2024!")
+```

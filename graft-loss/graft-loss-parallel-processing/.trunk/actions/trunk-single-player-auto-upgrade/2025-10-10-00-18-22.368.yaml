@@ -1,0 +1,15 @@
+action_id: trunk-single-player-auto-upgrade
+date: 2025-10-10 00:18:22
+run: trunk upgrade cli --single-player-only -n --no-progress --on-upgrade=false --allow-daemon-start=false
+run_from: ""
+trigger: schedule 24h+1h
+result:
+  exit_code: 1
+  out: ""
+  err: Exception occurred while executing 'trunk-single-player-auto-upgrade'. See .trunk\out\3yrb4.yaml for details.
+  error_path: C:\Projects\phts\graft-loss-parallel-processing\.trunk\out\3yrb4.yaml
+timestamp: 1760055502
+full_timestamp:
+  nanos: 368409000
+  seconds: 1760055502
+trunk_version: 1.25.0

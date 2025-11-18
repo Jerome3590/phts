@@ -1,0 +1,15 @@
+action_id: trunk-upgrade-available
+date: 2025-10-10 15:16:05
+run: trunk upgrade --notify --allow-daemon-start=false
+run_from: ""
+trigger: schedule 1h
+result:
+  exit_code: 1
+  out: ""
+  err: Exception occurred while executing 'trunk-upgrade-available'. See .trunk\out\abe4k.yaml for details.
+  error_path: C:\Projects\phts\graft-loss-parallel-processing\.trunk\out\abe4k.yaml
+timestamp: 1760109365
+full_timestamp:
+  nanos: 144073000
+  seconds: 1760109365
+trunk_version: 1.25.0

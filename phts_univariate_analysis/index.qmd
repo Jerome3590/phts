@@ -1,0 +1,44 @@
+---
+title: PHTS Univariate Analysis
+format: html
+engine: knitr
+filters:
+  - webr
+webR:
+  packages: ['dplyr','tidymodels']
+---
+
+
+```{webr-r}
+
+library(dplyr)
+library(ggplot2)
+
+```
+
+```{r echo=FALSE}
+
+read.csv("data/tx_model_top_25.csv") |>
+  DT::datatable(class = "compact", 
+                options = list(
+                  searching = FALSE, 
+                  lengthChange = FALSE, 
+                  ordering = FALSE, 
+                  info = FALSE, 
+                  columnDefs = list(
+                    list(targets = 0, visible = FALSE),
+                    list(className = 'dt-left', targets = "_all")  # apply to all columns
+                  )
+                )) |> 
+  DT::formatRound(columns = "age", digits = 0)
+
+```
+
+```{webr-r}
+
+list.files()
+url <- 'https://laderast.github.io/webr-demo/data/penguins.csv'
+download.file(url, 'penguins.csv')
+list.files()
+
+```

@@ -1,0 +1,15 @@
+action_id: trunk-upgrade-available
+date: 2025-10-08 12:07:21
+run: trunk upgrade --notify --allow-daemon-start=false
+run_from: ""
+trigger: schedule 1h
+result:
+  exit_code: 1
+  out: ""
+  err: Exception occurred while executing 'trunk-upgrade-available'. See .trunk\out\KLV67.yaml for details.
+  error_path: C:\Projects\phts\graft-loss-parallel-processing\.trunk\out\KLV67.yaml
+timestamp: 1759925241
+full_timestamp:
+  nanos: 727020000
+  seconds: 1759925241
+trunk_version: 1.25.0

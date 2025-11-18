@@ -1,0 +1,15 @@
+action_id: trunk-share-with-everyone
+date: 2025-10-11 23:18:22
+run: trunk config share --notify --allow-daemon-start=false
+run_from: ""
+trigger: schedule 24h
+result:
+  exit_code: 1
+  out: ""
+  err: Exception occurred while executing 'trunk-share-with-everyone'. See .trunk\out\fC9XA.yaml for details.
+  error_path: C:\Projects\phts\graft-loss-parallel-processing\.trunk\out\fC9XA.yaml
+timestamp: 1760224702
+full_timestamp:
+  nanos: 373117000
+  seconds: 1760224702
+trunk_version: 1.25.0

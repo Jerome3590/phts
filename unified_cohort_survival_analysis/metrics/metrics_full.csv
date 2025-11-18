@@ -1,0 +1,12 @@
+Cohort,Model,C_Index
+Full Dataset,LASSO (Survival),0.3373
+Full Dataset,CatBoost,0.5919
+Full Dataset,AORSF,0.3297
+Full Dataset,RSF (ranger),0.3744
+Full Dataset,XGBoost-Cox,0.4076
+Full Dataset,DeepSurv (pycox),0.547824
+Full Dataset,DeepHit (pycox),0.603735
+Full Dataset,DeepSurv (pycox),0.547824
+Full Dataset,DeepHit (pycox),0.603735
+Full Dataset,DeepSurv (pycox),0.547824
+Full Dataset,DeepHit (pycox),0.603735

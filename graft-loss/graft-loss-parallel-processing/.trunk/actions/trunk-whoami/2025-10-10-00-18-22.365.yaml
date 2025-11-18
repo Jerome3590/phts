@@ -1,0 +1,15 @@
+action_id: trunk-whoami
+date: 2025-10-10 00:18:22
+run: trunk whoami
+run_from: ""
+trigger: schedule 24h+1h
+result:
+  exit_code: 1
+  out: ""
+  err: Exception occurred while executing 'trunk-whoami'. See .trunk\out\GoaZC.yaml for details.
+  error_path: C:\Projects\phts\graft-loss-parallel-processing\.trunk\out\GoaZC.yaml
+timestamp: 1760055502
+full_timestamp:
+  nanos: 365363000
+  seconds: 1760055502
+trunk_version: 1.25.0

@@ -1,0 +1,15 @@
+action_id: trunk-upgrade-available
+date: 2025-10-10 10:16:05
+run: trunk upgrade --notify --allow-daemon-start=false
+run_from: ""
+trigger: schedule 1h
+result:
+  exit_code: 1
+  out: ""
+  err: Exception occurred while executing 'trunk-upgrade-available'. See .trunk\out\lX7Mu.yaml for details.
+  error_path: C:\Projects\phts\graft-loss-parallel-processing\.trunk\out\lX7Mu.yaml
+timestamp: 1760091365
+full_timestamp:
+  nanos: 179506000
+  seconds: 1760091365
+trunk_version: 1.25.0

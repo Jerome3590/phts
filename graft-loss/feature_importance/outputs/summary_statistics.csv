@@ -1,0 +1,4 @@
+period,n_patients,event_rate,n_rsf_features,n_catboost_features,rsf_cindex,catboost_cindex
+original,4036,19.03,19,19,0.8215,0.8777
+full,5835,16.09,19,19,0.8544,0.8119
+full_no_covid,4196,18.45,19,19,0.8251,0.8678

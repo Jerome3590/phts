@@ -1,0 +1,15 @@
+action_id: trunk-upgrade-available
+date: 2025-10-12 13:16:05
+run: trunk upgrade --notify --allow-daemon-start=false
+run_from: ""
+trigger: schedule 1h
+result:
+  exit_code: 1
+  out: ""
+  err: Exception occurred while executing 'trunk-upgrade-available'. See .trunk\out\ZWine.yaml for details.
+  error_path: C:\Projects\phts\graft-loss-parallel-processing\.trunk\out\ZWine.yaml
+timestamp: 1760274965
+full_timestamp:
+  nanos: 254493000
+  seconds: 1760274965
+trunk_version: 1.25.0

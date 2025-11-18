@@ -1,0 +1,716 @@
+---
+title: "PHTS EDA"
+author: "R. Jerome Dixon"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+format:
+  html:
+    toc: true
+    toc-depth: 5
+    code-fold: true
+    code-summary: "Show the code"
+    embed-resources: true
+    default-image-extension: svg
+    dpi: 600
+---
+
+## Overview
+
+This exploratory data analysis examines pediatric heart transplant data using variables identified in the Wisotzkey et al paper. The analysis includes data preprocessing, model development, and evaluation of prediction performance.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+
+library(here)
+library(readr)
+library(haven)
+library(purrr)
+library(dplyr)
+library(glmnet)
+library(caret)
+library(yardstick)
+library(janitor)
+library(lubridate)
+
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+
+wisotzkey_variables <- read_csv(here("data","wisotzkey_variables.csv"), show_col_types = FALSE)
+
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+
+# Set directory
+data_dir <- here("data")
+
+# List SAS files
+sas_files <- list.files(data_dir, pattern = "\\.sas7bdat$", full.names = TRUE)
+
+# Named list: file base names (without extension) as names
+sas_data <- sas_files %>%
+  set_names(~ tools::file_path_sans_ext(basename(.))) %>%
+  map(read_sas)
+
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+
+mcsd <- sas_data$mcsd %>% janitor::clean_names()
+
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+
+eval <- sas_data$pretxeval %>% janitor::clean_names()
+
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+
+tx <- sas_data$transplant %>% janitor::clean_names()
+
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+
+followups <- sas_data$posttxplfollowup %>% janitor::clean_names()
+
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+
+wisotzkey_vars <- wisotzkey_variables[[1]] %>% as.character()
+wisotzkey_clean <- tolower(gsub("[^a-zA-Z0-9]+", "_", wisotzkey_vars))
+wisotzkey_clean
+
+```
+
+```{r echo=FALSE}
+
+# Calculate BMI, eGFR, and Listing Year
+tx <- tx %>%
+  mutate(
+    age_listing = as.double(age_listing),
+    age_txpl = as.double(age_txpl),
+    bmi_txpl = (weight_txpl / (height_txpl^2)) * 703,
+    egfr_tx = 0.413 * height_txpl / txcreat_r,
+    listing_year = as.integer(floor(txpl_year - (age_txpl - age_listing)))
+  )
+
+```
+
+```{r}
+tx %>% colnames()
+```
+
+```{r echo=FALSE}
+
+wisotzkey_name_map <- c(
+  "primary_etiology"               = "prim_dx",
+  "mcsd_at_transplant"             = "txmcsd",
+  "single_ventricle_chd"           = "chd_sv",
+  "surgeries_prior_to_listing"     = "hxsurg",
+  "serum_albumin_at_transplant"    = "txsa_r",
+  "bun_at_transplant"              = "txbun_r",
+  "ecmo_at_transplant"             = "txecmo",
+  "transplant_year"                = "txpl_year",
+  "recipient_weight_at_transplant" = "weight_txpl",
+  "alt_at_transplant"              = "txalt",
+  "bmi_at_transplant"              = "bmi_txpl",     # computed
+  "pra_max_at_listing"             = "lsfprat",      # fallback: use lsfprab if missing
+  "egfr_at_transplant"             = "egfr_tx",      # computed from height/creatinine
+  "medical_history_at_listing"     = "hxmed",
+  "listing_year"                   = "listing_year"  # computed from txpl_year, age_listing, age_txpl
+)
+
+```
+
+```{r echo=FALSE}
+
+tx <- tx %>%
+  mutate(
+    ev_time = pmin(int_dead, int_graft_loss, na.rm = TRUE),
+    ev_type = pmax(dtx_patient, graft_loss, na.rm = TRUE),
+    outcome = case_when(
+      ev_type == 1 & ev_time < 1 ~ 1L,
+      ev_type == 0 & ev_time < 1 ~ NA_integer_,
+      TRUE ~ 0L
+    )
+  ) %>%
+  filter(!is.na(outcome))
+
+# Impute values per Wisotzkey paper
+tx_model <- tx %>%
+  mutate(
+    prim_dx = ifelse(is.na(prim_dx), "cardiomyopathy", prim_dx),
+    txmcsd = ifelse(is.na(txmcsd), 0L, txmcsd),
+    chd_sv = ifelse(is.na(chd_sv), 0L, chd_sv),
+    hxsurg = ifelse(is.na(hxsurg), 0L, hxsurg),
+    txsa_r = ifelse(is.na(txsa_r), 3.7, txsa_r),
+    txbun_r = ifelse(is.na(txbun_r), 16, txbun_r),
+    txecmo = ifelse(is.na(txecmo), 0L, txecmo),
+    txpl_year = ifelse(is.na(txpl_year), 2015, txpl_year),
+    weight_txpl = ifelse(is.na(weight_txpl), 35, weight_txpl),
+    txalt = ifelse(is.na(txalt), 29, txalt),
+    bmi_txpl = ifelse(is.na(bmi_txpl), 17, bmi_txpl),
+    lsfprat = ifelse(is.na(lsfprat), 0, lsfprat),
+    egfr_tx = ifelse(is.na(egfr_tx), 97, egfr_tx),
+    hxmed = ifelse(is.na(hxmed), 1L, hxmed),
+    listing_year = ifelse(is.na(listing_year), 2014, listing_year)
+  ) %>%
+  rename(!!!setNames(wisotzkey_name_map, names(wisotzkey_name_map))) %>%
+  select(ptid_e, all_of(names(wisotzkey_name_map)), outcome) 
+
+```
+
+```{r echo=FALSE}
+
+tx_model <- tx_model %>%
+  mutate(
+    serum_albumin_at_transplant_bin = as.integer(serum_albumin_at_transplant > 3.7),
+    pra_max_at_listing_bin          = as.integer(pra_max_at_listing > 0),
+    alt_at_transplant_bin           = as.integer(alt_at_transplant > 29),
+    single_ventricle_chd_bin        = as.integer(single_ventricle_chd > 0),
+    egfr_at_transplant_bin          = as.integer(egfr_at_transplant > 97),
+    bun_at_transplant_bin           = as.integer(bun_at_transplant > 16),
+    bmi_at_transplant_bin           = as.integer(bmi_at_transplant > 17)
+  ) %>%
+  relocate(
+    serum_albumin_at_transplant_bin,
+    pra_max_at_listing_bin,
+    alt_at_transplant_bin,
+    single_ventricle_chd_bin,
+    egfr_at_transplant_bin,
+    bun_at_transplant_bin,
+    bmi_at_transplant_bin,
+    .after = medical_history_at_listing
+  )
+
+```
+
+### LASSO Model
+
+```{r warning=FALSE}
+
+# Split into training (2010–2013) and test (2014)
+train <- tx_model %>% filter(transplant_year >= 2010 & transplant_year <= 2013)
+test  <- tx_model %>% filter(transplant_year == 2014)
+
+# Save patient IDs separately
+ptid_e_train <- train$ptid_e
+ptid_e_test <- test$ptid_e
+
+# Remove ptid_e from feature set before model.matrix()
+x_train <- model.matrix(outcome ~ . - ptid_e - 1, data = train)
+x_test <- model.matrix(outcome ~ . - ptid_e - 1, data = test)
+
+y_train <- train$outcome
+y_test <- test$outcome
+
+# Fit LASSO model
+cvfit <- cv.glmnet(x_train, y_train, family = "binomial", alpha = 1)
+
+# Predict and evaluate
+pred_probs <- predict(cvfit, newx = x_test, s = "lambda.min", type = "response")
+
+# Extract coefficients at lambda.min
+important_vars <- coef(cvfit, s = "lambda.min")
+
+# Create test results and misclassified data frames
+test_results <- test %>%
+  mutate(
+    ptid_e = ptid_e_test,
+    pred_prob = as.vector(pred_probs),  # ensure numeric vector
+    predicted = as.vector(ifelse(pred_probs >= 0.5, 1, 0)),  # flatten matrix result
+    correct = ifelse(predicted == outcome, "Correct", "Misclassified")
+  )
+
+misclassified <- test_results %>%
+  filter(predicted != outcome)
+
+important_vars
+
+```
+
+### CART Model
+
+```{r}
+
+# Create CART model for misclassified cases
+library(rpart)
+if (nrow(misclassified) > 10) {
+  # Create dummy target
+  misclassified$fake_y <- 1:nrow(misclassified)
+  
+  # Train tree
+  tree_misclassified <- rpart(
+    fake_y ~ . - ptid_e - predicted - pred_prob - outcome - fake_y, 
+    data = misclassified, 
+    method = "anova",
+    control = rpart.control(minsplit = 5, cp = 0.01)
+  )
+  
+  # Extract variable importance
+  var_importance <- tree_misclassified$variable.importance
+  
+  if (!is.null(var_importance)) {
+    var_importance_df <- data.frame(
+      variable = names(var_importance),
+      importance = as.numeric(var_importance)
+    ) %>%
+    arrange(desc(importance))
+    
+    # Save
+    write.csv(var_importance_df, "reports/misclassified1_variable_importance.csv", row.names = FALSE)
+  } else {
+    cat("No variable importance extracted.\n")
+  }
+} else {
+  cat("Not enough samples to analyze.\n")
+}
+
+var_importance_df <- tibble(
+  variable = names(var_importance),
+  importance = as.numeric(var_importance)
+) %>%
+  mutate(importance = importance / max(importance))  # Normalize to [0,1]
+
+
+var_importance_df
+```
+
+### LASSO and CART Feature Importances
+
+```{r}
+
+lasso_vars <- rownames(important_vars)[important_vars[,1] != 0]
+cart_vars <- var_importance_df$variable
+
+# Intersection
+intersect_vars <- intersect(lasso_vars, cart_vars)
+cat("Features shared between LASSO and CART explanations:\n")
+print(intersect_vars)
+
+# LASSO-only
+cat("\nLASSO-only features:\n")
+print(setdiff(lasso_vars, cart_vars))
+
+# CART-only
+cat("\nCART-only features (missed by LASSO):\n")
+print(setdiff(cart_vars, lasso_vars))
+
+```
+
+```{r message=FALSE, warning=FALSE}
+
+# Get ordered features from CART
+ordered_features_from_importance <- var_importance_df %>%
+  arrange(desc(importance)) %>%
+  pull(variable)
+
+# All available features
+all_numeric <- test_results %>% 
+  select(-ptid_e, -predicted, -pred_prob, -outcome, -correct) %>%
+  select(where(is.numeric)) %>%
+  names()
+
+all_categorical <- test_results %>% 
+  select(-ptid_e, -predicted, -pred_prob, -outcome, -correct) %>%
+  select(where(~ is.character(.) || is.factor(.))) %>%
+  names()
+
+# Prioritized + fallback sort
+numeric_features <- c(
+  intersect(ordered_features_from_importance, all_numeric),
+  setdiff(sort(all_numeric), ordered_features_from_importance)
+)
+
+categorical_features <- c(
+  intersect(ordered_features_from_importance, all_categorical),
+  setdiff(sort(all_categorical), ordered_features_from_importance)
+)
+
+```
+
+```{r message=FALSE, warning=FALSE}
+
+library(dplyr)
+library(tidyr)
+library(purrr)
+
+# Prepare reference data 
+test_results <- test_results %>%
+  mutate(correct = ifelse(predicted == outcome, "Correct", "Misclassified"))
+
+# Numeric reference stats
+numeric_stats <- test_results %>%
+  filter(correct == "Correct") %>%
+  summarise(across(all_of(numeric_features), 
+                   list(mean = ~ mean(., na.rm = TRUE)), 
+                   .names = "{.col}"))
+
+
+# T-test p-values for numeric features
+t_test_summary <- list()
+
+for (feature in numeric_features) {
+  correct_vals <- test_results %>% filter(correct == "Correct") %>% pull(!!feature)
+  misclassified_vals <- test_results %>% filter(correct == "Misclassified") %>% pull(!!feature)
+  
+  if (length(unique(na.omit(correct_vals))) > 1 && length(unique(na.omit(misclassified_vals))) > 1) {
+    test_result <- tryCatch(
+      t.test(correct_vals, misclassified_vals),
+      error = function(e) NULL
+    )
+    
+    if (!is.null(test_result)) {
+      t_test_summary[[feature]] <- list(
+        p_value = test_result$p.value,
+        statistic = test_result$statistic,
+        df = test_result$parameter
+      )
+    }
+  }
+}
+
+
+# Chi-squared test p-values for categorical features
+chi_squared_summary <- list()
+
+for (feature in categorical_features) {
+  tbl <- table(test_results[[feature]], test_results$correct)
+
+  if (nrow(tbl) > 1 && ncol(tbl) > 1) {
+    test_result <- tryCatch(
+      chisq.test(tbl),
+      error = function(e) NULL
+    )
+
+    if (!is.null(test_result)) {
+      chi_squared_summary[[feature]] <- list(
+        p_value = test_result$p.value,
+        statistic = test_result$statistic,
+        df = test_result$parameter
+      )
+    }
+  }
+}
+
+
+# Categorical frequency deviations
+categorical_stats <- test_results %>%
+  pivot_longer(all_of(categorical_features), names_to = "feature") %>%
+  count(feature, value, correct) %>%
+  group_by(feature, correct) %>%
+  mutate(total = sum(n), freq = n/total) %>%
+  select(-n, -total) %>%
+  pivot_wider(names_from = correct, values_from = freq) %>%
+  mutate(
+    deviation = case_when(
+      is.na(Misclassified) ~ -1,
+      is.na(Correct) ~ 1,
+      TRUE ~ (Misclassified / pmax(Correct, 0.001)) - 1  # Prevent division by zero
+    )
+  ) %>%
+  select(feature, category = value, deviation)
+
+
+
+# Get feature-level p-values
+## Numeric features
+t_test_pvals <- map_dbl(numeric_features, ~ pluck(t_test_summary, .x, "p_value", .default = NA_real_)) %>%
+  set_names(numeric_features)
+
+## Categorical features
+chi_squared_pvals <- map_dbl(categorical_features, ~ pluck(chi_squared_summary, .x, "p_value", .default = NA_real_)) %>%
+  set_names(categorical_features)
+
+# Build enriched table
+process_features <- function(data) {
+  map_dfc(c(numeric_features, categorical_features), function(feat) {
+    # Get normalized CART importance
+    cart_importance <- var_importance_df %>%
+      filter(variable == feat) %>%
+      pull(importance) %>%
+      first() %||% NA_real_
+
+    if(feat %in% numeric_features) {
+      # Same checks
+      if(var(data[[feat]], na.rm = TRUE) == 0) {
+        pval_label <- "zero_variance"
+      } 
+      else if(max(table(data[[feat]]))/nrow(data) > 0.95) {
+        pval_label <- "near_zero_variance"
+      } 
+      else {
+        qnt <- quantile(data[[feat]], c(0.25, 0.75), na.rm = TRUE)
+        iqr <- IQR(data[[feat]], na.rm = TRUE)
+        if(any(data[[feat]] < (qnt[1] - 1.5*iqr) | data[[feat]] > (qnt[2] + 1.5*iqr))) {
+          pval_label <- "outliers_detected"
+        } else {
+          pval_label <- pluck(t_test_summary, feat, "p_value", .default = NA_real_)
+        }
+      }
+
+      tibble(
+        !!paste0(feat, "_cart_importance") := cart_importance,
+        !!paste0(feat, "_value") := data[[feat]],
+        !!paste0(feat, "_deviation") := data[[feat]] - numeric_stats[[feat]],
+        !!paste0(feat, "_pvalue") := pval_label
+        
+      )
+
+    } else {
+      categories <- data[[feat]]
+      deviations <- map_dbl(categories, ~ {
+        categorical_stats %>%
+          filter(feature == feat, category == .x) %>%
+          pull(deviation) %>%
+          coalesce(0)
+      })
+
+      pval_label <- pluck(chi_squared_summary, feat, "p_value", .default = NA_real_)
+
+      tibble(
+        !!paste0(feat, "_cart_importance") := cart_importance,
+        !!paste0(feat, "_value") := categories,
+        !!paste0(feat, "_deviation") := deviations,
+        !!paste0(feat, "_pvalue") := pval_label
+      )
+    }
+  })
+}
+
+# Final enriched data
+enriched_misclassified <- misclassified %>%
+  select(ptid_e) %>%
+  bind_cols(process_features(misclassified)) %>%
+  bind_cols(misclassified %>% select(predicted, pred_prob, outcome))
+
+# Save outputs
+write_csv(enriched_misclassified, "reports/enriched_misclassified.csv")
+
+
+```
+
+Here is a summary for what each metric in below 'Misclassified Cohort Cases' table represents:
+
+For each feature (e.g., bmi_at_transplant, serum_albumin_at_transplant, etc.), the table includes:\
+- **CART Feature Importance**: The feature importance score from the CART model, indicating how much this feature contributes to the model's predictions. (Columns are ordered by feature importance)\
+- **Value**: The actual value of the feature for the misclassified case from the test dataset\
+- **Deviation**: The difference between the feature value for the misclassified case and the mean value of that feature among correctly classified cases\
+- **P-value**: The p-value from statistical tests comparing the feature's distribution between correct and misclassified cases
+
+The table also includes:\
+- **ptid_e**: Patient Identifier\
+- **predicted**: The model's prediction (0 or 1)\
+- **pred_prob**: The model's predicted probability\
+- **outcome**: The actual outcome (0 or 1)
+
+**Interpretation**:\
+- Large deviations suggest that extreme or atypical values of a feature are associated with misclassification\
+- Low p-values indicate statistically significant differences in feature values between correct and misclassified cases\
+- Higher CART importance values indicate features that are more influential in the model's decision-making\
+- The combination of these metrics helps identify which features and values are most associated with model errors
+
+### Misclassifed Cohort Table
+
+```{r}
+
+# Convert to interactive DT table
+DT::datatable(
+  enriched_misclassified,
+  filter = 'top',
+  options = list(
+    pageLength = 10,
+    scrollX = TRUE,
+    autoWidth = TRUE,
+    columnDefs = list(
+      list(targets = '_all', className = 'dt-center'),
+      list(targets = c(0), width = '100px'),  # ptid_e
+      list(targets = c(1:ncol(enriched_misclassified)-3), width = '150px')  # feature columns
+    )
+  ),
+  caption = 'Misclassified Cohort Cases with Deviation Analysis',
+  class = 'cell-border stripe'
+) %>%
+  DT::formatRound(columns = c('pred_prob'), digits = 3) %>%
+  DT::formatStyle(
+    'predicted',
+    target = 'row',
+    backgroundColor = DT::styleEqual(c(0, 1), c('#ffebee', '#e8f5e9'))
+  )
+
+```
+
+```{r echo=FALSE}
+
+library(dplyr)
+library(tidyr)
+library(pheatmap)
+library(stringr)
+
+
+feature_type_table <- tibble(
+  feature = c(numeric_features, categorical_features),
+  feature_type = c(rep("Numeric", length(numeric_features)),
+                   rep("Categorical", length(categorical_features)))
+)
+
+# Ensure consistent types for pivoting
+enriched_misclassified <- enriched_misclassified %>%
+  mutate(across(ends_with("_pvalue"), as.character))
+
+# Build long format
+long_enriched <- enriched_misclassified %>%
+  pivot_longer(
+    cols = matches("_value$"),
+    names_to = "feature",
+    names_pattern = "(.*)_value",
+    values_to = "value",
+    values_transform = as.character
+  ) %>%
+  left_join(
+    enriched_misclassified %>%
+      pivot_longer(
+        cols = matches("_importance$"), 
+        names_to = "feature_importance",
+        names_pattern = "(.*)_importance",
+        values_to = "importance"
+      ),
+    by = c("ptid_e", "feature" = "feature_importance", "predicted", "pred_prob", "outcome")
+  ) %>%
+  left_join(
+    enriched_misclassified %>%
+      pivot_longer(
+        cols = matches("_cart_importance$"), 
+        names_to = "feature_cart_importance",
+        names_pattern = "(.*)_cart_importance",
+        values_to = "cart_importance"
+      ),
+    by = c("ptid_e", "feature" = "feature_cart_importance", "predicted", "pred_prob", "outcome")
+  ) %>%
+  left_join(
+    enriched_misclassified %>%
+      pivot_longer(
+        cols = matches("_deviation$"),  
+        names_to = "feature_deviation",
+        names_pattern = "(.*)_deviation",
+        values_to = "deviation"
+      ),
+    by = c("ptid_e", "feature" = "feature_deviation", "predicted", "pred_prob", "outcome")  
+  ) %>%
+  left_join(
+    enriched_misclassified %>%
+      pivot_longer(
+        cols = matches("_pvalue$"), 
+        names_to = "feature_pvalue",
+        names_pattern = "(.*)_pvalue",
+        values_to = "pvalue"
+      ),
+    by = c("ptid_e", "feature" = "feature_pvalue", "predicted", "pred_prob", "outcome") 
+  ) %>%
+  select(ptid_e, feature, value, importance, cart_importance, deviation, pvalue, predicted, pred_prob, outcome) %>%
+  left_join(feature_type_table, by = "feature")
+
+```
+
+### Missed Predictions Heatmap
+
+| Color | Meaning |
+|------------------------------------|------------------------------------|
+| 🔴 Red | Very large deviation or strong signal (e.g., low p-value) — likely influencing the model heavily |
+| 🔵 Blue | No signal — close to population norm for correctly classified patients |
+| ⚪ Light/white | Mild deviation — mild influence |
+
+#### Full Misclassified Dataset
+
+```{r}
+
+heatmap_data <- long_enriched %>%
+  mutate(
+    heatmap_value = case_when(
+      feature_type == "Numeric" ~ as.numeric(deviation),
+      feature_type == "Categorical" ~ as.numeric(deviation),
+      TRUE ~ 0
+    )
+  ) %>%
+  select(ptid_e, feature, heatmap_value) %>%
+  tidyr::pivot_wider(names_from = feature, values_from = heatmap_value) %>%
+  as.data.frame()
+
+rownames(heatmap_data) <- heatmap_data$ptid_e
+heatmap_data$ptid_e <- NULL
+
+heatmap_matrix <- as.matrix(heatmap_data)
+heatmap_matrix[is.na(heatmap_matrix)] <- 0
+
+pheatmap::pheatmap(
+  heatmap_matrix,
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  color = colorRampPalette(c("blue", "white", "red"))(100),
+  show_rownames = FALSE,
+  show_colnames = TRUE,
+  main = "Risk-Driving Features in Misclassified Patients"
+)
+
+
+```
+
+#### Top Missed Features
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+#| fig-width: 10
+#| fig-height: 8
+#| out-width: "100%"
+#| fig-align: "center"
+
+# Compute feature scores: use mean absolute deviation or -log10(pvalue)
+top_features <- long_enriched %>%
+  mutate(
+    score = case_when(
+      feature_type == "Numeric" ~ abs(as.numeric(deviation)),
+      feature_type == "Categorical" ~ -log10(as.numeric(pvalue)),
+      TRUE ~ 0
+    )
+  ) %>%
+  group_by(feature) %>%
+  summarise(mean_score = mean(score, na.rm = TRUE)) %>%
+  arrange(desc(mean_score)) %>%
+  slice_head(n = 6)  # pick top 6 based on cluster visual inspection
+
+# Keep only those features
+long_top <- long_enriched %>%
+  filter(feature %in% top_features$feature)
+
+heatmap_data <- long_top %>%
+  mutate(
+    heatmap_value = case_when(
+      feature_type == "Numeric" ~ as.numeric(deviation),
+      feature_type == "Categorical" ~ as.numeric(deviation),
+      TRUE ~ 0
+    )
+  ) %>%
+  select(ptid_e, feature, heatmap_value) %>%
+  tidyr::pivot_wider(names_from = feature, values_from = heatmap_value) %>%
+  as.data.frame()
+
+rownames(heatmap_data) <- heatmap_data$ptid_e
+heatmap_data$ptid_e <- NULL
+
+heatmap_matrix <- as.matrix(heatmap_data)
+heatmap_matrix[is.na(heatmap_matrix)] <- 0
+
+pheatmap::pheatmap(
+  heatmap_matrix,
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  color = colorRampPalette(c("blue", "white", "red"))(100),
+  show_rownames = TRUE,
+  fontsize_row = 8,
+  show_colnames = TRUE,
+  main = "Top Risk-Driving Features in Misclassified Patients"
+)
+
+```

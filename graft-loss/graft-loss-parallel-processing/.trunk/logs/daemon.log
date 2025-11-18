@@ -1,0 +1,237 @@
+[2025-10-11 15:16:05.222] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash // 3:The system cannot find the path specified.
+[2025-10-11 15:16:05.234] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-11 15:16:05.234] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-11 15:16:05.234] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash // 3:The system cannot find the path specified.
+[2025-10-11 15:16:05.234] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-11 15:47:58.175] [global] [info] [server.cc:91] Reached idle timeout, but 1 lint sessions still active
+[2025-10-11 16:16:05.177] [global] [info] [runner.cc:154] Executing action trunk-upgrade-available.schedule.1h
+[2025-10-11 16:16:05.184] [global] [warning] [runtime.cc:149] 'git_bash' is not enabled but GetVersion() was called
+[2025-10-11 16:16:05.187] [global] [error] [runtime.cc:160] Prepare called on runtime that is not enabled. Will do nothing
+[2025-10-11 16:16:05.216] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-11 16:16:05.216] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash // 3:The system cannot find the path specified.
+[2025-10-11 16:16:05.216] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-11 16:16:05.216] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-11 16:16:05.217] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash // 3:The system cannot find the path specified.
+[2025-10-11 16:16:05.217] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-11 17:16:05.150] [global] [info] [runner.cc:154] Executing action trunk-upgrade-available.schedule.1h
+[2025-10-11 17:16:05.153] [global] [warning] [runtime.cc:149] 'git_bash' is not enabled but GetVersion() was called
+[2025-10-11 17:16:05.155] [global] [error] [runtime.cc:160] Prepare called on runtime that is not enabled. Will do nothing
+[2025-10-11 17:16:05.162] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-11 17:16:05.162] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash // 3:The system cannot find the path specified.
+[2025-10-11 17:16:05.162] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-11 17:16:05.162] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-11 17:16:05.162] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash // 3:The system cannot find the path specified.
+[2025-10-11 17:16:05.162] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-11 18:16:05.149] [global] [info] [runner.cc:154] Executing action trunk-upgrade-available.schedule.1h
+[2025-10-11 18:16:05.152] [global] [warning] [runtime.cc:149] 'git_bash' is not enabled but GetVersion() was called
+[2025-10-11 18:16:05.153] [global] [error] [runtime.cc:160] Prepare called on runtime that is not enabled. Will do nothing
+[2025-10-11 18:16:05.159] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-11 18:16:05.159] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash // 3:The system cannot find the path specified.
+[2025-10-11 18:16:05.159] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-11 18:16:05.159] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-11 18:16:05.159] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash // 3:The system cannot find the path specified.
+[2025-10-11 18:16:05.159] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-11 18:47:58.191] [global] [info] [server.cc:91] Reached idle timeout, but 1 lint sessions still active
+[2025-10-11 19:16:05.159] [global] [info] [runner.cc:154] Executing action trunk-upgrade-available.schedule.1h
+[2025-10-11 19:16:05.163] [global] [warning] [runtime.cc:149] 'git_bash' is not enabled but GetVersion() was called
+[2025-10-11 19:16:05.167] [global] [error] [runtime.cc:160] Prepare called on runtime that is not enabled. Will do nothing
+[2025-10-11 19:16:05.182] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-11 19:16:05.182] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash // 3:The system cannot find the path specified.
+[2025-10-11 19:16:05.182] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-11 19:16:05.182] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-11 19:16:05.182] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash // 3:The system cannot find the path specified.
+[2025-10-11 19:16:05.182] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-11 19:18:22.350] [global] [info] [runner.cc:154] Executing action trunk-cache-prune.schedule.24h
+[2025-10-11 19:18:22.350] [global] [warning] [runtime.cc:149] 'git_bash' is not enabled but GetVersion() was called
+[2025-10-11 19:18:22.354] [global] [error] [runtime.cc:160] Prepare called on runtime that is not enabled. Will do nothing
+[2025-10-11 19:18:22.355] [global] [info] [runner.cc:154] Executing action trunk-share-with-everyone.schedule.24h
+[2025-10-11 19:18:22.355] [global] [warning] [runtime.cc:149] 'git_bash' is not enabled but GetVersion() was called
+[2025-10-11 19:18:22.355] [global] [error] [runtime.cc:160] Prepare called on runtime that is not enabled. Will do nothing
+[2025-10-11 19:18:22.358] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-11 19:18:22.358] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash // 3:The system cannot find the path specified.
+[2025-10-11 19:18:22.358] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-11 19:18:22.358] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-11 19:18:22.358] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash // 3:The system cannot find the path specified.
+[2025-10-11 19:18:22.358] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-11 19:18:22.366] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-11 19:18:22.367] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash // 3:The system cannot find the path specified.
+[2025-10-11 19:18:22.367] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-11 19:18:22.367] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-11 19:18:22.367] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash // 3:The system cannot find the path specified.
+[2025-10-11 19:18:22.367] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-11 19:23:22.353] [global] [info] [runner.cc:154] Executing action trunk-single-player-auto-on-upgrade.schedule.24h+5m
+[2025-10-11 19:23:22.353] [global] [warning] [runtime.cc:149] 'git_bash' is not enabled but GetVersion() was called
+[2025-10-11 19:23:22.355] [global] [error] [runtime.cc:160] Prepare called on runtime that is not enabled. Will do nothing
+[2025-10-11 19:23:22.371] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-11 19:23:22.371] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash // 3:The system cannot find the path specified.
+[2025-10-11 19:23:22.371] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-11 19:23:22.371] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-11 19:23:22.371] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash // 3:The system cannot find the path specified.
+[2025-10-11 19:23:22.371] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-11 20:16:05.153] [global] [info] [runner.cc:154] Executing action trunk-upgrade-available.schedule.1h
+[2025-10-11 20:16:05.159] [global] [warning] [runtime.cc:149] 'git_bash' is not enabled but GetVersion() was called
+[2025-10-11 20:16:05.161] [global] [error] [runtime.cc:160] Prepare called on runtime that is not enabled. Will do nothing
+[2025-10-11 20:16:05.179] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-11 20:16:05.179] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash // 3:The system cannot find the path specified.
+[2025-10-11 20:16:05.179] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-11 20:16:05.179] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-11 20:16:05.179] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash // 3:The system cannot find the path specified.
+[2025-10-11 20:16:05.179] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-11 20:18:22.363] [global] [info] [runner.cc:154] Executing action trunk-single-player-auto-upgrade.schedule.24h+1h
+[2025-10-11 20:18:22.363] [global] [warning] [runtime.cc:149] 'git_bash' is not enabled but GetVersion() was called
+[2025-10-11 20:18:22.365] [global] [info] [runner.cc:154] Executing action trunk-whoami.schedule.24h+1h
+[2025-10-11 20:18:22.365] [global] [warning] [runtime.cc:149] 'git_bash' is not enabled but GetVersion() was called
+[2025-10-11 20:18:22.365] [global] [error] [runtime.cc:160] Prepare called on runtime that is not enabled. Will do nothing
+[2025-10-11 20:18:22.366] [global] [error] [runtime.cc:160] Prepare called on runtime that is not enabled. Will do nothing
+[2025-10-11 20:18:22.373] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-11 20:18:22.373] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash // 3:The system cannot find the path specified.
+[2025-10-11 20:18:22.373] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-11 20:18:22.373] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-11 20:18:22.373] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash // 3:The system cannot find the path specified.
+[2025-10-11 20:18:22.373] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-11 20:18:22.379] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-11 20:18:22.379] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash // 3:The system cannot find the path specified.
+[2025-10-11 20:18:22.379] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-11 20:18:22.379] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-11 20:18:22.379] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash // 3:The system cannot find the path specified.
+[2025-10-11 20:18:22.380] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-11 21:16:05.139] [global] [info] [runner.cc:154] Executing action trunk-upgrade-available.schedule.1h
+[2025-10-11 21:16:05.140] [global] [warning] [runtime.cc:149] 'git_bash' is not enabled but GetVersion() was called
+[2025-10-11 21:16:05.141] [global] [error] [runtime.cc:160] Prepare called on runtime that is not enabled. Will do nothing
+[2025-10-11 21:16:05.146] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-11 21:16:05.146] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash // 3:The system cannot find the path specified.
+[2025-10-11 21:16:05.146] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-11 21:16:05.146] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-11 21:16:05.146] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash // 3:The system cannot find the path specified.
+[2025-10-11 21:16:05.146] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-11 21:47:58.199] [global] [info] [server.cc:91] Reached idle timeout, but 1 lint sessions still active
+[2025-10-11 22:16:05.135] [global] [info] [runner.cc:154] Executing action trunk-upgrade-available.schedule.1h
+[2025-10-11 22:16:05.136] [global] [warning] [runtime.cc:149] 'git_bash' is not enabled but GetVersion() was called
+[2025-10-11 22:16:05.138] [global] [error] [runtime.cc:160] Prepare called on runtime that is not enabled. Will do nothing
+[2025-10-11 22:16:05.140] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-11 22:16:05.140] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash // 3:The system cannot find the path specified.
+[2025-10-11 22:16:05.140] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-11 22:16:05.140] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-11 22:16:05.140] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash // 3:The system cannot find the path specified.
+[2025-10-11 22:16:05.140] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-11 23:16:05.151] [global] [info] [runner.cc:154] Executing action trunk-upgrade-available.schedule.1h
+[2025-10-11 23:16:05.155] [global] [warning] [runtime.cc:149] 'git_bash' is not enabled but GetVersion() was called
+[2025-10-11 23:16:05.156] [global] [error] [runtime.cc:160] Prepare called on runtime that is not enabled. Will do nothing
+[2025-10-11 23:16:05.165] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-11 23:16:05.165] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash // 3:The system cannot find the path specified.
+[2025-10-11 23:16:05.165] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-11 23:16:05.165] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-11 23:16:05.165] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash // 3:The system cannot find the path specified.
+[2025-10-11 23:16:05.165] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-12 00:16:08.486] [global] [info] [runner.cc:154] Executing action trunk-upgrade-available.schedule.1h
+[2025-10-12 00:16:08.487] [global] [warning] [runtime.cc:149] 'git_bash' is not enabled but GetVersion() was called
+[2025-10-12 00:16:08.490] [global] [error] [runtime.cc:160] Prepare called on runtime that is not enabled. Will do nothing
+[2025-10-12 00:16:08.492] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-12 00:16:08.493] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash // 3:The system cannot find the path specified.
+[2025-10-12 00:16:08.493] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-12 00:16:08.493] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-12 00:16:08.493] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash // 3:The system cannot find the path specified.
+[2025-10-12 00:16:08.493] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-12 00:48:01.549] [global] [info] [server.cc:91] Reached idle timeout, but 1 lint sessions still active
+[2025-10-12 01:16:05.140] [global] [info] [runner.cc:154] Executing action trunk-upgrade-available.schedule.1h
+[2025-10-12 01:16:05.143] [global] [warning] [runtime.cc:149] 'git_bash' is not enabled but GetVersion() was called
+[2025-10-12 01:16:05.144] [global] [error] [runtime.cc:160] Prepare called on runtime that is not enabled. Will do nothing
+[2025-10-12 01:16:05.153] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-12 01:16:05.153] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash // 3:The system cannot find the path specified.
+[2025-10-12 01:16:05.153] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-12 01:16:05.153] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-12 01:16:05.153] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash // 3:The system cannot find the path specified.
+[2025-10-12 01:16:05.153] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-12 02:16:05.134] [global] [info] [runner.cc:154] Executing action trunk-upgrade-available.schedule.1h
+[2025-10-12 02:16:05.135] [global] [warning] [runtime.cc:149] 'git_bash' is not enabled but GetVersion() was called
+[2025-10-12 02:16:05.136] [global] [error] [runtime.cc:160] Prepare called on runtime that is not enabled. Will do nothing
+[2025-10-12 02:16:05.138] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-12 02:16:05.138] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash // 3:The system cannot find the path specified.
+[2025-10-12 02:16:05.138] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-12 02:16:05.138] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-12 02:16:05.138] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash // 3:The system cannot find the path specified.
+[2025-10-12 02:16:05.138] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-12 03:16:05.142] [global] [info] [runner.cc:154] Executing action trunk-upgrade-available.schedule.1h
+[2025-10-12 03:16:05.142] [global] [warning] [runtime.cc:149] 'git_bash' is not enabled but GetVersion() was called
+[2025-10-12 03:16:05.144] [global] [error] [runtime.cc:160] Prepare called on runtime that is not enabled. Will do nothing
+[2025-10-12 03:16:05.146] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-12 03:16:05.146] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash // 3:The system cannot find the path specified.
+[2025-10-12 03:16:05.146] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-12 03:16:05.147] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-12 03:16:05.147] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash // 3:The system cannot find the path specified.
+[2025-10-12 03:16:05.147] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-12 03:48:01.562] [global] [info] [server.cc:91] Reached idle timeout, but 1 lint sessions still active
+[2025-10-12 04:16:05.135] [global] [info] [runner.cc:154] Executing action trunk-upgrade-available.schedule.1h
+[2025-10-12 04:16:05.136] [global] [warning] [runtime.cc:149] 'git_bash' is not enabled but GetVersion() was called
+[2025-10-12 04:16:05.137] [global] [error] [runtime.cc:160] Prepare called on runtime that is not enabled. Will do nothing
+[2025-10-12 04:16:05.139] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-12 04:16:05.139] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash // 3:The system cannot find the path specified.
+[2025-10-12 04:16:05.139] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-12 04:16:05.139] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-12 04:16:05.139] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash // 3:The system cannot find the path specified.
+[2025-10-12 04:16:05.139] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-12 05:16:05.140] [global] [info] [runner.cc:154] Executing action trunk-upgrade-available.schedule.1h
+[2025-10-12 05:16:05.144] [global] [warning] [runtime.cc:149] 'git_bash' is not enabled but GetVersion() was called
+[2025-10-12 05:16:05.146] [global] [error] [runtime.cc:160] Prepare called on runtime that is not enabled. Will do nothing
+[2025-10-12 05:16:05.160] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-12 05:16:05.160] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash // 3:The system cannot find the path specified.
+[2025-10-12 05:16:05.160] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-12 05:16:05.160] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-12 05:16:05.160] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash // 3:The system cannot find the path specified.
+[2025-10-12 05:16:05.160] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-12 06:16:05.153] [global] [info] [runner.cc:154] Executing action trunk-upgrade-available.schedule.1h
+[2025-10-12 06:16:05.156] [global] [warning] [runtime.cc:149] 'git_bash' is not enabled but GetVersion() was called
+[2025-10-12 06:16:05.158] [global] [error] [runtime.cc:160] Prepare called on runtime that is not enabled. Will do nothing
+[2025-10-12 06:16:05.170] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-12 06:16:05.170] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash // 3:The system cannot find the path specified.
+[2025-10-12 06:16:05.170] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-12 06:16:05.170] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-12 06:16:05.170] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash // 3:The system cannot find the path specified.
+[2025-10-12 06:16:05.170] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-12 06:48:01.567] [global] [info] [server.cc:91] Reached idle timeout, but 1 lint sessions still active
+[2025-10-12 07:16:05.158] [global] [info] [runner.cc:154] Executing action trunk-upgrade-available.schedule.1h
+[2025-10-12 07:16:05.161] [global] [warning] [runtime.cc:149] 'git_bash' is not enabled but GetVersion() was called
+[2025-10-12 07:16:05.163] [global] [error] [runtime.cc:160] Prepare called on runtime that is not enabled. Will do nothing
+[2025-10-12 07:16:05.170] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-12 07:16:05.170] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash // 3:The system cannot find the path specified.
+[2025-10-12 07:16:05.170] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-12 07:16:05.170] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-12 07:16:05.171] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash // 3:The system cannot find the path specified.
+[2025-10-12 07:16:05.171] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-12 08:16:05.189] [global] [info] [runner.cc:154] Executing action trunk-upgrade-available.schedule.1h
+[2025-10-12 08:16:05.195] [global] [warning] [runtime.cc:149] 'git_bash' is not enabled but GetVersion() was called
+[2025-10-12 08:16:05.199] [global] [error] [runtime.cc:160] Prepare called on runtime that is not enabled. Will do nothing
+[2025-10-12 08:16:05.221] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-12 08:16:05.221] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash // 3:The system cannot find the path specified.
+[2025-10-12 08:16:05.221] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-12 08:16:05.221] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-12 08:16:05.221] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash // 3:The system cannot find the path specified.
+[2025-10-12 08:16:05.221] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-12 09:16:05.201] [global] [info] [runner.cc:154] Executing action trunk-upgrade-available.schedule.1h
+[2025-10-12 09:16:05.207] [global] [warning] [runtime.cc:149] 'git_bash' is not enabled but GetVersion() was called
+[2025-10-12 09:16:05.210] [global] [error] [runtime.cc:160] Prepare called on runtime that is not enabled. Will do nothing
+[2025-10-12 09:16:05.229] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-12 09:16:05.229] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash // 3:The system cannot find the path specified.
+[2025-10-12 09:16:05.229] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-12 09:16:05.229] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-12 09:16:05.229] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash // 3:The system cannot find the path specified.
+[2025-10-12 09:16:05.229] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-12 09:48:01.582] [global] [info] [server.cc:91] Reached idle timeout, but 1 lint sessions still active
+[2025-10-12 10:16:05.163] [global] [info] [runner.cc:154] Executing action trunk-upgrade-available.schedule.1h
+[2025-10-12 10:16:05.167] [global] [warning] [runtime.cc:149] 'git_bash' is not enabled but GetVersion() was called
+[2025-10-12 10:16:05.170] [global] [error] [runtime.cc:160] Prepare called on runtime that is not enabled. Will do nothing
+[2025-10-12 10:16:05.184] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-12 10:16:05.185] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash // 3:The system cannot find the path specified.
+[2025-10-12 10:16:05.185] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-12 10:16:05.185] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-12 10:16:05.185] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash // 3:The system cannot find the path specified.
+[2025-10-12 10:16:05.185] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-12 11:16:05.152] [global] [info] [runner.cc:154] Executing action trunk-upgrade-available.schedule.1h
+[2025-10-12 11:16:05.153] [global] [warning] [runtime.cc:149] 'git_bash' is not enabled but GetVersion() was called
+[2025-10-12 11:16:05.156] [global] [error] [runtime.cc:160] Prepare called on runtime that is not enabled. Will do nothing
+[2025-10-12 11:16:05.162] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-12 11:16:05.162] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash // 3:The system cannot find the path specified.
+[2025-10-12 11:16:05.162] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/bin\bash.exe // 3:The system cannot find the path specified.
+[2025-10-12 11:16:05.162] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.bat // 3:The system cannot find the path specified.
+[2025-10-12 11:16:05.162] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash // 3:The system cannot find the path specified.
+[2025-10-12 11:16:05.162] [global] [warning] [resolve_binary.cc:46] is_regular_file check failed for for C:\/usr/bin\bash.exe // 3:The system cannot find the path specified.

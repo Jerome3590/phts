@@ -1,0 +1,297 @@
+---
+title: "Univariate Feature Analysis: 1-Year Survival"
+author: "R. Jerome Dixon"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+format:
+  html:
+    toc: true
+    toc-depth: 5
+    code-fold: true
+    code-summary: "Show code"
+    embed-resources: true
+    theme: cosmo
+    css: styles.css
+editor: source
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+## Overview
+
+This report presents a univariate analysis of the top features from a 1-year survival model. Each plot displays how the distribution of a feature varies by the binary `outcome`.
+
+For the CatBoost partial dependence plots (PDPs), we visualize how the predicted probability changes as individual feature values vary, while holding all other features constant. These plots are based on raw, uncalibrated model predictions and are intended to reveal the marginal effect of each feature on the model's output.
+
+
+```{r setup}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(readr)
+library(forcats)
+
+# Load data
+tx_model_top_25 <- read_csv("tx_model_top_25.csv")
+
+# Drop unused columns
+tx_model_top_25 <- tx_model_top_25 %>%
+  select(-ev_type, -ev_time)
+
+# Identify feature columns
+features <- setdiff(names(tx_model_top_25), "outcome")
+
+```
+
+## Univariate Distributions {.scrollable}
+
+```{r plot-univariates, results='asis'}
+
+# Function to plot a feature against binary outcome
+plot_univariate_binary_target <- function(df, feature, target = "outcome") {
+  x <- df[[feature]]
+
+  is_binary <- is.numeric(x) &&
+    n_distinct(x, na.rm = TRUE) == 2 &&
+    all(na.omit(x) %in% c(0, 1))
+
+  # Convert to factor as needed
+  if (is.factor(x) || is.character(x) || n_distinct(x, na.rm = TRUE) <= 5 || is_binary) {
+    df[[feature]] <- if (is_binary) {
+      factor(df[[feature]], levels = c(0, 1), labels = c("No", "Yes"))
+    } else {
+      factor(df[[feature]])
+    }
+
+    plot_data <- df %>%
+      count(.data[[feature]], .data[[target]]) %>%
+      complete(!!sym(feature), !!sym(target), fill = list(n = 0)) %>%
+      mutate(across(everything(), as.factor))
+
+    ggplot(plot_data, aes_string(x = feature, y = "n", fill = target)) +
+      geom_bar(stat = "identity", position = "dodge") +
+      labs(
+        title = paste("Distribution of", feature, "by Outcome"),
+        x = feature,
+        y = "Count",
+        fill = "Outcome"
+      ) +
+      theme_minimal()
+
+  } else {
+    ggplot(df, aes(x = factor(.data[[target]]), y = .data[[feature]], fill = factor(.data[[target]]))) +
+      geom_boxplot(alpha = 0.7) +
+      labs(
+        title = paste("Boxplot of", feature, "by Outcome"),
+        x = "Outcome",
+        y = feature,
+        fill = "Outcome"
+      ) +
+      theme_minimal()
+  }
+}
+
+# Generate and display all plots
+plots <- lapply(features, function(f) plot_univariate_binary_target(tx_model_top_25, f))
+names(plots) <- features
+
+for (p in plots) {
+  print(p)
+  cat("\n<br><br>\n")
+  cat("\n<br><br>\n")
+}
+
+
+```
+
+
+## Updated CatBoost Feature Importances
+
+```{r catboost-model, warning=FALSE, message=FALSE}
+
+library(catboost)
+library(purrr)
+library(DT)
+
+# Prepare data
+X <- tx_model_top_25 %>% 
+  select(-outcome) %>%
+  mutate(across(where(is.character), as.factor))  # convert strings to factors
+
+y <- tx_model_top_25$outcome
+
+X_pool <- catboost.load_pool(
+  data = X,
+  label = tx_model_top_25$outcome
+)
+
+
+# Convert all to numeric matrix (CatBoost handles factors internally)
+X_pool <- catboost.load_pool(data = X, label = y)
+
+# Train model ===
+model <- catboost.train(
+  learn_pool = X_pool,
+  params = list(
+    loss_function = "Logloss",
+    iterations = 100,
+    learning_rate = 0.15,
+    depth = 6,
+    verbose = 0
+  )
+)
+
+# Get feature importances
+feature_importance <- catboost.get_feature_importance(model, pool = X_pool)
+
+# Convert to tidy format with enframe
+importance_df <- as.data.frame(feature_importance) %>%
+  mutate(feature = rownames(.)) %>%
+  rename(importance = V1) %>%
+  filter(importance > 0) %>%
+  select(feature, importance) %>% 
+  arrange(desc(importance))
+
+```
+
+
+```{r feature-importance-update, warning=FALSE, message=FALSE}
+
+# Compute PDP slope for direction of effect
+compute_direction <- function(model, data, feature, grid_size = 100) {
+  original_type <- class(data[[feature]])
+
+  grid_vals <- if (is.numeric(data[[feature]])) {
+    quantile(unique(data[[feature]]), probs = seq(0.05, 0.95, length.out = grid_size), na.rm = TRUE)
+  } else {
+    unique(data[[feature]])
+  }
+
+  pd_df <- data.frame()
+
+  for (val in grid_vals) {
+    new_data <- data
+
+    if (original_type == "factor") {
+      new_data[[feature]] <- factor(val, levels = levels(data[[feature]]))
+    } else {
+      new_data[[feature]] <- val
+    }
+
+    new_data <- new_data %>%
+      mutate(across(where(is.character), as.factor))
+
+    new_pool <- catboost.load_pool(data = new_data)
+    preds <- catboost.predict(model, new_pool, prediction_type = "Probability")
+    pd_df <- rbind(pd_df, data.frame(Value = val, Predicted = mean(preds)))
+  }
+
+  # Return slope of simple linear model: Predicted ~ Value
+  if (nrow(pd_df) > 1 && is.numeric(pd_df$Value)) {
+    coef(lm(Predicted ~ Value, data = pd_df))[2]  # slope
+  } else {
+    NA
+  }
+}
+
+# Add direction of effect
+importance_df$direction <- map_dbl(importance_df$feature, ~ compute_direction(model, X, .x))
+
+# Convert direction to label
+importance_df <- importance_df %>%
+  mutate(effect = case_when(
+    is.na(direction) ~ "n/a",
+    direction > 0 ~ "↑ Increases risk",
+    direction < 0 ~ "↓ Decreases risk",
+    TRUE ~ "Neutral"
+  ))
+
+```
+
+
+```{r catboost-feature-importances, warning=FALSE, message=FALSE}
+
+# View 
+datatable(
+  importance_df %>% select(feature, importance, effect),
+  rownames = FALSE,
+  options = list(
+    pageLength = 15,
+    columnDefs = list(
+      list(className = 'dt-left', targets = "_all")
+    )
+  )
+)
+
+```
+
+## CatBoost Partial Dependence Plots - Uncalibrated {.scrollable}
+
+```{r catboost-pdp, warning=FALSE, message=FALSE}
+
+compute_partial_dependence <- function(model, data, feature, grid_size = 25) {
+  # Save original type of column
+  original_type <- class(data[[feature]])
+
+  unique_vals <- sort(unique(data[[feature]]))
+  grid_vals <- if (is.numeric(data[[feature]])) {
+    quantile(unique_vals, probs = seq(0.05, 0.95, length.out = grid_size), na.rm = TRUE)
+  } else {
+    unique_vals
+  }
+
+  pd_df <- data.frame()
+
+  for (val in grid_vals) {
+    new_data <- data
+
+    # Restore original type
+    if (original_type == "factor") {
+      new_data[[feature]] <- factor(val, levels = levels(data[[feature]]))
+    } else if (original_type == "character") {
+      new_data[[feature]] <- as.character(val)
+    } else {
+      new_data[[feature]] <- val
+    }
+
+    # Make sure other categorical features are preserved
+    new_data <- new_data %>%
+      mutate(across(where(is.character), as.factor))
+
+    new_pool <- catboost.load_pool(
+      data = new_data
+    )
+
+    preds <- catboost.predict(model, new_pool, prediction_type = "Probability")
+    pd_df <- rbind(pd_df, data.frame(Value = val, Predicted = mean(preds)))
+  }
+
+  pd_df
+}
+
+```
+
+```{r catboost-pdp-plot, warning=FALSE, message=FALSE, results='asis'}
+
+# Generate and plot PDPs
+for (f in importance_df$feature) {
+  pdp_df <- compute_partial_dependence(model, X, f, grid_size = 100)
+  
+   p <- ggplot(pdp_df, aes(x = Value, y = Predicted)) +
+    geom_point(alpha = 0.6, color = "#1F77B4") +
+    geom_smooth(method = "loess", se = FALSE, color = "darkred", linewidth = 0.8) +
+    labs(
+      title = paste("Partial Dependence (Scatter):", f),
+      x = f,
+      y = "Predicted Probability"
+    ) +
+    theme_minimal()
+
+  
+  print(p)
+  cat("\n<br><br>\n")
+  cat("\n<br><br>\n")
+
+}
+```

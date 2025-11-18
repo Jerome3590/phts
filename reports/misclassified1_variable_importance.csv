@@ -1,0 +1,16 @@
+"variable","importance"
+"bmi_at_transplant",1313.78282828283
+"serum_albumin_at_transplant",1239.40962621608
+"egfr_at_transplant",1174.19474571625
+"recipient_weight_at_transplant",956.63443963444
+"bun_at_transplant",754.067045260593
+"bmi_at_transplant_bin",584.722222222222
+"alt_at_transplant",378.579365079365
+"medical_history_at_listing",190.002525252525
+"pra_max_at_listing",188.725951268962
+"bun_at_transplant_bin",170.279642301148
+"serum_albumin_at_transplant_bin",148.828853046595
+"surgeries_prior_to_listing",105.642857142857
+"ecmo_at_transplant",90.7407407407408
+"primary_etiology",77.3358585858585
+"pra_max_at_listing_bin",73.5

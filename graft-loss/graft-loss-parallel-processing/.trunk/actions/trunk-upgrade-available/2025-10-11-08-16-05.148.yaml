@@ -1,0 +1,15 @@
+action_id: trunk-upgrade-available
+date: 2025-10-11 08:16:05
+run: trunk upgrade --notify --allow-daemon-start=false
+run_from: ""
+trigger: schedule 1h
+result:
+  exit_code: 1
+  out: ""
+  err: Exception occurred while executing 'trunk-upgrade-available'. See .trunk\out\FYqfJ.yaml for details.
+  error_path: C:\Projects\phts\graft-loss-parallel-processing\.trunk\out\FYqfJ.yaml
+timestamp: 1760170565
+full_timestamp:
+  nanos: 148901000
+  seconds: 1760170565
+trunk_version: 1.25.0

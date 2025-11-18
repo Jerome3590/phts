@@ -1,0 +1,15 @@
+action_id: trunk-whoami
+date: 2025-10-09 04:16:05
+run: trunk whoami
+run_from: ""
+trigger: schedule 24h+1h
+result:
+  exit_code: 1
+  out: ""
+  err: Exception occurred while executing 'trunk-whoami'. See .trunk\out\F3iJ8.yaml for details.
+  error_path: C:\Projects\phts\graft-loss-parallel-processing\.trunk\out\F3iJ8.yaml
+timestamp: 1759983365
+full_timestamp:
+  nanos: 181448000
+  seconds: 1759983365
+trunk_version: 1.25.0
