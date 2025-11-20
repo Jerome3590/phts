@@ -1,8 +1,8 @@
 # Parallel Processing Implementation: graft-loss-parallel-processing
 
-## Status: ACTIVE - Parallel Processing Code
+## Status: FUTURE PARALLEL PROCESSING CODE
 
-This directory contains parallel processing implementations and utilities for the graft loss prediction pipeline. The code here is used to parallelize the pipeline after initial verification in unparallelized mode.
+This directory contains parallel processing implementations that will be integrated into the main pipeline **after** the unparallelized version is verified and working correctly. Currently, the pipeline runs in unparallelized mode for verification.
 
 **Location**: `graft-loss/graft-loss-parallel-processing/`
 
@@ -47,9 +47,9 @@ This directory contains:
 - Used for initial verification and development
 - Simpler, easier to debug
 
-**Parallel Processing** (`parallel_processing/graft-loss-parallel-processing/`):
+**Parallel Processing** (`graft-loss/graft-loss-parallel-processing/`):
 - Enhanced versions with parallelization
-- Used for production runs and large-scale analysis
+- Used for production runs and large-scale analysis (after unparallelized verification)
 - Optimized for performance and resource utilization
 
 ## Usage
