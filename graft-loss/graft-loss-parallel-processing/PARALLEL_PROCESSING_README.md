@@ -4,7 +4,7 @@
 
 This directory contains parallel processing implementations and utilities for the graft loss prediction pipeline. The code here is used to parallelize the pipeline after initial verification in unparallelized mode.
 
-**Location**: `parallel_processing/graft-loss-parallel-processing/`
+**Location**: `graft-loss/graft-loss-parallel-processing/`
 
 ## Purpose
 
@@ -71,5 +71,5 @@ After verifying the pipeline works in unparallelized mode:
 The active pipeline code is in:
 - `graft-loss/scripts/` - Main pipeline scripts (unparallelized)
 - `graft-loss/R/` - Utility functions
-- `parallel_processing/graft-loss-parallel-processing/` - Parallel processing implementations
+- `graft-loss/graft-loss-parallel-processing/` - Parallel processing implementations
 
