@@ -1,6 +1,15 @@
-# Graft Loss Analytical Pipeline
+# PHTS Graft Loss Prediction Pipeline
 
-This repository contains a comprehensive analytical pipeline for predicting pediatric heart transplant graft loss, implemented in R. The workflow replicates and extends the methodology from Wisotzkey et al. (2023), incorporating multiple survival modeling approaches with robust feature selection and evaluation.
+This repository contains a comprehensive analytical pipeline for predicting pediatric heart transplant graft loss using data from the Pediatric Heart Transplant Society (PHTS). The workflow replicates and extends the methodology from Wisotzkey et al. (2023), incorporating multiple survival modeling approaches with robust feature selection and evaluation.
+
+## Overview
+
+The PHTS Graft Loss Prediction Pipeline is a complete end-to-end analytical framework for:
+- **Data preprocessing** and feature engineering from PHTS registry data
+- **Feature selection** using multiple methods (RSF, CatBoost, AORSF)
+- **Survival model fitting** with multiple algorithms
+- **Model evaluation** using dual C-index calculations (time-dependent and time-independent)
+- **Comprehensive reporting** with tables, figures, and documentation
 
 ## Project Structure
 
@@ -271,25 +280,25 @@ The pipeline supports analysis across multiple time periods:
 - **Set**: `EXCLUDE_COVID=1`
 - **Use**: Sensitivity analysis excluding COVID-affected years
 
-## Usage Examples
+## Quick Start
 
 ### Basic Pipeline Run
 
 ```bash
-"/c/Program Files/R/R-4.5.1/bin/Rscript.exe" scripts/run_pipeline.R
+"/c/Program Files/R/R-4.5.1/bin/Rscript.exe" graft-loss/scripts/run_pipeline.R
 ```
 
 ### Original Study Period
 
 ```bash
-ORIGINAL_STUDY=1 "/c/Program Files/R/R-4.5.1/bin/Rscript.exe" scripts/run_pipeline.R
+ORIGINAL_STUDY=1 "/c/Program Files/R/R-4.5.1/bin/Rscript.exe" graft-loss/scripts/run_pipeline.R
 ```
 
 ### Monte Carlo Cross-Validation
 
 ```bash
 MC_CV=1 MC_MAX_SPLITS=1000 USE_CATBOOST=1 \
-"/c/Program Files/R/R-4.5.1/bin/Rscript.exe" scripts/run_pipeline.R
+"/c/Program Files/R/R-4.5.1/bin/Rscript.exe" graft-loss/scripts/run_pipeline.R
 ```
 
 ### Feature Importance Replication
@@ -303,7 +312,7 @@ This runs RSF, CatBoost, and AORSF feature selection across all three time perio
 
 ## Output Structure
 
-### Model Artifacts (`data/models/`)
+### Model Artifacts (`graft-loss/data/models/`)
 
 - `model_orsf.rds`, `model_rsf.rds`, `model_xgb.rds`: Fitted models
 - `model_comparison_index.csv`: Model metadata and data variants
@@ -322,7 +331,7 @@ This runs RSF, CatBoost, and AORSF feature selection across all three time perio
 - `cindex_comparison_all_methods.csv`: Combined C-index comparison
 - `summary_statistics.csv`: Sample sizes, event rates, C-indexes
 
-### Documentation (`doc/`)
+### Documentation (`graft-loss/doc/`)
 
 - `predicting_graft_loss.Rmd`: Main manuscript/report
 - `jacc.csl`, `refs.bib`: Citation style and bibliography
@@ -404,6 +413,13 @@ This runs RSF, CatBoost, and AORSF feature selection across all three time perio
 - **Concordance Index README**: Detailed explanation of C-index implementation
 - **Updated Pipeline README**: Reflects latest structure and capabilities
 
+## Requirements
+
+- **R**: Version 4.5.1 or higher
+- **R Packages**: See `graft-loss/scripts/packages.R` for complete list
+- **Python** (optional): For CatBoost integration (`python`, `catboost`, `pandas`, `numpy`)
+- **Data**: PHTS registry data files (contact repository maintainer for access)
+
 ## References
 
 - Wisotzkey et al. (2023). Risk factors for 1-year allograft loss in pediatric heart transplant. *Pediatric Transplantation*.
@@ -415,3 +431,4 @@ For questions or issues, please refer to the documentation in each component dir
 ---
 
 **Note**: The pipeline is modular; each script can be run independently or as part of the full workflow. For detailed usage, refer to the README files in each component directory and the inline comments within scripts.
+
