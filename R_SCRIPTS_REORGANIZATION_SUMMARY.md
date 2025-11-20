@@ -3,7 +3,7 @@
 ## Completed Actions
 
 ### ✅ Phase 1: Archive Legacy Directory
-- **Archived**: `graft-loss/graft-loss-parallel-processing/` → `archive/graft-loss-parallel-processing/`
+- **Archived**: `graft-loss/graft-loss-parallel-processing/` → `parallel_processing/graft-loss-parallel-processing/`
 - **Files moved**: 185 R files + documentation
 - **Added**: `ARCHIVE_README.md` explaining archive status
 - **Impact**: Reduced active R files from 260 to 73 in `graft-loss/`
@@ -67,7 +67,7 @@ tests/
 ### Archived Code
 
 ```
-archive/
+parallel_processing/
 └── graft-loss-parallel-processing/  # Historical/development code (185 R files)
     ├── ARCHIVE_README.md
     ├── scripts/R/                   # Parallel processing implementations
@@ -88,7 +88,7 @@ archive/
 ### After Reorganization
 - **Active R files in graft-loss/**: 73 (17 scripts + 54 utilities + 2 helpers)
 - **Test scripts**: 8 (organized in `tests/`)
-- **Archived R files**: 185 (in `archive/`)
+- **Archived R files**: 185 (in `parallel_processing/`)
 - **Total tracked**: Still 260 files (just better organized)
 
 ## Benefits Achieved
@@ -117,5 +117,5 @@ archive/
 
 - `R_SCRIPTS_REORGANIZATION_PLAN.md` - Detailed reorganization plan
 - `R_SCRIPTS_REORGANIZATION_SUMMARY.md` - This summary document
-- `archive/graft-loss-parallel-processing/ARCHIVE_README.md` - Archive explanation
+- `parallel_processing/graft-loss-parallel-processing/ARCHIVE_README.md` - Archive explanation
 

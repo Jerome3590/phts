@@ -31,16 +31,17 @@
 ## Reorganization Strategy
 
 ### Phase 1: Archive Legacy Directory (Low Risk)
-**Action**: Move `graft-loss-parallel-processing/` to `archive/` directory
+**Action**: Move `graft-loss-parallel-processing/` to `parallel_processing/` directory
 
 **Rationale**:
 - Not actively used by main scripts
 - Contains historical/development code
 - Preserves documentation and examples
 - Reduces confusion about which scripts are active
+- More descriptive name than "archive" (indicates parallel processing content)
 
 **Steps**:
-1. Create `archive/graft-loss-parallel-processing/`
+1. Create `parallel_processing/graft-loss-parallel-processing/`
 2. Move entire directory
 3. Add README explaining it's archived
 4. Update main README to note archived location
@@ -78,10 +79,10 @@ tests/
 
 ```bash
 # Create archive directory
-mkdir -p archive
+mkdir -p parallel_processing
 
 # Move directory
-git mv graft-loss/graft-loss-parallel-processing archive/
+git mv graft-loss/graft-loss-parallel-processing parallel_processing/
 
 # Create archive README
 ```

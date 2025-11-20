@@ -4,6 +4,8 @@
 
 This directory has been archived as of the R script reorganization. It contains historical development code, parallel processing implementations, and documentation from earlier iterations of the pipeline.
 
+**Location**: This archive is now located in `parallel_processing/graft-loss-parallel-processing/` (renamed from `archive/` for clarity).
+
 ## Contents
 
 - **scripts/R/**: Parallel processing implementations and utilities

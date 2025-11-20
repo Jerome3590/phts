@@ -367,7 +367,7 @@ Rscript scripts/ec2_diagnostics.R
 
 ## References
 
-- **Archived Documentation**: `archive/graft-loss-parallel-processing/README.md` (comprehensive historical documentation)
+- **Archived Documentation**: `parallel_processing/graft-loss-parallel-processing/README.md` (comprehensive historical documentation)
 - **Utility Functions**: `graft-loss/R/utils/parallel_utils.R` (roxygen documentation)
 - **Main Implementation**: `graft-loss/scripts/04_fit_model.R` (inline comments)
 - **Orchestration**: `graft-loss/scripts/run_three_datasets.R` (orchestration-level parallelism)
