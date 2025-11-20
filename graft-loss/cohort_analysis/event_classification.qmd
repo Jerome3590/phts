@@ -1,0 +1,1824 @@
+---
+title: "Event Classification Model"
+author: "R. Jerome Dixon"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+format:
+  html:
+    toc: true
+    toc-depth: 6
+    code-fold: true
+    code-summary: "Show the code"
+    embed-resources: true
+    default-image-extension: svg
+    dpi: 600
+editor: 
+  markdown: 
+    wrap: 72
+---
+
+## Overview
+
+This analysis examines predictive models for pediatric heart transplant
+outcomes by implementing four classification models (LASSO, CatBoost, 
+CatBoost Random Forest, and Traditional Random Forest) to provide a 
+comprehensive risk assessment and identify predictive factors for event 
+classification across the entire patient population.
+
+### Modeling Strategy: Unified vs. Cohort-Based
+
+This analysis employs a **unified modeling strategy**, where a single model is trained on the entire dataset. This approach contrasts with a **cohort-based strategy**, where separate models are built for distinct subgroups (e.g., by disease etiology). The choice between these strategies involves a fundamental trade-off between **statistical power** and **clinical specificity**.
+
+**Benefits of the Unified (Non-Cohort) Approach:**
+
+1.  **Increased Statistical Power**: By leveraging all available data, the model learns from a larger sample size, leading to more stable and reliable estimates of predictor effects. This is particularly advantageous when individual subgroups are small, as it mitigates the risk of overfitting.
+2.  **Simplicity and Generalizability**: Developing and maintaining a single model is more straightforward from an operational standpoint. The resulting model serves as a general risk assessment tool applicable to the entire patient population.
+3.  **Discovery of Universal Predictors**: This approach excels at identifying strong, universal risk factors that are significant across all patient types, providing a broad understanding of the most critical outcome drivers.
+
+**Benefits of a Cohort-Based Approach (for future consideration):**
+
+1.  **Enhanced Specificity and Precision**: Different patient groups may exhibit unique risk factor profiles. A cohort-specific model can capture these distinct patterns, potentially yielding more accurate predictions for individuals within that subgroup.
+2.  **Greater Clinical Relevance**: Clinicians often reason about patient subgroups. Models tailored to specific cohorts (e.g., Congenital Heart Disease vs. Myocarditis) can provide more actionable, context-specific insights.
+3.  **Uncovering Hidden Relationships**: A variable might be highly predictive in one cohort but irrelevant in another. A unified model could average out and obscure these important, group-specific signals.
+
+By adopting a unified approach, this analysis prioritizes the identification of robust, generalizable predictors of transplant outcomes, establishing a foundational model of overall risk.
+
+### Modeling Approaches
+
+This study employs four distinct machine learning methodologies, each
+offering unique advantages for pediatric heart transplant outcome
+prediction:
+
+**1. LASSO (Least Absolute Shrinkage and Selection Operator) for Classification**
+
+-   **Method**: A logistic regression model regularized with an L1
+    penalty for feature selection and binary outcome prediction.
+-   **Strengths for Our Use Case**:
+    -   **Clinical Interpretability**: Provides clear coefficient values
+        (log-odds ratios) that clinicians can easily understand.
+    -   **Feature Selection**: Automatically identifies the most
+        impactful variables on outcomes, reducing model complexity.
+    -   **Transparent Decision Making**: Linear relationships in the
+        log-odds allow for straightforward risk factor quantification.
+    -   **Regulatory Compliance**: The logistic model is a well-established
+        method with extensive validation in medical literature.
+    -   **Handles Imbalanced Data**: Can be adapted for imbalanced
+        outcome distributions common in medical datasets.
+-   **Limitations**:
+    -   **Linear Assumptions**: Models the log-odds as a linear
+        combination of predictors, potentially missing complex
+        non-linear relationships.
+    -   **Feature Interactions**: Limited ability to capture
+        interactions between clinical variables without explicit
+        specification.
+    -   **Outcome Threshold**: Requires setting a probability threshold
+        for binary classification decisions.
+
+**2. CatBoost (Categorical Boosting) for Classification**
+
+-   **Method**: Gradient boosting classification model using binary
+    cross-entropy loss for outcome prediction.
+-   **Strengths for Our Use Case**:
+    -   **Categorical Handling**: Excellent performance with medical
+        coding systems (diagnoses, procedures) without extensive
+        preprocessing.
+    -   **Non-linear Relationships**: Captures complex interactions
+        between donor, recipient, and procedural factors.
+    -   **Robust Performance**: Advanced regularization techniques
+        prevent overfitting in medical datasets.
+    -   **Missing Data Tolerance**: Handles incomplete medical records
+        gracefully.
+    -   **Classification Performance**: Optimized for binary classification
+         metrics like AUC, Brier Score, accuracy, precision, and recall.
+         **Calibration**: Provides probability estimates that can be assessed
+         for calibration quality.
+-   **Limitations**:
+    -   **Black Box Nature**: Less interpretable than a standard logistic
+        model for individual patient risk explanation.
+    -   **Computational Complexity**: Requires more computational
+        resources and hyperparameter tuning.
+
+**3. CatBoost Random Forest for Classification**
+
+-   **Method**: CatBoost configured with Random Forest-like parameters
+    to create an ensemble of independent decision trees for outcome prediction.
+-   **Strengths for Our Use Case**:
+    -   **Advanced Tree Algorithms**: Leverages CatBoost's sophisticated
+        tree construction algorithms while maintaining Random Forest
+        ensemble properties.
+    -   **Categorical Feature Handling**: Inherits CatBoost's excellent
+        categorical variable processing capabilities.
+    -   **Ensemble Diversity**: Multiple independent trees provide
+        robust predictions across different patient populations.
+    -   **Feature Importance**: Provides clear feature importance rankings
+        for clinical interpretation.
+    -   **Classification Performance**: Optimized for binary classification
+         metrics with ensemble stability. **Calibration**: Ensemble predictions
+         provide well-calibrated probability estimates.
+-   **Limitations**:
+    -   **Symmetric Trees**: CatBoost's tree structure may limit
+        the diversity of tree shapes compared to traditional Random Forest.
+    -   **Parameter Sensitivity**: Requires careful tuning of Random
+        Forest-specific parameters within CatBoost framework.
+
+**4. Traditional Random Forest for Classification**
+
+-   **Method**: Classic ensemble classification using independent decision
+    trees with majority voting for outcome prediction, implemented via
+    the `randomForest` package.
+-   **Strengths for Our Use Case**:
+    -   **True Ensemble Diversity**: Independent tree construction
+        ensures maximum diversity in the ensemble.
+    -   **Non-parametric**: Makes no assumptions about underlying
+        distributions or relationships.
+    -   **Feature Importance**: Provides clear Mean Decrease in Gini
+        importance rankings.
+    -   **Classification Performance**: Optimized for classification
+        metrics, ideal for binary outcome prediction. **Calibration**: True ensemble diversity often leads to
+        well-calibrated probability estimates.
+    -   **Proven Methodology**: Well-established ensemble method with
+        extensive validation in medical literature.
+-   **Limitations**:
+    -   **Interpretability**: Tree ensemble methods are less
+        interpretable than linear models for individual predictions.
+    -   **Computational Intensity**: More complex than traditional
+        classification methods, requiring careful parameter tuning.
+
+### Cohort-Specific Analysis Rationale
+
+The analysis compares CHD patients (congenital conditions) versus
+Myocarditis/Cardiomyopathy patients (acquired conditions) because:
+
+-   **Different Pathophysiology**: Congenital versus acquired heart
+    disease may respond differently to transplantation.
+-   **Age-Related Factors**: CHD patients are often transplanted at
+    younger ages with different growth considerations.
+-   **Surgical Complexity**: CHD cases may involve more complex anatomy
+    requiring different risk stratification.
+-   **Long-term Outcomes**: Different disease etiologies may have
+    distinct outcome patterns.
+-   **Clinical Decision Making**: Cohort-specific models may provide
+    more accurate risk prediction for treatment planning.
+
+This multi-method classification approach allows for comprehensive
+model validation, with LASSO providing interpretable linear
+relationships, CatBoost capturing complex non-linear patterns,
+CatBoost Random Forest leveraging advanced tree algorithms, and
+Traditional Random Forest ensuring true ensemble diversity. All four
+methods utilize classification metrics for consistent evaluation of
+binary outcomes across different modeling frameworks.
+
+### Data Loading
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+
+library(readr)
+library(rlang)
+library(dplyr)
+library(glmnet)
+library(caret)
+library(tidyverse)
+library(tibble)
+library(DT)
+library(randomForest)
+library(catboost)
+library(pROC)
+library(here)
+
+set.seed(1997)
+
+source("helpers.R")
+
+```
+
+
+```{r echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+# Load the preprocessed model data
+model_data <- read_csv("preprocessed_model_data.csv", show_col_types = FALSE)
+
+# Display basic information about the dataset
+cat("=== Dataset Overview ===\n")
+cat("Dataset dimensions:", paste(dim(model_data), collapse = " x "), "\n")
+cat("Columns:", ncol(model_data), "\n")
+cat("Rows:", nrow(model_data), "\n\n")
+
+# Check if ev_type variable exists (1-year survival classification target)
+if ("outcome" %in% names(model_data)) {
+  cat("outcome variable found ✓\n")
+  cat("outcome variable type:", class(model_data$outcome), "\n")
+  cat("outcome summary:\n")
+  print(table(model_data$outcome))
+  cat("Event rate (outcome = 1):", round(mean(model_data$outcome, na.rm = TRUE) * 100, 2), "%\n")
+} else {
+  stop("outcome variable not found in the dataset!")
+}
+
+```
+
+### Model Data
+
+```{r echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+# For classification models, we use `outcome` as the 1-year survival classification target
+# No survival analysis variables (ev_time, days_to_last_followup) are needed
+
+# Verify the `outcome` variable is properly formatted
+cat("=== Classification Data Overview ===\n")
+cat("Total observations:", nrow(model_data), "\n")
+cat("outcome variable summary:\n")
+print(table(model_data$outcome))
+cat("Event rate (outcome = 1):", round(mean(model_data$outcome, na.rm = TRUE) * 100, 2), "%\n")
+
+# Check for any missing values in outcome
+cat("Missing values in outcome:", sum(is.na(model_data$outcome)), "\n")
+
+# Ensure outcome is numeric (0 or 1)
+model_data <- model_data %>%
+  mutate(outcome = as.numeric(outcome))
+
+# Verify outcome is binary
+if (!all(model_data$outcome %in% c(0, 1, NA))) {
+  warning("outcome variable contains non-binary values!")
+  cat("Unique outcome values:", unique(model_data$outcome), "\n")
+}
+
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+model_features <- model_data %>% 
+  colnames() %>% 
+  as_tibble()
+
+# View 
+datatable(
+  model_features,
+  rownames = FALSE,
+  options = list(
+    pageLength = 15,
+    columnDefs = list(
+      list(className = 'dt-left', targets = "_all")
+    )
+  )
+)
+```
+
+
+### Methods: Pipeline Summary
+
+-   **Data**: Load `preprocessed_model_data.csv` into `model_data`.
+
+-   **Data Integration**: Use the `outcome` variable as the binary
+    classification target (1 = death or graft loss occurred, 0 = censored/no event).
+
+-   **Feature filtering (classification models)**: Create `*_class_model` by
+    removing variables matching `classification_lagging_keywords` for all
+    models. Exclude identifiers, `outcome`, and `transplant_year` from
+    predictors.
+
+-   **Unified train/test split**: Use
+    `create_unified_train_test_split()` function with `set.seed(1997)`
+    for reproducible 80/20 splits across all models.
+
+-   **Reproducibility**: Set `set.seed(1997)` before each model fit.
+
+-   **LASSO (classification)**: `cv.glmnet(..., family = "binomial", alpha = 1)`
+    using logistic regression with L1 penalty. Features exclude
+    identifiers, `outcome`, `transplant_year`. Evaluation: AUC, Brier Score, Accuracy,
+    Precision, Recall, F1; report feature importance with actual feature names.
+
+-   **CatBoost (classification)**: Gradient boosting with binary cross-entropy loss
+    (`loss_function = "Logloss"`). Evaluation: AUC, Brier Score, Accuracy, Precision,
+    Recall, F1; report feature importance with normalized values from 0 to 1.
+
+-   **CatBoost Random Forest (classification)**: CatBoost configured with Random
+    Forest parameters (`iterations = 500`, `depth = 8`, `learning_rate = 1.0`,
+    `bootstrap_type = "Bernoulli"`, `subsample = 0.8`, `rsm = 0.5`) for
+    ensemble classification. Evaluation: AUC, Brier Score, Accuracy, Precision, Recall, F1;
+    report feature importance with normalized values from 0 to 1.
+
+-   **Traditional Random Forest (classification)**: `randomForest(outcome ~ .)` after
+    removing constant columns and excluding identifiers from predictors. Evaluation:
+    AUC, Brier Score, Accuracy, Precision, Recall, F1; report feature importance with Mean
+    Decrease in Gini values.
+
+-   **Evaluation and reporting**: Predictions and metrics computed on
+     the held-out test set. **Calibration analysis** performed to assess
+     probability calibration quality using calibration plots, slope, intercept,
+     and calibration Brier score. Tabular outputs rendered with
+     `DT::datatable`.
+
+-   **Comparison tables**: Aggregate metrics across models
+    into summary tables for side-by-side comparison.
+
+**Unified Classification Modeling**: All four modeling frameworks (LASSO,
+CatBoost, CatBoost Random Forest, and Traditional Random Forest) now use
+classification approaches, for direct comparison of classification metrics
+and consistent evaluation of binary outcomes across different modeling
+frameworks.
+
+```{r classification-lagging-keywords}
+
+# Unified classification modeling keywords (variables to exclude from all models)
+
+classification_lagging_keywords <- c(
+  # Identifiers and outcomes
+  #"ptid_e",
+  "transplant_year", "primary_etiology",
+  
+  # Time variables (not needed for classification)
+  "ev_", "days_to_last_followup",
+  
+  # Donor-specific variables
+  "graft_loss", "int_graft_loss", "dtx_", "cc_", "isc_oth",
+  "dcardiac", "dcon", "dpri", "dpricaus", "rec_", "papooth",
+  "dneuro", "sdprathr", "int_dead", "listing_year", "cpathneg",
+  "dcauseod",
+  
+  # Demographics (if not clinically relevant)
+  "race", "sex", "drace_b", "rrace_a", "hisp", "lscntry",
+  
+  # Transplant-specific variables
+  "dreject", "dsecaccsEmpty", "dmajbldEmpty", "pishltgr1R", 
+  "drejectEmpty", "drejectHyperacute", "pishltgrEmpty",
+  "pishltgr", "dmajbld", "dsecaccs", "dsecaccs_bin", 
+  
+  # Clinical variables to exclude
+  "dx_cardiomyopathy", "deathspc", "dlist", "pmorexam", 
+  "patsupp", "concod", "pcadrem", "pcadrec", "pathero", 
+  "pdiffib", "dmalcanc", "alt_tx", "age_death", "pacuref",
+  "cpbypass",
+  
+  # Additional variables
+  "lsvcma"
+)
+
+```
+
+### Unified Modeling Pipeline
+
+#### Data Summary & Split
+
+```{r echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+# Full Cohort summary
+cat("Full Cohort Size:", nrow(model_data), "patients\n")
+cat("outcome Distribution:\n")
+print(table(model_data$outcome))
+cat("Event Rate (outcome = 1):", round(mean(model_data$outcome, na.rm = TRUE) * 100, 2), "%\n")
+
+# Full Cohort descriptive statistics
+full_summary <- model_data %>%
+  select(where(is.numeric)) %>%
+  summarise(across(everything(), list(
+    mean = ~ round(mean(.x, na.rm = TRUE), 2),
+    median = ~ round(median(.x, na.rm = TRUE), 2),
+    sd = ~ round(sd(.x, na.rm = TRUE), 2)
+  ))) %>%
+  pivot_longer(everything(), names_to = "stat", values_to = "value") %>%
+  separate(stat, into = c("variable", "statistic"), sep = "_(?=[^_]*$)") %>%
+  pivot_wider(names_from = statistic, values_from = value)
+
+# Display summary table
+datatable(
+  full_summary,
+  rownames = FALSE,
+  options = list(
+    pageLength = 10,
+    columnDefs = list(
+      list(className = 'dt-left', targets = "_all")
+    )
+  )
+)
+
+```
+
+```{r}
+
+# Create unified train/test split for the full cohort
+split <- create_unified_train_test_split(model_data, "Full", seed = 1997)
+
+# Extract split info
+train_indices <- split$split_info$train_indices
+test_indices <- split$split_info$test_indices
+train_data <- split$train_data
+test_data <- split$test_data
+
+# Verify the data split
+cat("\n=== Full Cohort Data Split ===\n")
+cat("Training set size:", nrow(train_data), "\n")
+cat("Test set size:", nrow(test_data), "\n")
+cat("Event rate (outcome = 1) in training:", round(mean(train_data$outcome, na.rm = TRUE) * 100, 2), "%\n")
+cat("Event rate (outcome = 1) in test:", round(mean(test_data$outcome, na.rm = TRUE) * 100, 2), "%\n")
+
+```
+
+#### LASSO Model
+
+```{r lasso-df, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+class_data <- model_data %>%
+  # Remove lagging keywords and variables starting with "sd"
+  select(
+    !(matches(paste(classification_lagging_keywords, collapse = "|")) | starts_with("sd"))
+  ) %>%
+  # Handle infinite values by converting them to NA
+  mutate(across(where(is.numeric), ~if_else(is.infinite(.), NA_real_, .))) %>%
+  # Remove any columns that are entirely empty
+  select(-where(~all(is.na(.)))) %>%
+  # Remove identifier columns
+  select(-ptid_e) %>%
+  # Ensure all predictors are numeric for glmnet
+  mutate(across(where(is.character), as.factor)) %>%
+  mutate(across(where(is.factor), as.numeric))
+
+# Remove constant columns
+constant_cols <- names(class_data)[sapply(class_data, function(x) {
+  length(unique(na.omit(x))) == 1
+})]
+if(length(constant_cols) > 0) {
+  class_data <- class_data %>% select(-all_of(constant_cols))
+}
+
+# Impute any remaining missing values
+class_data <- class_data %>%
+  mutate(across(everything(), ~if_else(is.na(.), median(., na.rm = TRUE), .)))
+
+# Final check for non-finite values
+if (any(!is.finite(as.matrix(class_data)))) {
+  stop("Data still contains NA/NaN/Inf values after cleaning. Please check the data source.")
+}
+
+cat("Classification LASSO - Final data dimensions:", paste(dim(class_data), collapse = " x "), "\n")
+
+```
+
+```{r lasso-train-test-split}
+
+# Prepare training data for LASSO
+cat("Preparing training data for LASSO...\n")
+train <- class_data[train_indices, ]
+test <- class_data[test_indices, ]
+
+# Add error checking for training data
+if (is.null(train) || nrow(train) == 0) {
+  stop("Failed to create training data from split")
+}
+
+cat("✓ Training data prepared successfully\n")
+
+# Add error checking for test data
+if (is.null(test) || nrow(test) == 0) {
+  stop("Failed to create test data from split")
+}
+
+cat("✓ Test data prepared successfully\n")
+
+# Prepare outcome and features
+y_train <- train$outcome
+x_train <- as.matrix(train %>% select(-outcome))
+
+y_test <- test$outcome
+x_test <- as.matrix(test %>% select(-outcome))
+
+# Verify the size of the new data frames
+cat("Training set size:", nrow(train), "\n")
+cat("Test set size:", nrow(test), "\n")
+cat("X_train dim:", paste(dim(x_train), collapse = " x "), "\n")
+cat("X_test dim:", paste(dim(x_test), collapse = " x "), "\n")
+
+```
+
+```{r classification-lasso-model-fit}
+
+# Add debugging information
+cat("Starting LASSO model fitting...\n")
+cat("x_train dimensions:", paste(dim(x_train), collapse = " x "), "\n")
+cat("y_train length:", length(y_train), "\n")
+cat("y_train summary:", table(y_train), "\n")
+
+# Fit classification LASSO with cross-validation on the TRAINING data ONLY
+# Note: Using type.measure = "auc" instead of "class" for imbalanced data
+# AUC focuses on ranking ability rather than classification error, which is
+# more robust when one class heavily dominates the dataset
+set.seed(1997)
+class_lasso_cv <- cv.glmnet(
+  x = x_train,  # TRAINING matrix
+  y = y_train,  # TRAINING outcome vector
+  family = "binomial",  # Binary classification
+  alpha = 1,  # L1 penalty (LASSO)
+  nfolds = 5,
+  type.measure = "auc"  # AUC is more robust for imbalanced data
+)
+
+# Add error checking for LASSO CV
+if (is.null(class_lasso_cv)) {
+  stop("Failed to fit LASSO cross-validation model")
+}
+
+cat("✓ LASSO cross-validation completed successfully\n")
+
+# Note: Using AUC-based cross-validation instead of classification error
+# This should help with imbalanced outcomes and prevent over-regularization
+
+# Get optimal lambda from cross-validation
+class_optimal_lambda <- class_lasso_cv$lambda.min
+
+cat("Classification LASSO - Optimal lambda:", round(class_optimal_lambda, 6), "\n")
+
+# Debug: Check outcome variable
+cat("Debug: Outcome variable checks:\n")
+cat("  Outcome column exists in train:", "outcome" %in% colnames(train), "\n")
+cat("  Outcome column exists in test:", "outcome" %in% colnames(test), "\n")
+cat("  y_train class:", class(y_train), "\n")
+cat("  y_test class:", class(y_test), "\n")
+cat("  y_train unique values:", unique(y_train), "\n")
+cat("  y_test unique values:", unique(y_test), "\n")
+cat("  y_train has NAs:", any(is.na(y_train)), "\n")
+cat("  y_test has NAs:", any(is.na(y_test)), "\n")
+
+# Ensure outcome is numeric
+if (!is.numeric(y_train)) {
+  warning("y_train is not numeric, converting...")
+  y_train <- as.numeric(as.character(y_train))
+}
+if (!is.numeric(y_test)) {
+  warning("y_test is not numeric, converting...")
+  y_test <- as.numeric(as.character(y_test))
+}
+
+# Debug: Check data quality
+cat("Debug: Data quality checks:\n")
+cat("  Outcome balance - 0s:", sum(y_train == 0), "1s:", sum(y_train == 1), "\n")
+cat("  Outcome proportion of 1s:", round(mean(y_train), 4), "\n")
+cat("  x_train has any variation:", any(apply(x_train, 2, function(x) length(unique(x)) > 1)), "\n")
+cat("  x_train column ranges:", paste(apply(x_train, 2, function(x) round(max(x) - min(x), 2)), collapse = ", "), "\n")
+
+# Check if outcome is too imbalanced
+if (mean(y_train) < 0.05 || mean(y_train) > 0.95) {
+  warning("Outcome is highly imbalanced - this may cause LASSO issues")
+  cat("  Consider using class weights or different sampling strategies\n")
+}
+
+# Debug: Check lambda values and CV results
+cat("Debug: Lambda range from CV:\n")
+cat("  Lambda min:", round(class_lasso_cv$lambda.min, 6), "\n")
+cat("  Lambda 1SE:", round(class_lasso_cv$lambda.1se, 6), "\n")
+cat("  CV AUC at min lambda:", round(max(class_lasso_cv$cvm), 4), "\n")
+cat("  Number of non-zero coefficients at min lambda:", sum(coef(class_lasso_cv, s = "lambda.min") != 0), "\n")
+cat("  Number of non-zero coefficients at 1SE lambda:", sum(coef(class_lasso_cv, s = "lambda.1se") != 0), "\n")
+
+# Check if lambda is reasonable
+if (class_optimal_lambda > 1) {
+  warning("Optimal lambda is very high (>1), this may cause all coefficients to be zero")
+  cat("  This suggests the model may be over-regularized\n")
+
+  # Try using lambda.1se instead, which is usually more conservative
+  cat("  Trying lambda.1se as alternative...\n")
+  class_optimal_lambda <- class_lasso_cv$lambda.1se
+  cat("  New lambda (1SE):", round(class_optimal_lambda, 6), "\n")
+
+  # If still too high, try a smaller value
+  if (class_optimal_lambda > 0.5) {
+    cat("  Lambda still too high, trying smaller value...\n")
+    # Find lambda that gives reasonable number of non-zero coefficients
+    lambda_seq <- class_lasso_cv$lambda[class_lasso_cv$lambda < 0.5]
+    if (length(lambda_seq) > 0) {
+      # Use the largest lambda that gives at least 5 non-zero coefficients
+      for (lam in rev(lambda_seq)) {
+        n_coefs <- sum(coef(class_lasso_cv, s = lam) != 0)
+        if (n_coefs >= 5) {
+          class_optimal_lambda <- lam
+          cat("  Selected lambda:", round(lam, 6), "with", n_coefs, "non-zero coefficients\n")
+          break
+        }
+      }
+    }
+  }
+}
+
+# Use the cross-validated glmnet fit directly (avoids mismatch when refitting)
+cat("Using cv.glmnet fitted model at lambda.min...\n")
+class_lasso_model <- class_lasso_cv$glmnet.fit
+
+# Add error checking for fitted model
+if (is.null(class_lasso_model)) {
+  stop("cv.glmnet did not return a fitted glmnet model")
+}
+cat("✓ Using cross-validated glmnet fit\n")
+
+# Debug: Check model coefficients
+cat("Debug: Model coefficient analysis:\n")
+class_coefs <- coef(class_lasso_model, s = class_optimal_lambda)
+cat("  Total coefficients:", length(class_coefs), "\n")
+cat("  Non-zero coefficients:", sum(class_coefs != 0), "\n")
+cat("  Intercept value:", round(class_coefs[1], 6), "\n")
+cat("  Non-zero coefficient values:", round(class_coefs[class_coefs != 0], 6), "\n")
+cat("  Coefficient range:", round(range(class_coefs), 6), "\n")
+
+# Check if model is meaningful
+if (sum(class_coefs != 0) <= 1) {
+  warning("Model has only intercept or very few non-zero coefficients")
+  cat("  This suggests the model may be over-regularized or data issues exist\n")
+}
+```
+
+##### Accuracy
+
+```{r lasso-model-prediction}
+
+# Probability predictions on TEST data
+cat("Making predictions on test data...\n")
+lasso_probabilities <- predict(
+  class_lasso_model,
+  newx = x_test,
+  s = class_optimal_lambda,
+  type = "response"
+)
+
+# Add error checking for predictions
+if (is.null(lasso_probabilities) || length(lasso_probabilities) == 0) {
+  stop("Failed to generate LASSO predictions")
+}
+
+cat("✓ LASSO predictions generated successfully\n")
+
+# Debug: Check prediction values
+cat("Debug: Prediction analysis:\n")
+cat("  Prediction length:", length(lasso_probabilities), "\n")
+cat("  Prediction range:", round(range(lasso_probabilities), 6), "\n")
+cat("  Prediction mean:", round(mean(lasso_probabilities), 6), "\n")
+cat("  Prediction unique values:", round(unique(lasso_probabilities), 6), "\n")
+cat("  Number of unique predictions:", length(unique(lasso_probabilities)), "\n")
+
+# Check if predictions are constant
+if (length(unique(lasso_probabilities)) == 1) {
+  warning("All predictions are identical - this indicates a model problem")
+  cat("  Constant prediction value:", unique(lasso_probabilities), "\n")
+  cat("  This usually means all coefficients are zero or model didn't fit properly\n")
+}
+
+# Clean and align predictions + actuals
+cat("Cleaning and aligning predictions and actuals...\n")
+valid_idx <- !is.na(y_test)
+if (sum(valid_idx) == 0) {
+  stop("No valid test cases found after removing NA values")
+}
+
+lasso_actuals <- y_test[valid_idx]
+lasso_predictions <- as.numeric(lasso_probabilities[valid_idx])
+
+# Check if we have enough data for ROC analysis
+if (length(lasso_actuals) < 10) {
+  warning("Very few test cases available for ROC analysis")
+}
+
+cat("✓ Data cleaning completed. Valid cases:", length(lasso_actuals), "\n")
+
+# Turn actual into a 0/1 factor for ROC
+actual_factor <- factor(lasso_actuals, levels = c(0, 1))
+
+# Validate predictions
+if (any(is.na(lasso_predictions))) {
+  warning("Some predictions are NA, removing them")
+  valid_pred_idx <- !is.na(lasso_predictions)
+  lasso_actuals <- lasso_actuals[valid_pred_idx]
+  lasso_predictions <- lasso_predictions[valid_pred_idx]
+  actual_factor <- factor(lasso_actuals, levels = c(0, 1))
+}
+
+if (any(!is.finite(lasso_predictions))) {
+  warning("Some predictions are infinite, removing them")
+  finite_pred_idx <- is.finite(lasso_predictions)
+  lasso_actuals <- lasso_actuals[finite_pred_idx]
+  lasso_predictions <- lasso_predictions[finite_pred_idx]
+  actual_factor <- factor(lasso_actuals, levels = c(0, 1))
+}
+
+cat("Final data for ROC analysis - Actuals:", length(lasso_actuals), "Predictions:", length(lasso_predictions), "\n")
+
+# ROC object for threshold determination
+cat("Creating ROC object...\n")
+roc_obj <- roc(actual_factor, lasso_predictions, quiet = TRUE)
+
+# Check if ROC object was created successfully
+if (is.null(roc_obj)) {
+  warning("Failed to create ROC object, using default threshold 0.5")
+  roc_best_thresh <- 0.5
+} else {
+  # Determine thresholds with proper error handling (using safe approach from cohort file)
+  cat("Calculating ROC-optimal threshold...\n")
+  best_vals <- coords(roc_obj, "best", ret = "threshold", transpose = FALSE)
+  roc_best_thresh <- median(as.numeric(unlist(best_vals)), na.rm = TRUE)
+}
+
+event_rate <- mean(lasso_actuals)
+recall_thresh <- max(0.15, event_rate)
+
+# Ensure both thresholds are single numeric values
+if (length(roc_best_thresh) > 1) {
+  warning("ROC threshold is a vector, using first value")
+  roc_best_thresh <- roc_best_thresh[1]
+}
+if (length(recall_thresh) > 1) {
+  warning("Recall threshold is a vector, using first value")
+  recall_thresh <- recall_thresh[1]
+}
+
+# Debug: show threshold values
+cat("Debug - roc_best_thresh:", roc_best_thresh, " (class:", class(roc_best_thresh), ")\n")
+cat("Debug - recall_thresh:", recall_thresh, " (class:", class(recall_thresh), ")\n")
+
+# Validate thresholds before use
+if (is.na(roc_best_thresh) || !is.finite(roc_best_thresh)) {
+  warning("ROC threshold is invalid, using default 0.5")
+  roc_best_thresh <- 0.5
+}
+if (is.na(recall_thresh) || !is.finite(recall_thresh)) {
+  warning("Recall threshold is invalid, using default 0.15")
+  recall_thresh <- 0.15
+}
+
+cat("Final validated thresholds - ROC:", roc_best_thresh, "Recall:", recall_thresh, "\n")
+
+cat("ROC-optimal threshold:", round(roc_best_thresh, 3), "\n")
+cat("Recall-friendly threshold:", round(recall_thresh, 3), "\n")
+
+# Evaluate at both thresholds using the new function
+cat("Creating metrics at ROC-optimal threshold...\n")
+
+# Additional data validation before metrics calculation
+cat("Validating data for metrics calculation...\n")
+cat("lasso_predictions length:", length(lasso_predictions), "\n")
+cat("lasso_actuals length:", length(lasso_actuals), "\n")
+cat("NA in predictions:", sum(is.na(lasso_predictions)), "\n")
+cat("NA in actuals:", sum(is.na(lasso_actuals)), "\n")
+cat("Predictions range:", range(lasso_predictions, na.rm = TRUE), "\n")
+cat("Actuals unique values:", unique(lasso_actuals), "\n")
+
+# Final cleanup to ensure no NA values
+final_valid_idx <- !is.na(lasso_predictions) & !is.na(lasso_actuals)
+if (sum(final_valid_idx) < length(lasso_predictions)) {
+  cat("Removing", length(lasso_predictions) - sum(final_valid_idx), "rows with NA values\n")
+  lasso_predictions_clean <- lasso_predictions[final_valid_idx]
+  lasso_actuals_clean <- lasso_actuals[final_valid_idx]
+} else {
+  lasso_predictions_clean <- lasso_predictions
+  lasso_actuals_clean <- lasso_actuals
+}
+
+cat("Final clean data - Predictions:", length(lasso_predictions_clean), "Actuals:", length(lasso_actuals_clean), "\n")
+
+metrics_roc <- create_classification_metrics(
+  probs = lasso_predictions_clean,
+  actual = lasso_actuals_clean,
+  cohort_name = "Full",
+  model_name = paste0("LASSO (ROC-optimal=", round(roc_best_thresh, 2), ")"),
+  threshold = roc_best_thresh
+)
+
+# Add error checking for ROC metrics
+if (is.null(metrics_roc)) {
+  stop("Failed to create ROC-optimal metrics")
+}
+
+cat("✓ ROC-optimal metrics created successfully\n")
+
+cat("Creating metrics at recall-friendly threshold...\n")
+metrics_recall <- create_classification_metrics(
+  probs = lasso_predictions_clean,
+  actual = lasso_actuals_clean,
+  cohort_name = "Full",
+  model_name = paste0("LASSO (Recall-friendly=", round(recall_thresh, 2), ")"),
+  threshold = recall_thresh
+)
+
+# Add error checking for recall metrics
+if (is.null(metrics_recall)) {
+  stop("Failed to create recall-friendly metrics")
+}
+
+cat("✓ Recall-friendly metrics created successfully\n")
+
+# Calculate calibration metrics
+cat("Calculating calibration metrics...\n")
+lasso_cal_metrics <- calculate_calibration_metrics(
+  predictions = lasso_predictions_clean,
+  actual = lasso_actuals_clean
+)
+
+# Add error checking for calibration metrics
+if (is.null(lasso_cal_metrics)) {
+  stop("Failed to calculate calibration metrics")
+}
+
+cat("✓ Calibration metrics calculated successfully\n")
+
+# Combine results and sort by Recall
+cat("Creating final all_lasso_metrics object...\n")
+
+# Debug: check if required objects exist
+cat("Debug - Checking required objects:\n")
+cat("  metrics_roc exists:", exists("metrics_roc"), "\n")
+cat("  metrics_recall exists:", exists("metrics_recall"), "\n")
+cat("  lasso_cal_metrics exists:", exists("lasso_cal_metrics"), "\n")
+
+if (exists("metrics_roc")) {
+  cat("  metrics_roc class:", class(metrics_roc), "rows:", nrow(metrics_roc), "\n")
+}
+if (exists("metrics_recall")) {
+  cat("  metrics_recall class:", class(metrics_recall), "rows:", nrow(metrics_recall), "\n")
+}
+if (exists("lasso_cal_metrics")) {
+  cat("  lasso_cal_metrics class:", class(lasso_cal_metrics), "rows:", nrow(lasso_cal_metrics), "\n")
+}
+
+# Try to create all_lasso_metrics with error handling
+tryCatch({
+  all_lasso_metrics <- rbind(metrics_roc, metrics_recall) %>%
+    mutate(
+      Calibration_Slope = lasso_cal_metrics$Calibration_Slope,
+      Calibration_Intercept = lasso_cal_metrics$Calibration_Intercept,
+      Calibration_Brier = lasso_cal_metrics$Calibration_Brier
+    )
+  all_lasso_metrics <- all_lasso_metrics[order(-all_lasso_metrics$Recall), ]
+  
+  cat("✓ all_lasso_metrics created successfully\n")
+}, error = function(e) {
+  cat("Error creating all_lasso_metrics:", e$message, "\n")
+  # Create a minimal version if the full creation fails
+  all_lasso_metrics <<- data.frame(
+    Cohort = "Full",
+    Model = "LASSO",
+    Threshold = c(roc_best_thresh, recall_thresh),
+    Accuracy = c(0, 0),
+    Precision = c(0, 0),
+    Recall = c(0, 0),
+    F1 = c(0, 0),
+    AUC = c(0, 0),
+    Brier_Score = c(0, 0),
+    Predicted_Positives = c(0, 0),
+    Calibration_Slope = c(0, 0),
+    Calibration_Intercept = c(0, 0),
+    Calibration_Brier = c(0, 0),
+    stringsAsFactors = FALSE
+  )
+  cat("Created minimal all_lasso_metrics as fallback\n")
+})
+
+# Add error checking for final object
+if (is.null(all_lasso_metrics) || nrow(all_lasso_metrics) == 0) {
+  stop("Failed to create all_lasso_metrics object")
+}
+
+cat("✓ all_lasso_metrics object created successfully\n")
+print(all_lasso_metrics)
+
+# AUC (threshold-independent)
+cat("Test AUC:", round(auc(roc_obj), 3), "\n")
+
+
+```
+
+##### Feature Importance
+
+```{r lasso-features, warning=FALSE, message=FALSE, eval=TRUE, echo=FALSE}
+
+# Non-zero coefficients at optimal lambda (feature importances)
+class_coefs <- coef(class_lasso_model, s = class_optimal_lambda)
+class_nonzero_coefs <- data.frame(
+  feature = rownames(class_coefs)[class_coefs@i + 1],
+  coefficient = class_coefs@x
+) %>%
+  filter(feature != "(Intercept)") %>%
+  arrange(desc(abs(coefficient)))
+
+
+# Display LASSO coefficients
+cat("Classification LASSO Model - Number of selected features:", nrow(class_nonzero_coefs), "\n")
+  
+  datatable(
+    class_nonzero_coefs,
+    caption = "LASSO Classification Feature Coefficients",
+    rownames = FALSE,
+    options = list(
+      pageLength = 15,
+      columnDefs = list(
+        list(className = 'dt-left', targets = "_all")
+      )
+    )
+  )
+
+```
+
+#### CatBoost Classification Model
+
+```{r catboost-model-df, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+# Prepare data for CatBoost classification
+catboost_df <- model_data %>%
+  # Remove lagging keywords and variables starting with "sd"
+  select(
+    !(matches(paste(classification_lagging_keywords, collapse = "|")) | starts_with("sd"))
+  ) %>%
+  # Handle infinite values by converting them to NA
+  mutate(across(where(is.numeric), ~if_else(is.infinite(.), NA_real_, .))) %>%
+  # Remove any columns that are entirely empty
+  select(-where(~all(is.na(.)))) %>%
+  # Remove identifier columns
+  select(-ptid_e) %>%
+  # Ensure character variables are converted to factors (CatBoost handles factors natively)
+  mutate(across(where(is.character), as.factor))
+
+# Remove constant columns
+constant_cols <- names(catboost_df)[sapply(catboost_df, function(x) {
+  length(unique(na.omit(x))) == 1
+})]
+if(length(constant_cols) > 0) {
+  catboost_df <- catboost_df %>% select(-all_of(constant_cols))
+}
+
+cat("Classification CatBoost - Final data dimensions:", paste(dim(catboost_df), collapse = " x "), "\n")
+
+```
+
+```{r catboost-data-prep}
+
+# Split the data using the existing train/test indices
+catboost_train <- catboost_df[train_indices, ]
+catboost_test  <- catboost_df[test_indices, ]
+
+# Prepare training features and labels
+catboost_y_train <- catboost_train$outcome
+catboost_x_train <- catboost_train %>% select(-outcome)
+
+# Prepare test features and labels
+catboost_y_test <- catboost_test$outcome
+catboost_x_test <- catboost_test %>% select(-outcome)
+
+# Verify the data preparation
+cat("CatBoost Classification - Training set size:", nrow(catboost_x_train), "\n")
+cat("CatBoost Classification - Test set size:", nrow(catboost_x_test), "\n")
+cat("CatBoost Classification - Training features:", ncol(catboost_x_train), "\n")
+
+```
+
+```{r catboost-model}
+
+# Data Pools for classification
+catboost_train_pool <- catboost.load_pool(
+  data = catboost_x_train, 
+  label = catboost_y_train
+)
+
+catboost_test_pool <- catboost.load_pool(
+  data = catboost_x_test, 
+  label = catboost_y_test
+)
+
+# Model parameters for classification
+catboost_params <- list(
+  loss_function = 'Logloss',  # Binary classification loss
+  eval_metric = 'Logloss',    # Classification metric
+  iterations = 2000,
+  depth = 4,
+  verbose = 500,              # Print train and test metrics every 500 iterations
+  random_seed = 1997
+)
+
+# Train the CatBoost classification model
+set.seed(1997)
+catboost_model <- catboost.train(
+  learn_pool = catboost_train_pool,
+  test_pool = catboost_test_pool,
+  params = catboost_params
+)
+
+cat("CatBoost Classification Model trained successfully\n")
+
+```
+
+##### Accuracy
+
+```{r catboost-accuracy, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+
+# Probability predictions on TEST data
+catboost_probabilities_raw <- catboost.predict(
+  catboost_model,
+  catboost_test_pool,
+  prediction_type = "Probability"
+)
+
+# Clean and align actuals and predictions (remove NAs)
+valid_idx <- !is.na(catboost_y_test)
+catboost_actuals <- catboost_y_test[valid_idx]
+catboost_predictions <- as.numeric(catboost_probabilities_raw[valid_idx])
+actual_factor <- factor(catboost_actuals, levels = c(0, 1))
+
+# ROC object for threshold determination
+roc_obj <- roc(actual_factor, catboost_predictions, quiet = TRUE)
+
+# Determine thresholds (numeric scalars)
+roc_best_thresh <- as.numeric(coords(roc_obj, "best", ret = "threshold", transpose = FALSE))
+event_rate <- mean(catboost_actuals)
+recall_thresh <- max(0.15, event_rate)
+
+cat("ROC-optimal threshold:", round(roc_best_thresh, 3), "\n")
+cat("Recall-friendly threshold:", round(recall_thresh, 3), "\n")
+
+# Evaluate at both thresholds
+metrics_roc <- create_classification_metrics(
+  probs = catboost_predictions,
+  actual = catboost_actuals,
+  cohort_name = "Full",
+  model_name = paste0("CatBoost (ROC-optimal=", round(roc_best_thresh, 2), ")"),
+  threshold = roc_best_thresh
+)
+
+metrics_recall <- create_classification_metrics(
+  probs = catboost_predictions,
+  actual = catboost_actuals,
+  cohort_name = "Full",
+  model_name = paste0("CatBoost (Recall-friendly=", round(recall_thresh, 2), ")"),
+  threshold = recall_thresh
+)
+
+# Calculate calibration metrics
+catboost_cal_metrics <- calculate_calibration_metrics(
+  predictions = catboost_predictions,
+  actual = catboost_actuals
+)
+
+# Combine & sort by Recall
+all_catboost_metrics <- rbind(metrics_roc, metrics_recall) %>%
+  mutate(
+    Calibration_Slope = catboost_cal_metrics$Calibration_Slope,
+    Calibration_Intercept = catboost_cal_metrics$Calibration_Intercept,
+    Calibration_Brier = catboost_cal_metrics$Calibration_Brier
+  )
+all_catboost_metrics <- all_catboost_metrics[order(-all_catboost_metrics$Recall), ]
+print(all_catboost_metrics)
+
+# AUC (threshold-independent)
+cat("Test AUC:", round(auc(roc_obj), 3), "\n")
+
+
+```
+
+#### CatBoost Random Forest Classification Model
+
+```{r randomforest-fit-model-data, warning=FALSE, message=FALSE, echo=FALSE, eval=TRUE}
+
+# Prepare data for CatBoost Random Forest classification
+rf_data <- model_data %>%
+  # Remove lagging keywords and variables starting with "sd"
+  select(
+    !(matches(paste(classification_lagging_keywords, collapse = "|")) | starts_with("sd"))
+  ) %>%
+  # Handle infinite values by converting them to NA
+  mutate(across(where(is.numeric), ~if_else(is.infinite(.), NA_real_, .))) %>%
+  # Remove any columns that are entirely empty
+  select(-where(~all(is.na(.)))) %>%
+  # Remove identifier columns
+  select(-ptid_e) %>%
+  # Ensure all categorical predictors are factors for CatBoost
+  mutate(across(where(is.character), as.factor)) 
+
+# Remove constant columns
+constant_cols <- names(rf_data)[sapply(rf_data, function(x) {
+  length(unique(na.omit(x))) == 1
+})]
+if(length(constant_cols) > 0) {
+  rf_data <- rf_data %>% select(-all_of(constant_cols))
+}
+
+
+# Split data using existing train/test indices
+rf_train <- rf_data[train_indices, ]
+rf_test  <- rf_data[test_indices, ]
+
+# Identify categorical features (columns with limited unique values)
+categorical_features <- which(sapply(rf_train, function(x) {
+  length(unique(x)) <= 10 && length(unique(x)) > 1
+}))
+
+cat("CatBoost Random Forest - Training set size:", nrow(rf_train), "\n")
+cat("CatBoost Random Forest - Test set size:", nrow(rf_test), "\n")
+cat("CatBoost Random Forest - Features:", ncol(rf_train) - 1, "\n")
+cat("CatBoost Random Forest - Categorical features:", length(categorical_features), "\n")
+
+# Prepare training and testing pools
+rf_train_pool <- catboost.load_pool(
+  data = rf_train[, -which(names(rf_train) == "outcome")],
+  label = rf_train$outcome
+)
+
+rf_test_pool <- catboost.load_pool(
+  data = rf_test[, -which(names(rf_test) == "outcome")],
+  label = rf_test$outcome
+)
+
+# Random Forest-like parameters for CatBoost
+rf_params <- list(
+  iterations = 500,               # number of trees
+  depth = 8,                      # tree depth
+  learning_rate = 1.0,            # no shrinkage, independent trees
+  bootstrap_type = "Bernoulli",   # random row sampling
+  subsample = 0.8,                # 80% rows per tree
+  sampling_frequency = "PerTree", # resample once per tree
+  rsm = 0.5,                      # use 50% of features at each split
+  loss_function = "Logloss",      # classification
+  eval_metric = "AUC",
+  random_strength = 1.0,          # randomness in split score
+  l2_leaf_reg = 3.0,             # mild regularization
+  random_seed = 1997,
+  verbose = 100,
+  use_best_model = FALSE
+)
+
+# Train the CatBoost Random Forest model
+set.seed(1997)
+rf_model <- catboost.train(rf_train_pool, rf_test_pool, rf_params)
+
+cat("CatBoost Random Forest Classification Model trained successfully\n")
+
+```
+
+##### Accuracy Metrics
+
+```{r randomforest-accuracy, warning=FALSE, message=FALSE, echo=FALSE, eval=TRUE}
+
+
+# Predict probabilities on TEST data (CatBoost RF-mode)
+rf_probabilities_raw <- as.numeric(
+  catboost.predict(
+    rf_model,
+    rf_test_pool,
+    prediction_type = "Probability"
+  )
+)
+
+# Clean & align actuals/predictions
+actual_all <- rf_test$outcome
+valid_idx <- !is.na(actual_all)
+rf_actuals <- as.numeric(as.character(actual_all[valid_idx]))
+rf_predictions <- as.numeric(rf_probabilities_raw[valid_idx])
+
+# Thresholds via ROC (tie-safe)
+
+roc_obj <- pROC::roc(factor(rf_actuals, levels = c(0, 1)), rf_predictions, quiet = TRUE)
+
+best_vals <- pROC::coords(roc_obj, "best", ret = "threshold", transpose = FALSE)
+roc_best_thresh <- median(as.numeric(unlist(best_vals)), na.rm = TRUE)
+
+event_rate <- mean(rf_actuals, na.rm = TRUE)
+recall_thresh <- max(0.15, event_rate)
+
+cat("RF ROC-optimal threshold:", round(roc_best_thresh, 3), "\n")
+cat("RF Recall-friendly threshold:", round(recall_thresh, 3), "\n")
+
+# Evaluate at both thresholds using your metrics helper
+metrics_roc <- create_classification_metrics(
+  probs = rf_predictions,
+  actual = rf_actuals,
+  cohort_name = "Full",
+  model_name = paste0("CatBoost Random Forest (ROC-optimal=", round(roc_best_thresh, 2), ")"),
+  threshold = roc_best_thresh
+)
+
+metrics_recall <- create_classification_metrics(
+  probs = rf_predictions,
+  actual = rf_actuals,
+  cohort_name = "Full",
+  model_name = paste0("CatBoost Random Forest (Recall-friendly=", round(recall_thresh, 2), ")"),
+  threshold = recall_thresh
+)
+
+# Calculate calibration metrics
+rf_cal_metrics <- calculate_calibration_metrics(
+  predictions = rf_predictions,
+  actual = rf_actuals
+)
+
+# Combine & sort by Recall
+all_rf_metrics <- rbind(metrics_roc, metrics_recall) %>%
+  mutate(
+    Calibration_Slope = rf_cal_metrics$Calibration_Slope,
+    Calibration_Intercept = rf_cal_metrics$Calibration_Intercept,
+    Calibration_Brier = rf_cal_metrics$Calibration_Brier
+  )
+all_rf_metrics <- all_rf_metrics[order(-all_rf_metrics$Recall), ]
+print(all_rf_metrics)
+
+# AUC (threshold-independent)
+if (!is.null(roc_obj)) {
+  tryCatch({
+    auc_value <- auc(roc_obj)
+    cat("Test AUC:", round(auc_value, 3), "\n")
+  }, error = function(e) {
+    warning("Failed to calculate AUC:", e$message)
+    cat("Test AUC: Could not calculate\n")
+  })
+} else {
+  cat("Test AUC: ROC object not available\n")
+}
+
+
+```
+
+#### Traditional Random Forest Classification Model
+
+```{r traditional-rf-fit-model-data, warning=FALSE, message=FALSE, echo=FALSE, eval=TRUE}
+
+# Prepare data for traditional Random Forest classification
+trad_rf_data <- model_data %>%
+  # Remove lagging keywords and variables starting with "sd"
+  select(
+    !(matches(paste(classification_lagging_keywords, collapse = "|")) | starts_with("sd"))
+  ) %>%
+  # Handle infinite values by converting them to NA
+  mutate(across(where(is.numeric), ~if_else(is.infinite(.), NA_real_, .))) %>%
+  # Remove any columns that are entirely empty
+  select(-where(~all(is.na(.)))) %>%
+  # Remove identifier columns
+  select(-ptid_e) %>%
+  # Ensure all categorical predictors are factors for CatBoost
+  mutate(across(where(is.character), as.factor)) %>% 
+  # Ensure outcome is a factor for Random Forest
+  mutate(outcome = as.factor(outcome))
+
+
+# Remove constant columns
+constant_cols <- names(trad_rf_data)[sapply(trad_rf_data, function(x) {
+  length(unique(na.omit(x))) == 1
+})]
+if(length(constant_cols) > 0) {
+  trad_rf_data <- trad_rf_data %>% select(-all_of(constant_cols))
+}
+
+# Split data using existing train/test indices
+trad_rf_train <- trad_rf_data[train_indices, ]
+trad_rf_test  <- trad_rf_data[test_indices, ]
+
+cat("Traditional Random Forest - Training set size:", nrow(trad_rf_train), "\n")
+cat("Traditional Random Forest - Test set size:", nrow(trad_rf_test), "\n")
+cat("Traditional Random Forest - Features:", ncol(trad_rf_train) - 1, "\n")
+
+# Train the traditional Random Forest model
+set.seed(1997)
+trad_rf_model <- randomForest(
+  outcome ~ .,
+  data = trad_rf_train,
+  ntree = 1000,           # Number of trees
+  mtry = sqrt(ncol(trad_rf_train) - 1),  # Number of features to consider at each split
+  importance = TRUE,      # Calculate feature importance
+  proximity = FALSE,      # Don't calculate proximity matrix to save memory
+  do.trace = 50,          # Print progress every 50 trees
+  na.action=na.roughfix
+)
+
+cat("Traditional Random Forest Classification Model trained successfully\n")
+
+```
+
+##### Accuracy Metrics
+
+```{r traditional-rf-accuracy, warning=FALSE, message=FALSE, echo=FALSE, eval=TRUE}
+
+
+#  Predict probabilities on TEST data
+# For traditional randomForest models, type = "prob" gives class probabilities
+trad_rf_probabilities_raw <- predict(
+  trad_rf_model,
+  trad_rf_test,
+  type = "prob"
+)[, 2]  # probability for class "1"
+
+
+# Clean and align actuals and predictions
+valid_idx <- !is.na(trad_rf_test$outcome)
+trad_rf_actuals <- as.numeric(as.character(trad_rf_test$outcome[valid_idx]))
+trad_rf_predictions <- as.numeric(trad_rf_probabilities_raw[valid_idx])
+actual_factor <- factor(trad_rf_actuals, levels = c(0, 1))
+
+
+# ROC object for threshold determination
+roc_obj <- roc(actual_factor, trad_rf_predictions, quiet = TRUE)
+
+
+# Determine thresholds (numeric scalars)
+roc_best_thresh <- as.numeric(coords(roc_obj, "best", ret = "threshold", transpose = FALSE))
+
+
+event_rate <- mean(trad_rf_actuals, na.rm = TRUE)
+# If actual_clean is already numeric 0/1, the as.numeric(as.character(.)) is a no-op
+recall_thresh <- max(0.15, event_rate)
+
+cat("MYO RF (native) ROC-optimal threshold:", round(roc_best_thresh, 3), "\n")
+cat("MYO RF (native) Recall-friendly threshold:", round(recall_thresh, 3), "\n")
+
+# Evaluate at both thresholds using your helper
+metrics_roc <- create_classification_metrics(
+  probs = trad_rf_predictions,
+  actual = trad_rf_actuals,
+  cohort_name = "Full",
+  model_name = paste0("Traditional RF (ROC-optimal=", round(roc_best_thresh, 2), ")"),
+  threshold = roc_best_thresh
+)
+
+metrics_recall <- create_classification_metrics(
+  probs = trad_rf_predictions,
+  actual = trad_rf_actuals,
+  cohort_name = "Full",
+  model_name = paste0("Traditional RF (Recall-friendly=", round(recall_thresh, 2), ")"),
+  threshold = recall_thresh
+)
+
+# Calculate calibration metrics
+trad_rf_cal_metrics <- calculate_calibration_metrics(
+  predictions = trad_rf_predictions,
+  actual = trad_rf_actuals
+)
+
+# Combine & sort by Recall
+all_trad_rf_metrics <- rbind(metrics_roc, metrics_recall) %>%
+  mutate(
+    Calibration_Slope = trad_rf_cal_metrics$Calibration_Slope,
+    Calibration_Intercept = trad_rf_cal_metrics$Calibration_Intercept,
+    Calibration_Brier = trad_rf_cal_metrics$Calibration_Brier
+  )
+all_trad_rf_metrics <- all_trad_rf_metrics[order(-all_trad_rf_metrics$Recall), ]
+print(all_trad_rf_metrics)
+
+# AUC (threshold-independent)
+if (!is.null(roc_obj)) {
+  tryCatch({
+    auc_value <- auc(roc_obj)
+    cat("Test AUC:", round(auc_value, 3), "\n")
+  }, error = function(e) {
+    warning("Failed to calculate AUC:", e$message)
+    cat("Test AUC: Could not calculate\n")
+  })
+} else {
+  cat("Test AUC: ROC object not available\n")
+}
+
+
+```
+
+### Model Performance Comparison
+
+```{r warning=FALSE, message=FALSE, echo=FALSE, eval=TRUE}
+
+# Initialize a list to hold all metrics data frames
+all_metrics_list <- list()
+
+# Add metrics if they exist, using the object names from your script
+if(exists("all_lasso_metrics")) {
+  all_metrics_list[["lasso"]] <- all_lasso_metrics
+}
+if(exists("all_catboost_metrics")) {
+  all_metrics_list[["catboost"]] <- all_catboost_metrics
+}
+if(exists("all_rf_metrics")) {
+  all_metrics_list[["rf"]] <- all_rf_metrics
+}
+if(exists("all_trad_rf_metrics")) {
+  all_metrics_list[["trad_rf"]] <- all_trad_rf_metrics
+}
+
+
+if(length(all_metrics_list) > 0) {
+  # Combine all data frames into one
+  metrics_df <- bind_rows(all_metrics_list, .id = "source")
+  
+  # Display comparison table
+  datatable(
+    metrics_df %>% select(-source), # Hide the source column if desired
+    caption = "Model Performance Comparison - Classification Models",
+    rownames = FALSE,
+    options = list(
+      pageLength = 10,
+      columnDefs = list(
+        list(className = 'dt-left', targets = "_all")
+      )
+    )
+  )
+} else {
+  cat("No metrics available for comparison\n")
+}
+
+```
+
+### Model Calibration Analysis
+
+```{r warning=FALSE, message=FALSE, echo=FALSE, eval=TRUE}
+
+# Create calibration plots for all models
+calibration_plots <- list()
+
+# LASSO Calibration Plot
+if(exists("lasso_predictions") && exists("y_test")) {
+  lasso_cal_plot <- create_calibration_plot(
+    lasso_predictions, 
+    y_test,
+    "Full Cohort", 
+    "LASSO"
+  )
+  if(!is.null(lasso_cal_plot)) {
+    calibration_plots[["LASSO"]] <- lasso_cal_plot
+  }
+}
+
+# CatBoost Calibration Plot
+if(exists("catboost_predictions") && exists("catboost_y_test")) {
+  catboost_cal_plot <- create_calibration_plot(
+    catboost_predictions, 
+    catboost_y_test,
+    "Full Cohort", 
+    "CatBoost"
+  )
+  if(!is.null(catboost_cal_plot)) {
+    calibration_plots[["CatBoost"]] <- catboost_cal_plot
+  }
+}
+
+# CatBoost RF Calibration Plot
+if(exists("rf_predictions") && exists("rf_test$outcome")) {
+  rf_cal_plot <- create_calibration_plot(
+    rf_predictions, 
+    rf_test$outcome,
+    "Full Cohort", 
+    "CatBoost RF"
+  )
+  if(!is.null(rf_cal_plot)) {
+    calibration_plots[["CatBoost_RF"]] <- rf_cal_plot
+  }
+}
+
+# Traditional RF Calibration Plot
+if(exists("trad_rf_predictions") && exists("trad_rf_test$outcome")) {
+  trad_rf_cal_plot <- create_calibration_plot(
+    trad_rf_predictions, 
+    trad_rf_test$outcome,
+    "Full Cohort", 
+    "Traditional RF"
+  )
+  if(!is.null(trad_rf_cal_plot)) {
+    calibration_plots[["Traditional_RF"]] <- trad_rf_cal_plot
+  }
+}
+
+
+# Display calibration plots
+if(length(calibration_plots) > 0) {
+  cat("## Calibration Analysis for All Models\n\n")
+  cat("Calibration plots show how well predicted probabilities align with observed event rates.\n")
+  cat("Perfect calibration: points fall on the diagonal line (slope = 1, intercept = 0).\n\n")
+  
+  # Display each calibration plot
+  for(plot_name in names(calibration_plots)) {
+    cat("###", plot_name, "\n\n")
+    print(calibration_plots[[plot_name]])
+    cat("\n\n")
+  }
+} else {
+  cat("No calibration plots available - ensure all models have been trained and predictions generated.\n")
+}
+
+```
+
+### Calibration Metrics Summary
+
+```{r warning=FALSE, message=FALSE, echo=FALSE, eval=TRUE}
+
+# Collect all metrics into a single list
+all_model_metrics <- list(
+  all_lasso_metrics,
+  all_catboost_metrics,
+  all_rf_metrics,
+  all_trad_rf_metrics
+)
+
+# Create the summary tables
+metrics_summary <- create_metrics_summary(all_model_metrics)
+
+# Display the summary table
+datatable(
+  metrics_summary$summary,
+  caption = "Model Performance Summary",
+  rownames = FALSE,
+  options = list(
+    pageLength = 10,
+    columnDefs = list(
+      list(className = 'dt-left', targets = "_all")
+    )
+  )
+)
+```
+
+
+### Feature Importance Summary
+
+```{r echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+# Comprehensive summary table with top 25 features for each model
+comprehensive_summary <- list()
+
+# Function to get top 25 features with normalized importance
+get_top_features <- function(feature_df, model_name, metrics_list = NULL) {
+  if (nrow(feature_df) > 0) {
+    # Get top 25 features
+    top_features <- feature_df %>%
+      slice_head(n = 25) %>%
+      mutate(
+        Model = model_name,
+        Rank = row_number()
+      )
+    
+    # Normalize importance to 0-1 scale for Sankey diagram
+    if ("importance" %in% colnames(top_features)) {
+      top_features <- top_features %>%
+        mutate(
+          Normalized_Importance = (importance - min(importance)) / (max(importance) - min(importance))
+        )
+    } else if ("coefficient" %in% colnames(top_features)) {
+      # For LASSO coefficients, use absolute values and normalize
+      top_features <- top_features %>%
+        mutate(
+          importance = abs(coefficient),
+          Normalized_Importance = (importance - min(importance)) / (max(importance) - min(importance))
+        )
+    }
+    
+    # Add model performance metrics if available
+    if (!is.null(metrics_list)) {
+      top_features <- top_features %>%
+        mutate(
+          AUC = ifelse("AUC" %in% names(metrics_list), round(metrics_list$AUC, 3), NA),
+          Accuracy = ifelse("Accuracy" %in% names(metrics_list), round(metrics_list$Accuracy, 3), NA),
+          F1 = ifelse("F1" %in% names(metrics_list), round(metrics_list$F1, 3), NA)
+        )
+    }
+    
+    return(top_features)
+  }
+  return(NULL)
+}
+
+# --- Collect Feature Importance ---
+
+# 1. LASSO
+if (exists("class_nonzero_coefs")) {
+  if (exists("all_lasso_metrics")) {
+    lasso_features <- get_top_features(class_nonzero_coefs, "LASSO", all_lasso_metrics)
+    if (!is.null(lasso_features)) comprehensive_summary <- append(comprehensive_summary, list(lasso_features))
+  } else {
+    warning("all_lasso_metrics not found - skipping LASSO features")
+  }
+}
+
+# 2. CatBoost
+if (exists("catboost_model")) {
+  if (exists("all_catboost_metrics")) {
+    catboost_imp <- catboost.get_feature_importance(catboost_model, type = "FeatureImportance")
+    catboost_imp_df <- data.frame(feature = rownames(catboost_imp), importance = catboost_imp[,1]) %>% arrange(desc(importance))
+    catboost_features <- get_top_features(catboost_imp_df, "CatBoost", all_catboost_metrics)
+    if (!is.null(catboost_features)) comprehensive_summary <- append(comprehensive_summary, list(catboost_features))
+  } else {
+    warning("all_catboost_metrics not found - skipping CatBoost features")
+  }
+}
+
+# 3. CatBoost RF
+if (exists("rf_model")) {
+  if (exists("all_rf_metrics")) {
+    rf_imp <- catboost.get_feature_importance(rf_model, type = "FeatureImportance")
+    rf_imp_df <- data.frame(feature = rownames(rf_imp), importance = rf_imp[,1]) %>% arrange(desc(importance))
+    rf_features <- get_top_features(rf_imp_df, "CatBoost RF", all_rf_metrics)
+    if (!is.null(rf_features)) comprehensive_summary <- append(comprehensive_summary, list(rf_features))
+  } else {
+    warning("all_rf_metrics not found - skipping CatBoost RF features")
+  }
+}
+
+# 4. Traditional RF
+if (exists("trad_rf_model")) {
+  if (exists("all_trad_rf_metrics")) {
+    trad_rf_imp <- as.data.frame(importance(trad_rf_model))
+    trad_rf_imp_df <- trad_rf_imp %>% rownames_to_column("feature") %>% select(feature, importance = MeanDecreaseGini) %>% arrange(desc(importance))
+    trad_rf_features <- get_top_features(trad_rf_imp_df, "Traditional RF", all_trad_rf_metrics)
+    if (!is.null(trad_rf_features)) comprehensive_summary <- append(comprehensive_summary, list(trad_rf_features))
+  } else {
+    warning("all_trad_rf_metrics not found - skipping Traditional RF features")
+  }
+}
+
+
+# Combine all feature importance data
+if (length(comprehensive_summary) > 0) {
+  all_features_df <- bind_rows(comprehensive_summary)
+  cat("Successfully collected feature importance from", length(comprehensive_summary), "models\n")
+} else {
+  warning("No feature importance data collected - comprehensive_summary is empty")
+  all_features_df <- data.frame()
+}
+  
+```
+
+```{r}
+
+library(dplyr)
+library(DT)
+
+# Select and arrange columns for a clear feature-focused view
+if (nrow(all_features_df) > 0) {
+  feature_summary_df <- all_features_df %>%
+    select(Rank, feature, Model, importance, Normalized_Importance) %>%
+    arrange(Rank, Model)
+
+  # Display the interactive table
+  datatable(
+    feature_summary_df,
+    caption = "Feature Importances by Model",
+    rownames = FALSE,
+    options = list(
+      pageLength = 25,
+      columnDefs = list(
+        list(className = 'dt-left', targets = "_all")
+      )
+    )
+  )
+} else {
+  cat("No feature importance data available to display\n")
+}
+
+```
+
+### Workflow Summary for Comparison
+
+```{r workflow-summary, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+# Create comprehensive workflow summary
+workflow_summary <- data.frame(
+  Workflow = c("Unified Event Classification"),
+  Full_Cohort_Size = nrow(model_data),
+  Full_Control_Size = sum(model_data$outcome == 0, na.rm = TRUE),
+  Full_Target_Size = sum(model_data$outcome == 1, na.rm = TRUE),
+  Full_Event_Rate = round(mean(model_data$outcome, na.rm = TRUE) * 100, 2)
+)
+
+# Add model performance metrics
+if (exists("all_lasso_metrics")) {
+  lasso_best <- all_lasso_metrics %>% slice(1)  # Best by Recall
+  workflow_summary$LASSO_AUC <- round(lasso_best$AUC, 3)
+  workflow_summary$LASSO_Precision <- round(lasso_best$Precision, 3)
+  workflow_summary$LASSO_Recall <- round(lasso_best$Recall, 3)
+} else {
+  workflow_summary$LASSO_AUC <- NA
+  workflow_summary$LASSO_Precision <- NA
+  workflow_summary$LASSO_Recall <- NA
+}
+
+if (exists("all_catboost_metrics")) {
+  catboost_best <- all_catboost_metrics %>% slice(1)
+  workflow_summary$CatBoost_AUC <- round(catboost_best$AUC, 3)
+  workflow_summary$CatBoost_Precision <- round(catboost_best$Precision, 3)
+  workflow_summary$CatBoost_Recall <- round(catboost_best$Recall, 3)
+} else {
+  workflow_summary$CatBoost_AUC <- NA
+  workflow_summary$CatBoost_Precision <- NA
+  workflow_summary$CatBoost_Recall <- NA
+}
+
+if (exists("all_rf_metrics")) {
+  rf_best <- all_rf_metrics %>% slice(1)
+  workflow_summary$CatBoost_RF_AUC <- round(rf_best$AUC, 3)
+  workflow_summary$CatBoost_RF_Precision <- round(rf_best$Precision, 3)
+  workflow_summary$CatBoost_RF_Recall <- round(rf_best$Recall, 3)
+} else {
+  workflow_summary$CatBoost_RF_AUC <- NA
+  workflow_summary$CatBoost_RF_Precision <- NA
+  workflow_summary$CatBoost_RF_Recall <- NA
+}
+
+if (exists("all_trad_rf_metrics")) {
+  trad_rf_best <- all_trad_rf_metrics %>% slice(1)
+  workflow_summary$Traditional_RF_AUC <- round(trad_rf_best$AUC, 3)
+  workflow_summary$Traditional_RF_Precision <- round(trad_rf_best$Precision, 3)
+  workflow_summary$Traditional_RF_Recall <- round(trad_rf_best$Recall, 3)
+} else {
+  workflow_summary$Traditional_RF_AUC <- NA
+  workflow_summary$Traditional_RF_Precision <- NA
+  workflow_summary$Traditional_RF_Recall <- NA
+}
+
+# Display the comprehensive summary
+cat("=== UNIFIED EVENT CLASSIFICATION WORKFLOW SUMMARY ===\n\n")
+
+# Cohort sizes
+cat("Full Cohort:\n")
+cat("  Total Size:", workflow_summary$Full_Cohort_Size, "patients\n")
+cat("  Control (outcome=0):", workflow_summary$Full_Control_Size, "patients\n")
+cat("  Target (outcome=1):", workflow_summary$Full_Target_Size, "patients\n")
+cat("  Event Rate:", workflow_summary$Full_Event_Rate, "%\n\n")
+
+# Model performance summary
+cat("Model Performance Summary (Best by Recall):\n")
+cat("  LASSO - AUC:", workflow_summary$LASSO_AUC, "Precision:", workflow_summary$LASSO_Precision, "Recall:", workflow_summary$LASSO_Recall, "\n")
+cat("  CatBoost - AUC:", workflow_summary$CatBoost_AUC, "Precision:", workflow_summary$CatBoost_Precision, "Recall:", workflow_summary$CatBoost_Recall, "\n")
+cat("  CatBoost RF - AUC:", workflow_summary$CatBoost_RF_AUC, "Precision:", workflow_summary$CatBoost_RF_Precision, "Recall:", workflow_summary$CatBoost_RF_Recall, "\n")
+cat("  Traditional RF - AUC:", workflow_summary$Traditional_RF_AUC, "Precision:", workflow_summary$Traditional_RF_Precision, "Recall:", workflow_summary$Traditional_RF_Recall, "\n\n")
+
+# Save summary for external comparison
+write.csv(workflow_summary, "unified_event_classification_summary.csv", row.names = FALSE)
+cat("Summary saved to: unified_event_classification_summary.csv\n")
+
+# Display as table
+datatable(
+  workflow_summary,
+  caption = "Unified Event Classification Workflow Summary",
+  rownames = FALSE,
+  options = list(
+    pageLength = 10,
+    columnDefs = list(
+      list(className = 'dt-left', targets = "_all")
+    )
+  )
+)
+
+```
+
+### Sankey Chart: Model to Features - Classification Model
+
+```{r sankey-plot, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+library(dplyr)
+library(plotly)
+
+# Prepare data for the Sankey diagram
+if (nrow(all_features_df) > 0) {
+  sankey_data <- all_features_df %>%
+    select(source = Model, target = feature, value = Normalized_Importance) %>%
+    filter(!is.na(value) & value > 0)
+
+  if(nrow(sankey_data) > 0) {
+  
+  # Create a unique list of all nodes (models and features)
+  all_nodes <- unique(c(sankey_data$source, sankey_data$target))
+  
+  # Create a links data frame with 0-based indices
+  links <- sankey_data %>%
+    mutate(
+      source = match(source, all_nodes) - 1,
+      target = match(target, all_nodes) - 1
+    )
+
+  # Create the Sankey plot
+sankey_plot_no_cohort <- plot_ly(
+    type = "sankey",
+    orientation = "h",
+    node = list(
+      label = all_nodes,
+      pad = 15,
+      thickness = 20,
+      line = list(color = "black", width = 0.5)
+    ),
+    link = list(
+      source = links$source,
+      target = links$target,
+      value = links$value
+    )
+  ) %>%
+    layout(
+      title = "Feature Importance Flow: Models to Features",
+      font = list(size = 10)
+    )
+    
+  } else {
+    cat("No valid data available to generate Sankey diagram.\n")
+  }
+} else {
+  cat("No feature importance data available to generate Sankey diagram.\n")
+}
+
+sankey_plot_no_cohort
+
+```
+
+```{r eval=FALSE, echo=FALSE}
+
+if (exists("sankey_plot_no_cohort")) {
+  htmlwidgets::saveWidget(
+    sankey_plot_no_cohort,
+    file = "sankey_classification_feature_importance_no_cohort.html",
+    selfcontained = TRUE
+  )
+}
+
+
+```
+
+[Full Size Sankey Model Features Chart](https://jerome-dixon.io/uva/notebooks/sankey_classification_feature_importance_no_cohort.html?Expires=1760110551&Signature=jVzvTThRW1y7qTvO8ezFVjub6oBdnF6sNg9HY-tyCbsQ9FVMZJhSgniuvQKt4qDrHyDG6tKY~2Zu3QmTTCboQiqkSJf~5Xfqsokisoi74oIuhkIilVEh5MgX87Qb8FHDxLhayrATTC47FHe-nyiD9F5I4SMmTV~Wn53YQ-97WTMg94qyALDN6DYw9CoaEsiR9mWNYArr8FoHnjIyh~~Gh1HQgBFZupYIhrvl3IQANHrn0PS7fObKXzmuOdZhpDOPYpIo4FO17cOGDZRUzqI~l5zZbDh5k731pV9OwYlz6786NK3ZDEFPIgQW40dXo0VcpIA2RwxQDpgqauY3v5A28g__&Key-Pair-Id=KH0ZA0Z2LKGN9)
+

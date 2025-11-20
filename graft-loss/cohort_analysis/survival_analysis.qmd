@@ -1,0 +1,1264 @@
+---
+title: "Survival Analysis Models"
+author: "R. Jerome Dixon"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+format:
+  html:
+    toc: true
+    toc-depth: 6
+    code-fold: true
+    code-summary: "Show the code"
+    embed-resources: true
+    default-image-extension: svg
+    dpi: 600
+editor:
+  markdown:
+    wrap: 72
+---
+
+## Overview
+
+This analysis examines predictive models for pediatric heart transplant
+outcomes. We implement three
+complementary modeling approaches to provide comprehensive risk
+assessment and identify predictive factors.
+
+### Modeling Approaches
+
+This study employs three distinct machine learning methodologies, each
+offering unique advantages for pediatric heart transplant outcome
+prediction:
+
+**1. LASSO (Least Absolute Shrinkage and Selection Operator) with
+Survival**
+
+-   **Method**: A Cox proportional hazards model regularized with an L1
+    penalty for feature selection and time-to-event prediction.
+-   **Strengths for Our Use Case**:
+    -   **Clinical Interpretability**: Provides clear coefficient values
+        (log-hazard ratios) that clinicians can easily understand.
+    -   **Feature Selection**: Automatically identifies the most
+        impactful variables on survival, reducing model complexity.
+    -   **Transparent Decision Making**: Linear relationships in the
+        log-hazard allow for straightforward risk factor quantification.
+    -   **Regulatory Compliance**: The Cox model is a well-established
+        method with extensive validation in medical literature.
+    -   **Handles Censoring**: Natively incorporates censored data into
+        the partial likelihood calculation, making full use of the data.
+-   **Limitations**:
+    -   **Proportional Hazards Assumption**: Assumes that the effect of
+        a predictor is constant over time, which may not always hold
+        true.
+    -   **Linear Assumptions**: Models the log-hazard as a linear
+        combination of predictors, potentially missing complex
+        non-linear relationships.
+    -   **Feature Interactions**: Limited ability to capture
+        interactions between clinical variables without explicit
+        specification.
+
+**2. CatBoost (Categorical Boosting)**
+
+-   **Method**: Gradient boosting survival model using a Cox
+    proportional hazards loss function for time-to-event prediction.
+-   **Strengths for Our Use Case**:
+    -   **Categorical Handling**: Excellent performance with medical
+        coding systems (diagnoses, procedures) without extensive
+        preprocessing.
+    -   **Non-linear Relationships**: Captures complex interactions
+        between donor, recipient, and procedural factors.
+    -   **Robust Performance**: Advanced regularization techniques
+        prevent overfitting in medical datasets.
+    -   **Missing Data Tolerance**: Handles incomplete medical records
+        gracefully.
+    -   **Survival Analysis**: The Cox loss function properly models
+        time-to-event outcomes.
+-   **Limitations**:
+    -   **Black Box Nature**: Less interpretable than a standard Cox
+        model for individual patient risk explanation.
+    -   **Computational Complexity**: Requires more computational
+        resources and hyperparameter tuning.
+    -   **Cox Assumptions**: Still relies on the proportional hazards
+        assumption inherent in the Cox loss function.
+
+**3. AORSF (Accelerated Oblique Random Survival Forests)**
+
+-   **Method**: Ensemble survival analysis using oblique decision trees
+    with time-to-event modeling.
+-   **Strengths for Our Use Case**:
+    -   **Survival Analysis**: Properly models time-to-event outcomes,
+        capturing both event occurrence and timing.
+    -   **C-index Performance**: Optimized for concordance statistics,
+        ideal for risk stratification.
+    -   **Complex Interactions**: The tree-based approach naturally
+        captures multi-way interactions between clinical variables.
+    -   **Non-parametric**: Makes no assumptions about underlying hazard
+        functions or distributions.
+    -   **Ensemble Robustness**: Multiple trees provide stable
+        predictions across different patient populations.
+-   **Limitations**:
+    -   **Interpretability**: Tree ensemble methods are less
+        interpretable than linear models for individual predictions.
+    -   **Computational Intensity**: More complex than traditional
+        survival methods, requiring careful parameter tuning.
+
+This multi-method survival analysis approach allows for comprehensive
+model validation, with LASSO providing interpretable linear
+relationships, CatBoost capturing complex non-linear patterns, and AORSF
+incorporating advanced, non-parametric time-to-event dynamics. All three
+methods now utilize the full temporal information available in
+transplant outcomes, providing optimal clinical decision support through
+consistent C-index performance metrics.
+
+### Censored Data Handling
+
+Each modeling approach handles censored observations appropriately:
+
+-   **LASSO**: Uses `Surv(time, status)` objects where status=0
+    indicates censored observations, properly incorporated into the Cox
+    regression partial likelihood.
+
+-   **CatBoost**: The Cox loss function incorporates censored data by
+    encoding the label with a negative sign, correctly accounting for
+    patients who were alive at last follow-up.
+
+-   **AORSF**: Ensemble survival forests handle censoring through
+    modified splitting criteria that account for incomplete observations
+    using proper survival analysis methodology.
+
+All methods properly utilize both event times and censoring information,
+ensuring that patients lost to follow-up or alive at study end
+contribute appropriate information to model training.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+
+library(readr)
+library(rlang)
+library(dplyr)
+library(glmnet)
+library(caret)
+library(tidyverse)
+library(tibble)
+library(DT)
+library(aorsf)
+library(survival)
+library(catboost)
+
+set.seed(1997)
+
+```
+
+### Model Data
+
+```{r echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+# Load the preprocessed modeling dataset
+model_data <- read_csv("preprocessed_model_data.csv", show_col_types = FALSE)
+
+# Check for survival variables and identify available columns
+available_time <- names(model_data)[grep("time|Time|TIME", names(model_data))]
+available_event <- names(model_data)[grep("event|Event|EVENT|type|Type|TYPE|status|Status|STATUS", names(model_data))]
+
+cat("Available time columns:", paste(available_time, collapse = ", "), "\n")
+cat("Available event columns:", paste(available_event, collapse = ", "), "\n")
+
+# Verify the data structure
+cat("Dataset dimensions:", paste(dim(model_data), collapse = " x "), "\n")
+cat("Columns:", paste(names(model_data), collapse = ", "), "\n")
+
+if(!("ev_time" %in% names(model_data)) && length(available_time) == 1) {
+  model_data <- model_data %>% rename(ev_time = !!sym(available_time))
+}
+if(!("outcome" %in% names(model_data)) && length(available_event) == 1) {
+  model_data <- model_data %>% rename(outcome = !!sym(available_event))
+}
+
+# Normalize types
+model_data <- model_data %>%
+  mutate(
+    outcome = as.integer(outcome),
+    ev_time = suppressWarnings(as.numeric(ev_time))
+  )
+
+# Median among censored rows with valid (>0) times; fallback to overall; then tiny epsilon
+med_censored_time <- model_data %>%
+  filter(outcome == 0L, is.finite(ev_time), ev_time > 0) %>%
+  summarise(med = median(ev_time, na.rm = TRUE)) %>% pull(med)
+
+if (!is.finite(med_censored_time) || is.na(med_censored_time)) {
+  med_censored_time <- model_data %>%
+    filter(is.finite(ev_time), ev_time > 0) %>%
+    summarise(med = median(ev_time, na.rm = TRUE)) %>% pull(med)
+}
+if (!is.finite(med_censored_time) || is.na(med_censored_time)) {
+  med_censored_time <- 1 / (365.25 * 24 * 60)  # ~1 minute in years
+}
+
+# Replace bad times for censored rows
+model_data <- model_data %>%
+  mutate(
+    ev_time_replaced = outcome == 0L & is.finite(ev_time) & ev_time <= 0,
+    ev_time = if_else(outcome == 0L & (is.na(ev_time) | ev_time <= 0),
+                      med_censored_time, ev_time)
+  )
+
+cat("Replaced", sum(model_data$ev_time_replaced, na.rm = TRUE),
+    "censored non-positive ev_time values with median =", med_censored_time, "\n")
+
+
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+model_features <- model_data %>% 
+  colnames() %>% 
+  as_tibble()
+
+# View 
+datatable(
+  model_features,
+  rownames = FALSE,
+  options = list(
+    pageLength = 15,
+    columnDefs = list(
+      list(className = 'dt-left', targets = "_all")
+    )
+  )
+)
+```
+
+
+### Methods: Pipeline Summary
+
+```{r survival-lagging-keywords}
+
+# Unified survival modeling keywords (variables to exclude from all models)
+
+survival_lagging_keywords <- c(
+  # Identifiers and outcomes
+  #"ptid_e",
+  "transplant_year", "primary_etiology",
+  
+  # Survival variables (handled separately)
+  # "ev_time", "ev_type",
+  
+  # Donor-specific variables
+  "graft_loss", "int_graft_loss", "dtx_", "cc_", "isc_oth",
+  "dcardiac", "dcon", "dpri", "dpricaus", "rec_", "papooth",
+  "dneuro", "sdprathr", "int_dead", "listing_year", "cpathneg",
+  "dcauseod",
+  
+  # Demographics (if not clinically relevant)
+  "race", "sex", "drace_b", "rrace_a", "hisp", "Iscntry",
+  
+  # Transplant-specific variables
+  "dreject", "dsecaccsEmpty", "dmajbldEmpty", "pishltgr1R", 
+  "drejectEmpty", "drejectHyperacute", "pishltgrEmpty",
+  "pishltgr", "dmajbld", "dsecaccs", "dsecaccs_bin", 
+  
+  # Clinical variables to exclude
+  "dx_cardiomyopathy", "deathspc", "dlist", "pmorexam", 
+  "patsupp", "concod", "pcadrem", "pcadrec", "pathero", 
+  "pdiffib", "dmalcanc", "alt_tx", "age_death", "pacuref",
+  
+  # Additional variables
+  "lsvcma"
+)
+
+
+```
+
+```{r unified-train-test-split}
+
+# Unified train/test split function for all models
+create_unified_train_test_split <- function(data, cohort_name, seed = 1997) {
+  set.seed(seed)
+  
+  # Create reproducible random split
+  n_total <- nrow(data)
+  n_train <- floor(0.8 * n_total)
+  
+  # Create random indices
+  all_indices <- 1:n_total
+  train_indices <- sample(all_indices, size = n_train)
+  test_indices <- setdiff(all_indices, train_indices)
+  
+  # Split the data
+  train_data <- data[train_indices, ]
+  test_data <- data[test_indices, ]
+  
+  # Store indices for other models to use
+  split_info <- list(
+    cohort = cohort_name,
+    train_indices = train_indices,
+    test_indices = test_indices,
+    n_total = n_total,
+    n_train = n_train,
+    n_test = length(test_indices),
+    seed = seed
+  )
+  
+  cat("=== Unified Train/Test Split for", cohort_name, "===\n")
+  cat("Total patients:", n_total, "\n")
+  cat("Training set:", n_train, "patients\n")
+  cat("Test set:", length(test_indices), "patients\n")
+  cat("Split ratio:", round(n_train/n_total, 3), ":", round(length(test_indices)/n_total, 3), "\n")
+  cat("Seed used:", seed, "\n")
+  cat("=====================================\n\n")
+  
+  return(list(
+    train_data = train_data,
+    test_data = test_data,
+    split_info = split_info
+  ))
+}
+```
+
+```{r catboost-clean-target}
+
+clean_survival_data_for_catboost <- function(data, time_col = "ev_time", status_col = "outcome") {
+  
+  # Check for problematic values
+  cat("=== Data Quality Check ===\n")
+  cat("Total rows:", nrow(data), "\n")
+  cat("NaN in time:", sum(is.nan(data[[time_col]])), "\n")
+  cat("NaN in status:", sum(is.nan(data[[status_col]])), "\n")
+  cat("Inf in time:", sum(is.infinite(data[[time_col]])), "\n")
+  cat("Negative time:", sum(data[[time_col]] < 0, na.rm = TRUE), "\n")
+  cat("Zero time:", sum(data[[time_col]] == 0, na.rm = TRUE), "\n")
+  cat("Missing time:", sum(is.na(data[[time_col]])), "\n")
+  cat("Missing status:", sum(is.na(data[[status_col]])), "\n")
+  
+  # Clean the data
+  cleaned_data <- data %>%
+    # Remove rows with NaN or infinite values
+    filter(!is.nan(!!sym(time_col))) %>%
+    filter(!is.infinite(!!sym(time_col))) %>%
+    filter(!is.nan(!!sym(status_col))) %>%
+    filter(!is.infinite(!!sym(status_col))) %>%
+    # Remove rows with negative or zero time
+    filter(!!sym(time_col) > 0) %>%
+    # Remove rows with missing values
+    filter(!is.na(!!sym(time_col))) %>%
+    filter(!is.na(!!sym(status_col))) %>%
+    # Ensure status is binary (0 or 1)
+    filter(!!sym(status_col) %in% c(0, 1))
+  
+  cat("Cleaned rows:", nrow(cleaned_data), "\n")
+  cat("Rows removed:", nrow(data) - nrow(cleaned_data), "\n")
+  
+  return(cleaned_data)
+}
+
+```
+
+```{r lasso-utilities, warning=FALSE, message=FALSE}
+
+
+nzv_cols <- function(df) {
+  vapply(df, function(x) {
+    ux <- unique(x)
+    ux <- ux[!is.na(ux)]
+    length(ux) < 2
+  }, logical(1))
+}
+
+
+mode_level <- function(x) {
+  ux <- na.omit(x)
+  if (length(ux) == 0) return(NA)
+  tab <- sort(table(ux), decreasing = TRUE)
+  names(tab)[1]
+}
+
+
+impute_like <- function(df, like_df) {
+  for (nm in names(df)) {
+    if (is.numeric(df[[nm]])) {
+      m <- median(like_df[[nm]], na.rm = TRUE)
+      df[[nm]][is.na(df[[nm]])] <- m
+    } else if (is.factor(df[[nm]])) {
+      # ensure same levels; add "Other"
+      base_lv <- levels(like_df[[nm]])
+      if (!("Other" %in% base_lv)) base_lv <- c(base_lv, "Other")
+      df[[nm]] <- factor(df[[nm]], levels = base_lv)
+      # unseen -> NA -> "Other"
+      df[[nm]][is.na(df[[nm]])] <- "Other"
+    }
+  }
+  df
+}
+
+
+align_mm <- function(train_df, test_df) {
+  Xtr <- model.matrix(~ . - 1, data = train_df)
+  Xte <- model.matrix(~ . - 1, data = test_df)
+  # pad/reorder test to train columns
+  missing_in_test <- setdiff(colnames(Xtr), colnames(Xte))
+  if (length(missing_in_test)) {
+    Xte <- cbind(Xte, matrix(0, nrow(Xte), length(missing_in_test),
+                             dimnames = list(NULL, missing_in_test)))
+  }
+  extra_in_test <- setdiff(colnames(Xte), colnames(Xtr))
+  if (length(extra_in_test)) Xte <- Xte[, setdiff(colnames(Xte), extra_in_test), drop = FALSE]
+  Xte <- Xte[, colnames(Xtr), drop = FALSE]
+  list(Xtr = Xtr, Xte = Xte)
+}
+
+```
+
+```{r metrics-helper-functions}
+
+# Helper function to create comprehensive metrics for any model
+
+create_survival_metrics <- function(cohort_name, model_name, concordance_obj) {
+  
+  # Check if the concordance object is valid
+  if (is.null(concordance_obj) || !("concordance" %in% names(concordance_obj))) {
+    warning(paste("Invalid concordance object for", model_name, cohort_name))
+    return(NULL)
+  }
+  
+  # Initialize the metrics list
+  metrics <- list(
+    Cohort = cohort_name,
+    Model = model_name,
+    C_Index = round(as.numeric(concordance_obj$concordance), 4)
+    # AUC, Accuracy, F1, etc., are not calculated as they are for classification
+  )
+  
+  return(metrics)
+}
+
+
+# Helper function to get top N features with normalized importance
+get_top_features_normalized <- function(feature_df, cohort_name, model_name, n_features = 25) {
+  if (nrow(feature_df) == 0) return(NULL)
+  
+  # Get top N features
+  top_features <- feature_df %>%
+    slice_head(n = n_features) %>%
+    mutate(
+      Cohort = cohort_name,
+      Model = model_name,
+      Rank = row_number()
+    )
+  
+  # Normalize importance to 0-1 scale
+  if ("importance" %in% colnames(top_features)) {
+    top_features <- top_features %>%
+      mutate(
+        Normalized_Importance = (importance - min(importance)) / (max(importance) - min(importance))
+      )
+  } else if ("coefficient" %in% colnames(top_features)) {
+    # For LASSO coefficients, use absolute values and normalize
+    top_features <- top_features %>%
+      mutate(
+        importance = abs(coefficient),
+        Normalized_Importance = (importance - min(importance)) / (max(importance) - min(importance))
+      )
+  }
+  
+  return(top_features)
+}
+
+
+# Helper function to create metrics summary table
+create_metrics_summary <- function(metrics_list) {
+  if (length(metrics_list) == 0) return(NULL)
+  
+  # Convert list of metrics to data frame
+  metrics_df <- bind_rows(metrics_list)
+  
+  # Create summary by cohort and model
+  summary_df <- metrics_df %>%
+    group_by(Cohort, Model) %>%
+    summarise(
+      AUC = first(AUC),
+      C_Index = first(C_Index),
+      Accuracy = first(Accuracy),
+      F1 = first(F1),
+      Precision = first(Precision),
+      Recall = first(Recall),
+      Method = first(Method),
+      .groups = 'drop'
+    )
+  
+  return(list(
+    full_metrics = metrics_df,
+    summary = summary_df
+  ))
+}
+
+```
+
+### Modeling Pipeline
+
+```{r}
+
+# Apply cleaning to the full dataset
+catboost_df <- clean_survival_data_for_catboost(model_data)
+
+# Create unified train/test split for the full dataset
+split <- create_unified_train_test_split(model_data, "Full Dataset", seed = 1997)
+
+# Extract split info
+train_indices <- split$split_info$train_indices
+test_indices <- split$split_info$test_indices
+train_data <- split$train_data
+test_data <- split$test_data
+
+# Verify the cleaned data
+cat("\n=== Full Dataset Cleaned Data ===\n")
+summary(catboost_df$ev_time)
+summary(catboost_df$outcome)
+
+
+# Check for any remaining issues
+cat("\n=== Final Quality Check ===\n")
+cat("Full Dataset - Any NaN in time:", any(is.nan(catboost_df$ev_time)), "\n")
+cat("Full Dataset - Any NaN in status:", any(is.nan(catboost_df$outcome)), "\n")
+
+```
+
+##### LASSO Model
+
+```{r lasso-df, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+surv_data <- model_data %>%
+  # Remove lagging keywords and variables starting with "sd"
+  select(
+    !(matches(paste(survival_lagging_keywords, collapse = "|")) | starts_with("sd"))
+  ) %>%
+  # Create standard 'time' and 'status' columns
+  mutate(
+    time = ev_time,
+    status = outcome
+  ) %>%
+  # Handle infinite values by converting them to NA
+  mutate(across(where(is.numeric), ~if_else(is.infinite(.), NA_real_, .))) %>%
+  # d. Remove any columns that are entirely empty
+  select(-where(~all(is.na(.)))) %>%
+  # e. Remove identifier and original time/status columns
+  select(-ptid_e, -ev_time, -outcome) %>%
+  # f. Ensure all predictors are numeric for glmnet
+  mutate(across(where(is.character), as.factor)) %>%
+  mutate(across(where(is.factor), as.numeric))
+
+# Remove constant columns
+constant_cols <- names(surv_data)[sapply(surv_data, function(x) {
+  length(unique(na.omit(x))) == 1
+})]
+if(length(constant_cols) > 0) {
+  surv_data <- surv_data %>% select(-all_of(constant_cols))
+}
+
+# Impute any remaining missing values
+surv_data <- surv_data %>%
+  mutate(across(everything(), ~if_else(is.na(.), median(., na.rm = TRUE), .)))
+
+# Final check for non-finite values
+if (any(!is.finite(as.matrix(surv_data)))) {
+  stop("Data still contains NA/NaN/Inf values after cleaning. Please check the data source.")
+}
+
+cat("Survival LASSO - Final data dimensions:", paste(dim(surv_data), collapse = " x "), "\n")
+
+```
+
+```{r lasso-train-test-split}
+
+train <- surv_data[train_indices, ]
+test  <- surv_data[test_indices, ]
+
+# Create matrices and survival objects for TRAIN set
+y_train <- Surv(train$time, train$status)
+x_train <- as.matrix(train %>% select(-time, -status))
+
+# Create matrices and survival objects for TEST set
+y_test <- Surv(test$time, test$status)
+x_test <- as.matrix(test %>% select(-time, -status))
+
+
+# Verify the size of the new data frames
+cat("Training set size:", nrow(train), "\n")
+cat("Test set size:", nrow(test), "\n")
+cat("X_train dim:", paste(dim(x_train), collapse = " x "), "\n")
+cat("X_test dim:", paste(dim(x_test), collapse = " x "), "\n")
+
+
+```
+
+
+```{r survival-lasso-model-fit}
+
+# Fit survival LASSO with cross-validation on the TRAINING data ONLY
+set.seed(1997)
+surv_lasso_cv <- cv.glmnet(
+  x = x_train,  # TRAINING matrix
+  y = y_train,  # TRAINING survival object
+  family = "cox",
+  alpha = 1,  # L1 penalty (LASSO)
+  nfolds = 5,
+  type.measure = "C"
+)
+
+# Get optimal lambda from cross-validation
+surv_optimal_lambda <- surv_lasso_cv$lambda.min
+
+cat("Survival LASSO - Optimal lambda:", round(surv_optimal_lambda, 6), "\n")
+
+# Fit final model with optimal lambda
+surv_lasso_model <- glmnet(
+  x = x_train,
+  y = y_train,
+  family = "cox",
+  alpha = 1,
+  lambda = surv_optimal_lambda
+)
+
+
+```
+
+```{r lasso-model-prediction}
+
+surv_risk_scores <- predict(surv_lasso_model,
+                                newx = x_test,
+                                s = "lambda.min")
+
+# Calculate C-Index on the TEST data
+surv_c_index <- survival::concordance(y_test ~ surv_risk_scores)
+
+cat("Survival LASSO - C-Index on Test Set:", round(as.numeric(surv_c_index$concordance), 4), "\n")
+
+# Get non-zero coefficients for feature importance from the CV model
+surv_coefs <- coef(surv_lasso_cv, s = "lambda.min")
+surv_nonzero_coefs <- data.frame(
+  feature = rownames(surv_coefs)[surv_coefs@i + 1], # Using sparse matrix indexing
+  coefficient = surv_coefs@x
+) %>%
+  filter(feature != "(Intercept)") %>%
+  arrange(desc(abs(coefficient)))
+
+cat("Survival LASSO - Number of selected features:", nrow(surv_nonzero_coefs), "\n")
+
+
+```
+
+###### Accuracy
+
+```{r survival-lasso-prediction-accuracy, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+# Get risk scores (higher = higher risk of death)
+surv_risk_scores <- predict(surv_lasso_model, 
+                                newx = x_test,
+                                s = surv_optimal_lambda)
+
+# Calculate C-Index
+surv_c_index <- survival::concordance(y_test ~ surv_risk_scores)
+
+cat("Survival LASSO - C-Index:", round(as.numeric(surv_c_index$concordance), 4), "\n")
+
+# Get non-zero coefficients for feature importance
+
+surv_coefs_matrix <- as.matrix(coef(surv_lasso_model, s = surv_optimal_lambda))
+
+
+surv_nonzero_coefs <- data.frame(
+  feature = rownames(surv_coefs_matrix),
+  coefficient = as.numeric(surv_coefs_matrix[, 1]) # Use as.numeric to get the vector
+) %>%
+  filter(coefficient != 0 & feature != "(Intercept)") %>%
+  arrange(desc(abs(coefficient)))
+
+
+# Create a standardized metrics list
+lasso_metrics <- create_survival_metrics(
+  "Full Dataset", 
+  "LASSO (Survival)", 
+  surv_c_index
+)
+
+```
+
+###### Feature Importance
+
+```{r lasso-features, warning=FALSE, message=FALSE, eval=TRUE, echo=FALSE}
+
+# Display LASSO coefficients
+cat("LASSO Model - Number of selected features:", nrow(surv_nonzero_coefs), "\n")
+  
+  datatable(
+    surv_nonzero_coefs,
+    caption = "LASSO Feature Coefficients",
+    rownames = FALSE,
+    options = list(
+      pageLength = 15,
+      columnDefs = list(
+        list(className = 'dt-left', targets = "_all")
+      )
+    )
+  )
+
+```
+
+##### CatBoost Survival Model
+
+```{r catboost-model-df, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+# Apply cleaning cohort
+catboost_df <- clean_survival_data_for_catboost(model_data)
+
+# Filter columns: keep only those that DON'T match the keyword list OR start with "sd"
+
+catboost_df <- catboost_df %>%
+  # drop lagging/sd features (unchanged)
+  select(!(matches(paste(survival_lagging_keywords, collapse = "|")) | starts_with("sd"))) %>%
+  mutate(
+    outcome        = as.integer(outcome),                 # ensure 0/1
+    final_time = suppressWarnings(as.numeric(ev_time)),
+
+    # glmnet/catboost survival need strictly positive times; bump <=0 by tiny epsilon
+    final_time = if_else(is.finite(final_time) & final_time <= 0,
+                             .Machine$double.eps, final_time),
+
+    # ✅ signed-time label: +time for events, −time for censored
+    catboost_label = if_else(outcome == 1L, final_time, -final_time)
+  ) %>%
+  # keep rows with usable time
+  filter(is.finite(final_time))
+
+
+```
+
+```{r catboost-data-prep}
+
+# Split the data
+train_data <- catboost_df[train_indices, ]
+test_data  <- catboost_df[test_indices, ]
+
+
+# Create the Correctly Formatted Survival Label ---
+# Positive value for event, negative for censored
+train_labels <- ifelse(train_data$outcome == 1, 
+                           train_data$final_time, 
+                           -train_data$final_time)
+
+test_labels <- ifelse(test_data$outcome == 1, 
+                          test_data$final_time, 
+                          -test_data$final_time)
+
+
+# Filter out invalid records from labels and data
+# This ensures labels are finite and positive in absolute value
+valid_train_indices <- which(is.finite(train_labels) & train_labels != 0)
+train_labels <- train_labels[valid_train_indices]
+train_data <- train_data[valid_train_indices, ]
+
+valid_test_indices <- which(is.finite(test_labels) & test_labels != 0)
+test_labels <- test_labels[valid_test_indices]
+test_data <- test_data[valid_test_indices, ]
+
+
+# Remove all outcome-related columns from the features
+feature_exclusion_cols <- c("ptid_e", "ev_time", "outcome", "final_time", "catboost_label")
+
+
+# Prepare training features
+train_features <- train_data %>%
+  select(-any_of(feature_exclusion_cols)) %>%
+  mutate(across(where(is.character), as.factor)) # Convert all characters to factors
+
+# Prepare test features
+test_features <- test_data %>%
+  select(-any_of(feature_exclusion_cols)) %>%
+  mutate(across(where(is.character), as.factor)) # Convert all characters to factors
+
+# Synchronize factor levels from train to test
+# This ensures any new levels in the test set don't cause issues
+for (col in names(train_features)) {
+  if (is.factor(train_features[[col]])) {
+    train_levels <- levels(train_features[[col]])
+    test_features[[col]] <- factor(test_features[[col]], levels = train_levels)
+  }
+}
+
+```
+
+```{r catboost-model}
+
+# Data Pools
+train_pool <- catboost.load_pool(
+  data = train_features, 
+  label = train_labels
+)
+
+test_pool <- catboost.load_pool(
+  data = test_features, 
+  label = test_labels
+)
+
+
+# Model parameters
+params <- list(
+  loss_function = 'Cox',
+  eval_metric = 'Cox', # Metric to calculate on the test set
+  iterations = 2000,
+  depth = 4,
+  verbose = 500 # Print train and test metrics every 500 iterations
+)
+
+
+# Train the model, providing test_pool for validation during training
+catboost_model <- catboost.train(
+  learn_pool = train_pool,
+  test_pool = test_pool,
+  params = params
+)
+
+```
+
+###### Accuracy
+
+```{r catboost-accuracy, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+predictions_test <- catboost.predict(catboost_model, test_pool)
+
+# Decode the test labels back into time and status
+# For the concordance calculation.
+test_time <- abs(test_labels)
+test_status <- ifelse(test_labels > 0, 1, 0)
+
+# Survival object for the test set
+surv_obj_test <- Surv(test_time, test_status)
+
+
+# INVERT THE PREDICTIONS by multiplying by -1
+inverted_predictions <- -1 * predictions_test;
+
+# Concordance score
+concordance_score <- survival::concordance(surv_obj_test ~ inverted_predictions)
+
+print("Model Performance on Test Set:")
+print(concordance_score)
+
+```
+
+```{r catboost-survival-metrics}
+
+# Get risk scores from the trained CatBoost model
+catboost_risk_scores <- catboost.predict(catboost_model, pool = test_pool)
+
+# Invert scores for correct ranking (higher score = higher risk)
+inverted_scores <- -1 * catboost_risk_scores
+
+# Decode the test labels back into time and status
+test_time <- abs(test_labels)
+test_status <- ifelse(test_labels > 0, 1, 0)
+
+# Create a survival object for the test set
+surv_obj_test <- Surv(test_time, test_status)
+
+# Calculate the full concordance object
+concordance_score <- survival::concordance(surv_obj_test ~ inverted_scores)
+
+
+# Pass the concordance object to the streamlined function
+catboost_surv_metrics <- create_survival_metrics(
+  "Full Dataset",
+  "CatBoost",
+  concordance_score
+)
+
+# Print Results
+cat("CatBoost Model Performance:\n")
+print(concordance_score)
+cat("\nMetrics List Created:\n")
+print(catboost_surv_metrics)
+
+```
+
+###### Feature Importance
+
+```{r catboost-feature-importance, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+feature_importance_df <- catboost.get_feature_importance(catboost_model, pool = train_pool)
+
+# Convert to tidy format with enframe
+importance_df <- as.data.frame(feature_importance_df) %>%
+  mutate(feature = rownames(.)) %>%
+  rename(importance = V1) %>%
+  filter(importance > 0) %>%
+  select(feature, importance) %>% 
+  arrange(desc(importance))
+
+  
+  datatable(
+    importance_df,
+    caption = "CatBoost Feature Importance",
+    rownames = FALSE,
+    options = list(
+      pageLength = 15,
+      columnDefs = list(
+        list(className = 'dt-left', targets = "_all")
+      )
+    )
+  )
+
+```
+
+##### AORSF Model
+
+```{r aorsf-fit-model, warning=FALSE, message=FALSE, echo=FALSE, eval=TRUE}
+
+
+aorsf_model_data <- model_data %>%
+  select(
+    !(matches(paste(survival_lagging_keywords, collapse = "|")) | starts_with("sd"))
+  )
+
+
+if(nrow(model_data) > 0) {
+  
+  # Check if survival variables exist in the data
+  if(all(c("ev_time", "outcome") %in% colnames(aorsf_model_data))) {
+    
+    # Prepare data with standard 'time' and 'status' columns for survival analysis
+    aorsf_data <- aorsf_model_data %>%
+      mutate(
+        egfr_at_transplant = if_else(is.infinite(egfr_at_transplant), NA_real_, egfr_at_transplant)
+    ) %>%
+      mutate(
+        time = ev_time,
+        status = as.integer(outcome == 1)
+      ) %>%
+      select(ptid_e, time, status, everything()) %>% 
+      mutate(across(where(is.character), as.factor)) %>% 
+      select(-ev_time, -outcome)
+      
+    aorsf_train <- aorsf_data[train_indices, ]
+    aorsf_test  <- aorsf_data[test_indices, ]
+    
+    if(nrow(aorsf_train) > 0 && nrow(aorsf_test) > 0) {
+      
+      # Remove constant columns
+      constant_cols <- names(aorsf_train)[sapply(aorsf_train, function(x) {
+        length(unique(na.omit(x))) == 1
+      })]
+      
+      if(length(constant_cols) > 0) {
+        aorsf_train <- aorsf_train %>% select(-all_of(constant_cols))
+        aorsf_test  <- aorsf_test  %>% select(-all_of(constant_cols))
+      }
+      
+      # Ensure consistent features between train and test
+      common_features <- intersect(colnames(aorsf_train), colnames(aorsf_test))
+      aorsf_train <- aorsf_train %>% select(all_of(common_features))
+      aorsf_test <- aorsf_test %>% select(all_of(common_features))
+      
+      
+      # --- Train AORSF model ---
+      aorsf_model <- orsf(
+        data = aorsf_train %>% select(-ptid_e),
+        formula = Surv(time, status) ~ .,
+        na_action = 'impute_meanmode',
+        n_tree = 100
+      )
+      
+    } else {
+      cat("Insufficient data after splitting for AORSF modeling\n")
+    }
+    
+  } else {
+    cat("Survival variables (ev_time, outcome) not found in data\n")
+  }
+  
+} else {
+  cat("Initial data frame is empty\n")
+}
+
+      
+```
+
+###### Accuracy Metrics
+
+```{r echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+
+# Get risk predictions on the test data
+predictions_aorsf <- predict(aorsf_model, 
+                               new_data = aorsf_test,
+                               pred_type = 'risk')
+      
+# Create a survival object from the test set's actual outcomes
+surv_obj_test <- Surv(aorsf_test$time, aorsf_test$status)
+      
+# Calculate and print the Concordance Index
+concordance_aorsf <- survival::concordance(surv_obj_test ~ predictions_aorsf)
+      
+cat("\n--- AORSF Model Evaluation on Test Set ---\n")
+print(concordance_aorsf)
+
+```
+
+```{r aorsf-survival-metrics}
+
+# Get risk predictions on the test data
+aorsf_risk_scores <- predict(
+  aorsf_model, 
+  new_data = aorsf_test,
+  pred_type = 'risk'
+)
+      
+# Create survival object
+aorsf_surv_obj_test <- Surv(aorsf_test$time, aorsf_test$status)
+      
+# Calculate the full concordance object
+aorsf_c_index <- survival::concordance(aorsf_surv_obj_test ~ aorsf_risk_scores)
+      
+
+# Pass the concordance object to the streamlined function
+aorsf_metrics <- create_survival_metrics(
+  "Full Dataset", 
+  "AORSF", 
+  aorsf_c_index
+)
+
+# Print Results
+cat("AORSF Model Performance:\n")
+print(aorsf_c_index)
+cat("\nMetrics List Created:\n")
+print(aorsf_metrics)
+
+```
+
+
+###### Feature Importance
+
+```{r echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+aorsf_importance <- orsf_vi_negate(aorsf_model)
+
+aorsf_importance_df <- data.frame(
+  feature = names(aorsf_importance),
+  importance = as.numeric(aorsf_importance)
+) %>%
+filter(importance > 0) %>%
+arrange(desc(importance))
+
+
+datatable(
+  aorsf_importance_df,
+  caption = "AORSF Variable Importance",
+  rownames = FALSE,
+  options = list(pageLength = 15)
+)
+      
+```
+
+### Model Performance Comparison
+
+```{r warning=FALSE, message=FALSE, echo=FALSE, eval=TRUE}
+
+# Initialize a list to hold all metrics data frames
+all_metrics_list <- list()
+
+# Add metrics if they exist
+if(exists("lasso_metrics")) {
+  all_metrics_list[["lasso"]] <- lasso_metrics
+}
+if(exists("catboost_surv_metrics")) {
+  all_metrics_list[["catboost"]] <- catboost_surv_metrics
+}
+if(exists("aorsf_metrics")) {
+  all_metrics_list[["aorsf"]] <- aorsf_metrics
+}
+
+
+if(length(all_metrics_list) > 0) {
+  # Combine all data frames into one
+  metrics_df <- bind_rows(all_metrics_list)
+  
+  # Display comparison table
+  datatable(
+    metrics_df,
+    caption = "Model Performance Comparison - Survival Models",
+    rownames = FALSE,
+    options = list(
+      pageLength = 10,
+      columnDefs = list(
+        list(className = 'dt-left', targets = "_all")
+      )
+    )
+  )
+} else {
+  cat("No metrics available for comparison\n")
+}
+
+```
+
+### Feature Importance Summary
+
+```{r echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+# Comprehensive summary table with top 25 features for each model
+comprehensive_summary <- list()
+
+# Function to get top 25 features with normalized importance
+get_top_features <- function(feature_df, model_name, cohort_name = "Full Dataset") {
+  if (nrow(feature_df) > 0) {
+    # Get top 25 features
+    top_features <- feature_df %>%
+      slice_head(n = 25) %>%
+      mutate(
+        Model = model_name,
+        Cohort = cohort_name,
+        Rank = row_number()
+      )
+    
+    # Normalize importance to 0-1 scale for Sankey diagram
+    if ("importance" %in% colnames(top_features)) {
+      top_features <- top_features %>%
+        mutate(
+          Normalized_Importance = (importance - min(importance)) / (max(importance) - min(importance))
+        )
+    } else if ("coefficient" %in% colnames(top_features)) {
+      # For LASSO coefficients, use absolute values and normalize
+      top_features <- top_features %>%
+        mutate(
+          importance = abs(coefficient),
+          Normalized_Importance = (importance - min(importance)) / (max(importance) - min(importance))
+        )
+    }
+    
+    return(top_features)
+  }
+  return(NULL)
+}
+
+# --- Collect Feature Importance ---
+
+# 1. LASSO
+if (exists("surv_nonzero_coefs")) {
+  lasso_features <- get_top_features(surv_nonzero_coefs, "LASSO")
+  if (!is.null(lasso_features)) comprehensive_summary <- append(comprehensive_summary, list(lasso_features))
+}
+
+# 2. CatBoost
+if (exists("importance_df")) {
+  catboost_features <- get_top_features(importance_df, "CatBoost")
+  if (!is.null(catboost_features)) comprehensive_summary <- append(comprehensive_summary, list(catboost_features))
+}
+
+# 3. AORSF
+if (exists("aorsf_importance_df")) {
+  aorsf_features <- get_top_features(aorsf_importance_df, "AORSF")
+  if (!is.null(aorsf_features)) comprehensive_summary <- append(comprehensive_summary, list(aorsf_features))
+}
+
+
+# Combine all feature importance data
+if (length(comprehensive_summary) > 0) {
+  all_features_df <- bind_rows(comprehensive_summary)
+}
+  
+```
+
+```{r}
+
+library(dplyr)
+library(DT)
+
+# Select and arrange columns for a clear feature-focused view
+if (exists("all_features_df")) {
+  feature_summary_df <- all_features_df %>%
+    select(Rank, feature, Model, importance, Normalized_Importance) %>%
+    arrange(Rank, Model)
+
+# Display the interactive table
+  datatable(
+    feature_summary_df,
+    caption = "Feature Importances by Model",
+    rownames = FALSE,
+    options = list(
+      pageLength = 25,
+      columnDefs = list(
+        list(className = 'dt-left', targets = "_all")
+      )
+    )
+  )
+} else {
+    cat("No feature importance data to display.\n")
+}
+
+```
+
+### Sankey Chart: Model to Features
+
+```{r sankey-plot, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+library(dplyr)
+library(plotly)
+
+if (exists("all_features_df")) {
+# Prepare data for the Sankey diagram
+sankey_data <- all_features_df %>%
+  select(source = Model, target = feature, value = Normalized_Importance) %>%
+  filter(!is.na(value) & value > 0)
+
+if(nrow(sankey_data) > 0) {
+  
+  # Create a unique list of all nodes (models and features)
+  all_nodes <- unique(c(sankey_data$source, sankey_data$target))
+  
+  # Create a links data frame with 0-based indices
+  links <- sankey_data %>%
+    mutate(
+      source = match(source, all_nodes) - 1,
+      target = match(target, all_nodes) - 1
+    )
+
+  # Create the Sankey plot
+sankey_plot <- plot_ly(
+    type = "sankey",
+    orientation = "h",
+    node = list(
+      label = all_nodes,
+      pad = 15,
+      thickness = 20,
+      line = list(color = "black", width = 0.5)
+    ),
+    link = list(
+      source = links$source,
+      target = links$target,
+      value = links$value
+    )
+  ) %>%
+    layout(
+      title = "Feature Importance Flow: Models to Features",
+      font = list(size = 10)
+    )
+    
+} else {
+  cat("No data available to generate Sankey diagram.\n")
+}
+
+sankey_plot
+} else {
+    cat("No feature importance data to generate Sankey plot.\n")
+}
+```
+
+```{r eval=FALSE, echo=FALSE}
+
+if (exists("sankey_plot")) {
+  htmlwidgets::saveWidget(
+    sankey_plot,
+    file = "sankey_time_to_event_feature_importance.html",
+    selfcontained = TRUE
+  )
+}
+
+
+```
+
+

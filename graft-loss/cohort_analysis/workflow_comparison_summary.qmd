@@ -1,0 +1,311 @@
+---
+title: "Workflow Comparison Summary"
+author: "R. Jerome Dixon"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    code-summary: "Show the code"
+    embed-resources: true
+    default-image-extension: svg
+    dpi: 600
+editor: 
+  markdown: 
+    wrap: 72
+---
+
+## Overview
+
+This document provides a comprehensive comparison of different modeling workflows for pediatric heart transplant outcome prediction. It summarizes cohort sizes, control/target distributions, and model performance metrics across different approaches to enable systematic comparison and analysis.
+
+**IMPORTANT: Before running this file, you must first execute:**
+1. `cohort_event_classification.qmd` to generate `cohort_event_classification_summary.csv`
+2. `event_classification.qmd` to generate `unified_event_classification_summary.csv`
+
+This ensures the required summary data is available for comparison.
+
+## Workflow Comparison Summary
+
+```{r load-summaries, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+library(readr)
+library(dplyr)
+library(DT)
+library(ggplot2)
+library(tidyr)
+
+# Function to safely load CSV files
+safe_load_csv <- function(filename) {
+  if (file.exists(filename)) {
+    tryCatch({
+      read_csv(filename, show_col_types = FALSE)
+    }, error = function(e) {
+      cat("Error loading", filename, ":", e$message, "\n")
+      return(NULL)
+    })
+  } else {
+    cat("File not found:", filename, "\n")
+    return(NULL)
+  }
+}
+
+# Load workflow summaries
+cohort_summary <- safe_load_csv("cohort_event_classification_summary.csv")
+unified_summary <- safe_load_csv("unified_event_classification_summary.csv")
+
+# Display what was loaded
+cat("=== LOADED WORKFLOW SUMMARIES ===\n")
+if (!is.null(cohort_summary)) {
+  cat("✓ Cohort Event Classification Summary loaded\n")
+  print(cohort_summary)
+} else {
+  cat("✗ Cohort Event Classification Summary not available\n")
+  cat("  → Please run 'cohort_event_classification.qmd' first to generate this file\n")
+}
+
+if (!is.null(unified_summary)) {
+  cat("✓ Unified Event Classification Summary loaded\n")
+  print(unified_summary)
+} else {
+  cat("✗ Unified Event Classification Summary not available\n")
+  cat("  → Please run 'event_classification.qmd' first to generate this file\n")
+}
+
+# Check if both summaries are available
+if (is.null(cohort_summary) || is.null(unified_summary)) {
+  cat("\n❌ CANNOT PROCEED: Missing required summary files\n")
+  cat("Please execute the following files in order:\n")
+  cat("1. cohort_event_classification.qmd\n")
+  cat("2. event_classification.qmd\n")
+  cat("3. workflow_comparison_summary.qmd (this file)\n")
+  stop("Required summary files not found. Please run the individual workflow files first.")
+}
+
+```
+
+## Cohort Size Analysis
+
+```{r cohort-size-analysis, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+if (!is.null(cohort_summary) && !is.null(unified_summary)) {
+  
+  # Create cohort size comparison
+  cohort_comparison <- data.frame(
+    Workflow = c("Cohort Approach", "Unified Approach"),
+    Total_Patients = c(
+      cohort_summary$CHD_Cohort_Size + cohort_summary$MC_Cohort_Size,
+      unified_summary$Full_Cohort_Size
+    ),
+    CHD_Size = c(cohort_summary$CHD_Cohort_Size, NA),
+    MC_Size = c(cohort_summary$MC_Cohort_Size, NA),
+    CHD_Event_Rate = c(cohort_summary$CHD_Event_Rate, NA),
+    MC_Event_Rate = c(cohort_summary$MC_Event_Rate, NA),
+    Unified_Event_Rate = c(NA, unified_summary$Full_Event_Rate)
+  )
+  
+  cat("=== COHORT SIZE COMPARISON ===\n\n")
+  cat("Cohort Approach:\n")
+  cat("  CHD Cohort:", cohort_summary$CHD_Cohort_Size, "patients (Event Rate:", cohort_summary$CHD_Event_Rate, "%)\n")
+  cat("  MC Cohort:", cohort_summary$MC_Cohort_Size, "patients (Event Rate:", cohort_summary$MC_Event_Rate, "%)\n")
+  cat("  Total:", cohort_summary$CHD_Cohort_Size + cohort_summary$MC_Cohort_Size, "patients\n\n")
+  
+  cat("Unified Approach:\n")
+  cat("  Full Cohort:", unified_summary$Full_Cohort_Size, "patients (Event Rate:", unified_summary$Full_Event_Rate, "%)\n\n")
+  
+  # Display comparison table
+  datatable(
+    cohort_comparison,
+    caption = "Cohort Size Comparison",
+    rownames = FALSE,
+    options = list(
+      pageLength = 10,
+      columnDefs = list(
+        list(className = 'dt-left', targets = "_all")
+      )
+    )
+  )
+  
+} else {
+  cat("Cannot perform cohort size analysis - missing workflow summaries\n")
+}
+
+```
+
+## Model Performance Comparison
+
+```{r performance-comparison, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+if (!is.null(cohort_summary) && !is.null(unified_summary)) {
+  
+  # Create performance comparison for each model type
+  lasso_comparison <- data.frame(
+    Model = "LASSO",
+    CHD_AUC = cohort_summary$CHD_LASSO_AUC,
+    CHD_Precision = cohort_summary$CHD_LASSO_Precision,
+    CHD_Recall = cohort_summary$CHD_LASSO_Recall,
+    MC_AUC = cohort_summary$MC_LASSO_AUC,
+    MC_Precision = cohort_summary$MC_LASSO_Precision,
+    MC_Recall = cohort_summary$MC_LASSO_Recall,
+    Unified_AUC = unified_summary$LASSO_AUC,
+    Unified_Precision = unified_summary$LASSO_Precision,
+    Unified_Recall = unified_summary$LASSO_Recall
+  )
+  
+  catboost_comparison <- data.frame(
+    Model = "CatBoost",
+    CHD_AUC = cohort_summary$CHD_CatBoost_AUC,
+    CHD_Precision = cohort_summary$CHD_CatBoost_Precision,
+    CHD_Recall = cohort_summary$CHD_CatBoost_Recall,
+    MC_AUC = cohort_summary$MC_CatBoost_AUC,
+    MC_Precision = cohort_summary$MC_CatBoost_Precision,
+    MC_Recall = cohort_summary$MC_CatBoost_Recall,
+    Unified_AUC = unified_summary$CatBoost_AUC,
+    Unified_Precision = unified_summary$CatBoost_Precision,
+    Unified_Recall = unified_summary$CatBoost_Recall
+  )
+  
+  catboost_rf_comparison <- data.frame(
+    Model = "CatBoost RF",
+    CHD_AUC = cohort_summary$CHD_CatBoost_RF_AUC,
+    CHD_Precision = cohort_summary$CHD_CatBoost_RF_Precision,
+    CHD_Recall = cohort_summary$CHD_CatBoost_RF_Recall,
+    MC_AUC = cohort_summary$MC_CatBoost_RF_AUC,
+    MC_Precision = cohort_summary$MC_CatBoost_RF_Precision,
+    MC_Recall = cohort_summary$MC_CatBoost_RF_Recall,
+    Unified_AUC = unified_summary$CatBoost_RF_AUC,
+    Unified_Precision = unified_summary$CatBoost_RF_Precision,
+    Unified_Recall = unified_summary$CatBoost_RF_Recall
+  )
+  
+  traditional_rf_comparison <- data.frame(
+    Model = "Traditional RF",
+    CHD_AUC = cohort_summary$CHD_Traditional_RF_AUC,
+    CHD_Precision = cohort_summary$CHD_Traditional_RF_Precision,
+    CHD_Recall = cohort_summary$CHD_Traditional_RF_Recall,
+    MC_AUC = cohort_summary$MC_Traditional_RF_AUC,
+    MC_Precision = cohort_summary$MC_Traditional_RF_Precision,
+    MC_Recall = cohort_summary$MC_Traditional_RF_Recall,
+    Unified_AUC = unified_summary$Traditional_RF_AUC,
+    Unified_Precision = unified_summary$Traditional_RF_Precision,
+    Unified_Recall = unified_summary$Traditional_RF_Recall
+  )
+  
+  # Combine all comparisons
+  performance_comparison <- rbind(
+    lasso_comparison,
+    catboost_comparison,
+    catboost_rf_comparison,
+    traditional_rf_comparison
+  )
+  
+  cat("=== MODEL PERFORMANCE COMPARISON ===\n\n")
+  cat("Performance metrics are shown for each model type across different approaches:\n")
+  cat("- CHD: Congenital Heart Disease cohort\n")
+  cat("- MC: Myocarditis/Cardiomyopathy cohort\n")
+  cat("- Unified: Combined approach using all data\n\n")
+  
+  # Display performance comparison table
+  datatable(
+    performance_comparison,
+    caption = "Model Performance Comparison Across Workflows",
+    rownames = FALSE,
+    options = list(
+      pageLength = 10,
+      columnDefs = list(
+        list(className = 'dt-left', targets = "_all")
+      )
+    )
+  )
+  
+} else {
+  cat("Cannot perform performance comparison - missing workflow summaries\n")
+}
+
+```
+
+## Key Insights and Recommendations
+
+```{r insights, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+if (!is.null(cohort_summary) && !is.null(unified_summary)) {
+  
+  cat("=== KEY INSIGHTS ===\n\n")
+  
+  # Cohort size insights
+  total_cohort_patients <- cohort_summary$CHD_Cohort_Size + cohort_summary$MC_Cohort_Size
+  unified_patients <- unified_summary$Full_Cohort_Size
+  
+  cat("1. COHORT SIZE ANALYSIS:\n")
+  cat("   - Cohort approach uses", total_cohort_patients, "total patients\n")
+  cat("   - Unified approach uses", unified_patients, "total patients\n")
+  
+  if (unified_patients > total_cohort_patients) {
+    cat("   - Unified approach has", unified_patients - total_cohort_patients, "more patients\n")
+    cat("   - This suggests some patients may not fit into the defined cohorts\n\n")
+  } else if (unified_patients < total_cohort_patients) {
+    cat("   - Cohort approach has", total_cohort_patients - unified_patients, "more patients\n")
+    cat("   - This suggests potential data filtering differences\n\n")
+  } else {
+    cat("   - Both approaches use the same number of patients\n\n")
+  }
+  
+  # Event rate insights
+  cat("2. EVENT RATE ANALYSIS:\n")
+  cat("   - CHD Event Rate:", cohort_summary$CHD_Event_Rate, "%\n")
+  cat("   - MC Event Rate:", cohort_summary$MC_Event_Rate, "%\n")
+  cat("   - Unified Event Rate:", unified_summary$Full_Event_Rate, "%\n")
+  
+  # Calculate weighted average event rate for cohort approach
+  chd_weight <- cohort_summary$CHD_Cohort_Size / total_cohort_patients
+  mc_weight <- cohort_summary$MC_Cohort_Size / total_cohort_patients
+  weighted_event_rate <- (chd_weight * cohort_summary$CHD_Event_Rate) + (mc_weight * cohort_summary$MC_Event_Rate)
+  
+  cat("   - Weighted Average Cohort Event Rate:", round(weighted_event_rate, 2), "%\n")
+  cat("   - Event Rate Difference (Unified - Weighted Cohort):", round(unified_summary$Full_Event_Rate - weighted_event_rate, 2), "%\n\n")
+  
+  # Model performance insights
+  cat("3. MODEL PERFORMANCE INSIGHTS:\n")
+  cat("   - Performance metrics are shown for the best model configuration by Recall\n")
+  cat("   - This prioritizes sensitivity (catching all events) over precision\n")
+  cat("   - Consider both ROC-optimal and Recall-friendly thresholds for clinical use\n\n")
+  
+  cat("4. RECOMMENDATIONS:\n")
+  cat("   - Use cohort-specific models when clinical reasoning requires subgroup analysis\n")
+  cat("   - Use unified models when maximizing statistical power is priority\n")
+  cat("   - Consider ensemble approaches combining both strategies\n")
+  cat("   - Validate model performance on external datasets when possible\n")
+  
+} else {
+  cat("Cannot provide insights - missing workflow summaries\n")
+}
+
+```
+
+## Data Export
+
+```{r export-data, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+if (!is.null(cohort_summary) && !is.null(unified_summary)) {
+  
+  # Create comprehensive export dataset
+  export_data <- list(
+    cohort_summary = cohort_summary,
+    unified_summary = unified_summary
+  )
+  
+  # Save combined data
+  saveRDS(export_data, "workflow_comparison_data.rds")
+  cat("✓ Combined workflow data saved to: workflow_comparison_data.rds\n")
+  
+  # Create summary CSV
+  write.csv(cohort_summary, "cohort_workflow_summary.csv", row.names = FALSE)
+  write.csv(unified_summary, "unified_workflow_summary.csv", row.names = FALSE)
+  cat("✓ Individual workflow summaries saved to CSV files\n")
+  
+} else {
+  cat("Cannot export data - missing workflow summaries\n")
+}
+
+```

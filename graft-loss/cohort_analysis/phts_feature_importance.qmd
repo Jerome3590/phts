@@ -1,0 +1,2859 @@
+---
+title: "PHTS Feature Importance"
+author: "R. Jerome Dixon"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+format:
+  html:
+    toc: true
+    toc-depth: 6
+    code-fold: true
+    code-summary: "Show the code"
+    embed-resources: true
+    default-image-extension: svg
+    dpi: 600
+---
+
+## Overview
+
+This analysis examines feature importance for pediatric heart transplant survival using multiple complementary approaches:
+
+1.  **LASSO Model**
+    -   Provides initial variable selection through regularization
+    -   Identifies linear relationships and handles multicollinearity
+    -   Uses standardized coefficients for feature importance
+2.  **CatBoost Model**
+    -   Captures non-linear relationships and feature interactions
+    -   Handles categorical variables internally
+    -   Provides feature importance based on prediction value changes
+3.  **Accelerated Oblique Random Survival Forests (AORSF)**
+    -   Survival-specific feature importance through multiple measures:
+        -   Negation: Impact of removing features
+        -   Permutation: Impact of randomizing features
+        -   ANOVA: Statistical significance in survival context
+    -   Handles time-to-event data structure
+
+The analysis includes:\
+- Comprehensive data preprocessing and imputation\
+- Consistent handling of categorical variables and constant columns\
+- Removal of lagging variables to prevent data leakage\
+- Normalized feature importance scores for cross-method comparison\
+- Visualization of feature importance consistency across methods\
+- Summary of method-specific feature handling approaches
+
+This multi-method approach helps identify features that are consistently important across different modeling paradigms, providing more robust insights into factors affecting transplant survival.
+
+## Variable Usage and Data Leakage Prevention
+
+**Critical: Proper variable exclusion to prevent data leakage**
+
+- **Classification Models (LASSO, CatBoost)**:
+  - Target: `outcome` (binary: 0 = survival, 1 = event by 1 year)
+  - Exclude: `ptid_e`, `transplant_year`, `ev_time`, `ev_type`
+  - Reason: `ev_time` and `ev_type` directly relate to the outcome
+
+- **Survival Model (AORSF)**:
+  - Target: `Surv(ev_time, outcome)` where `ev_time` = time to event, `outcome` = event indicator
+  - Exclude: `ptid_e`, `transplant_year`, `ev_type`
+  - Reason: `ev_type` is redundant with `outcome`
+
+## Categorical Variable Handling
+
+**Important: Proper one-hot encoding for categorical variables**
+
+- **Why one-hot encoding?**:
+  - **Preserves categorical relationships**: Each category gets its own binary indicator
+  - **No ordinal assumptions**: "Male" and "Female" become separate variables, not 1 and 2
+  - **Better model interpretation**: LASSO can select individual categories independently
+  - **Standard practice**: Industry standard for categorical variables in ML
+
+- **Implementation**: Using `model.matrix()` for automatic one-hot encoding
+- **Benefits**: Prevents models from interpreting categorical variables as continuous with linear relationships
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+
+library(here)
+library(readr)
+library(haven)
+library(purrr)
+library(dplyr)
+library(glmnet)
+library(caret)
+library(yardstick)
+library(janitor)
+library(lubridate)
+library(stringr)
+library(tidyverse)
+library(tibble)
+library(DataExplorer)
+library(DT)
+library(data.table)
+library(pROC)
+
+# Load helper functions from helpers.R
+source("helpers.R")
+```
+
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+
+wisotzkey_variables <- read_csv(here("..", "data","wisotzkey_variables.csv"), show_col_types = FALSE)
+
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+
+# Set directory
+data_dir <- here("..","data")
+
+# List SAS files
+sas_files <- list.files(data_dir, pattern = "\\.sas7bdat$", full.names = TRUE)
+
+# Named list: file base names (without extension) as names
+sas_data <- sas_files %>%
+  set_names(~ tools::file_path_sans_ext(basename(.))) %>%
+  map(read_sas)
+
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+
+tx <- sas_data$transplant %>% janitor::clean_names()
+
+```
+
+### 1 Yr Survival Time with Follow Up
+
+```{r}
+
+# 1 yr Survival
+
+# 1-yr Survival setup with follow-up == event_time fix
+# int_dead / int_graft_loss are event times in YEARS
+# dtx_patient / graft_loss are 0/1 event indicators
+# 1-yr classification labels (observed-only)
+# Label = 1 if event by 1 year; 0 if no event and follow-up reaches 1 year; else NA (drop)
+
+### COA 1
+
+# COA 2: Only use patients whose transplants (TXPL_YEAR) were before 2023. This ensures everyone has a full year under observation.
+tx <- tx %>%
+  mutate(
+    ev_time = pmin(int_dead, int_graft_loss, na.rm = TRUE),
+    ev_type = pmax(dtx_patient, graft_loss, na.rm = TRUE),
+    outcome = case_when(
+      ev_type == 1 & ev_time < 1 ~ 1L,
+      ev_type == 0 & ev_time < 1 ~ NA_integer_,
+      TRUE ~ 0L
+    )
+  ) %>%
+  filter(!is.na(outcome)) %>%
+  filter(txpl_year < 2023)
+
+```
+
+
+### Wisotzkey Variables
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+
+wisotzkey_vars <- wisotzkey_variables[[1]] %>% as.character()
+wisotzkey_clean <- tolower(gsub("[^a-zA-Z0-9]+", "_", wisotzkey_vars))
+
+```
+
+```{r echo=FALSE}
+
+# Calculate BMI, eGFR, and Listing Year
+tx <- tx %>%
+  mutate(
+    age_listing = as.double(age_listing),
+    age_txpl = as.double(age_txpl),
+    bmi_txpl = (weight_txpl / (height_txpl^2)) * 703,
+    egfr_tx = 0.413 * height_txpl / txcreat_r,
+    listing_year = as.integer(floor(txpl_year - (age_txpl - age_listing)))
+  )
+
+```
+
+```{r eval=FALSE}
+tx_features <- tx %>% colnames()
+write.csv(tx_features, "tx_variables.csv", row.names = FALSE)
+
+```
+
+```{r echo=FALSE}
+
+wisotzkey_name_map <- c(
+  "primary_etiology"               = "prim_dx",
+  "mcsd_at_transplant"             = "txmcsd",
+  "single_ventricle_chd"           = "chd_sv",
+  "surgeries_prior_to_listing"     = "hxsurg",
+  "serum_albumin_at_transplant"    = "txsa_r",
+  "bun_at_transplant"              = "txbun_r",
+  "ecmo_at_transplant"             = "txecmo",
+  "transplant_year"                = "txpl_year",
+  "recipient_weight_at_transplant" = "weight_txpl",
+  "alt_at_transplant"              = "txalt",
+  "bmi_at_transplant"              = "bmi_txpl",     # computed
+  "pra_max_at_listing"             = "lsfprat",      # fallback: use lsfprab if missing
+  "egfr_at_transplant"             = "egfr_tx",      # computed from height/creatinine
+  "medical_history_at_listing"     = "hxmed",
+  "listing_year"                   = "listing_year"  # computed from txpl_year, age_listing, age_txpl
+)
+
+```
+
+```{r eval=FALSE}
+
+tx$sec_dx %>% 
+  unique()
+
+```
+
+### Functional Variables
+
+```{r echo=FALSE}
+
+cardiomyopathy_types <- c("Dilated", "Restrictive", "Hypertrophic", "ARVD/C", "Other", "MIXED")
+
+
+tx <- tx %>%
+  mutate(
+    bmi_txpl = (weight_txpl / (height_txpl^2)) * 703,
+    egfr_tx = 0.413 * height_txpl / txcreat_r,
+    listing_year = as.integer(floor(txpl_year - (age_txpl - age_listing))),
+
+    # Kidney Function
+    creat_tx = txcreat_r,
+    creat_list = lcreat_r,
+    hx_dialysis = as.integer(hxdysdia == 1),
+    hx_renal_insuff = as.integer(hxrenins == 1),
+
+    # Liver Function
+    ast_tx = txast,
+    alt_tx = txalt,
+    ast_list = lsast,
+    alt_list = lsalt,
+    bili_d_tx = txbili_d_r,
+    bili_t_tx = txbili_t_r,
+    bili_d_list = lsbili_d_r,
+    bili_t_list = lsbili_t_r,
+    fontan_liver_disease = as.integer(hxfonlvr == 1),
+
+    # Nutrition
+    prealbumin_tx = txpalb_r,
+    prealbumin_list = lspalb_r,
+    albumin_tx = txsa_r,
+    albumin_list = lssab_r,
+    total_protein_tx = txtp_r,
+    total_protein_list = lstp_r,
+    failure_to_thrive = as.integer(hxfail == 1),
+
+    # Respiratory
+    vent_tx = as.integer(txvent == 1),
+    vent_list = as.integer(slvent == 1),
+    trach_tx = as.integer(ltxtrach == 1),
+    trach_list = as.integer(hxtrach == 1),
+
+    # Cardiac
+    vad_tx = as.integer(txvad == 1),
+    vad_list = as.integer(slvad == 1),
+    no_mcsd_list = as.integer(slnomcsd == 1),
+    ecmo_tx = as.integer(txecmo == 1),
+    ecmo_list = as.integer(slecmo == 1),
+    hx_cpr = as.integer(hxcpr == 1),
+    hx_shock = as.integer(hxshock == 1),
+
+    # Immunology
+    hla_tx_pre = as.integer(hlatxpre == 1),
+    donor_crossmatch = as.integer(donspac == 1),
+    pra_tx = txfcpra,
+    pra_list = lsfcpra,
+
+    # Genetic Syndromes
+    gs_turner = as.integer(hxturner == 1),
+    gs_shone = as.integer(chd_shone == 1),
+    gs_costello = as.integer(hxcostlo == 1),
+    gs_cardiofaciocutaneous = as.integer(hxcrd == 1),
+    gs_digeorge = as.integer(hxdigorg == 1),
+    gs_downs = as.integer(hxdowns == 1),
+    gs_leopard = as.integer(hxleoprd == 1),
+    gs_noonan = as.integer(hxnoonan == 1),
+
+    # Diagnosis
+    chd_sv = as.integer(chd_sv == 1),
+    chd_heterotaxy = as.integer(chd_heter == 1),
+    hx_surgery = as.integer(hxsurg == 1),
+    dx_cardiomyopathy = case_when(
+      sec_dx %in% cardiomyopathy_types ~ 1L,
+      sec_dx %in% c("Unknown") | is.na(sec_dx) ~ NA_integer_,
+      TRUE ~ 0L
+    )
+
+  )
+
+
+```
+
+
+```{r echo=FALSE}
+
+# Impute values per Wisotzkey paper
+tx_model <- tx %>%
+  mutate(
+    prim_dx = ifelse(is.na(prim_dx), "cardiomyopathy", prim_dx),
+    txmcsd = ifelse(is.na(txmcsd), 0L, txmcsd),
+    chd_sv = ifelse(is.na(chd_sv), 0L, chd_sv),
+    hxsurg = ifelse(is.na(hxsurg), 0L, hxsurg),
+    txsa_r = ifelse(is.na(txsa_r), 3.7, txsa_r),
+    txbun_r = ifelse(is.na(txbun_r), 16, txbun_r),
+    txecmo = ifelse(is.na(txecmo), 0L, txecmo),
+    txpl_year = ifelse(is.na(txpl_year), 2015, txpl_year),
+    weight_txpl = ifelse(is.na(weight_txpl), 35, weight_txpl),
+    txalt = ifelse(is.na(txalt), 29, txalt),
+    bmi_txpl = ifelse(is.na(bmi_txpl), 17, bmi_txpl),
+    lsfprat = ifelse(is.na(lsfprat), 0, lsfprat),
+    egfr_tx = ifelse(is.na(egfr_tx), 97, egfr_tx),
+    hxmed = ifelse(is.na(hxmed), 1L, hxmed),
+    listing_year = ifelse(is.na(listing_year), 2014, listing_year)
+  ) %>%
+  rename(!!!setNames(wisotzkey_name_map, names(wisotzkey_name_map))) 
+
+```
+
+```{r echo=FALSE}
+
+tx_model <- tx_model %>%
+  mutate(
+    serum_albumin_at_transplant_bin = as.integer(serum_albumin_at_transplant > 3.7),
+    pra_max_at_listing_bin          = as.integer(pra_max_at_listing > 0),
+    alt_at_transplant_bin           = as.integer(alt_at_transplant > 29),
+    single_ventricle_chd_bin        = as.integer(single_ventricle_chd > 0),
+    egfr_at_transplant_bin          = as.integer(egfr_at_transplant > 97),
+    bun_at_transplant_bin           = as.integer(bun_at_transplant > 16),
+    bmi_at_transplant_bin           = as.integer(bmi_at_transplant > 17),
+    dsecaccs_bin                    = as.integer(dsecaccs == "Cerebrovascular accident")
+  ) %>%
+  relocate(
+    serum_albumin_at_transplant_bin,
+    pra_max_at_listing_bin,
+    alt_at_transplant_bin,
+    single_ventricle_chd_bin,
+    egfr_at_transplant_bin,
+    bun_at_transplant_bin,
+    bmi_at_transplant_bin,
+    .after = medical_history_at_listing
+  )
+
+```
+
+### Model Data
+
+```{r echo=FALSE}
+
+tx_model_features <- tx_model %>% 
+  colnames()
+
+tx_model_features
+
+```
+
+sec_dx values for Cardiomyopathy types:
+
+```{r echo=FALSE}
+
+tx_model$sec_dx %>% 
+  unique()
+
+```
+
+```{r eval=FALSE, echo=FALSE}
+# Distribution of numeric variables
+plot_density(tx_model)  # Shows by default for all numeric vars
+```
+
+```{r eval=FALSE, echo=FALSE}
+# Bar plots of factor levels
+plot_bar(tx_model)
+
+```
+
+### Missing Data
+
+-   Based on how data collected..treating "" as "Empty". Will perform further research and analysis where "Empty" shows up as important in our models.
+
+```{r}
+
+# Create two logging lists
+converted_vars_log <- list()
+skipped_vars_log <- list()
+
+# Process character columns
+char_vars <- tx_model %>% 
+  select(where(is.character))
+
+char_vars %>%
+  names() %>%
+  walk(function(var_name) {
+    # Standardize to character (safe here, already character)
+    vals <- as.character(tx_model[[var_name]])
+    
+    # Replace empty strings
+    vals[vals == ""] <- "Empty"
+    
+    if (length(unique(vals)) > 1) {
+      tx_model[[var_name]] <<- factor(vals)
+      converted_vars_log[[var_name]] <<- levels(tx_model[[var_name]])
+    } else {
+      skipped_vars_log[[var_name]] <<- unique(vals)
+    }
+  })
+
+# Process factor columns with only one level
+factor_vars <- tx_model %>% 
+  select(where(is.factor))
+
+factor_vars %>%
+  names() %>%
+  walk(function(var_name) {
+    if (nlevels(tx_model[[var_name]]) == 1) {
+      # Convert to character
+      vals <- as.character(tx_model[[var_name]])
+      
+      # Replace empty strings
+      vals[vals == ""] <- "Empty"
+      
+      if (length(unique(vals)) > 1) {
+        tx_model[[var_name]] <<- factor(vals)
+        converted_vars_log[[var_name]] <<- levels(tx_model[[var_name]])
+      } else {
+        skipped_vars_log[[var_name]] <<- unique(vals)
+      }
+    }
+  })
+
+# Convert logs to character-safe tibbles
+converted_df <- tibble(
+  variable = names(converted_vars_log),
+  unique_values = sapply(converted_vars_log, function(x) paste(sort(unique(as.character(x))), collapse = ", "))
+)
+
+skipped_df <- tibble(
+  variable = names(skipped_vars_log),
+  unique_values = sapply(skipped_vars_log, function(x) paste(sort(unique(as.character(x))), collapse = ", "))
+)
+
+
+write.csv(converted_df, "converted_vars_log.csv", row.names = FALSE)
+
+write.csv(skipped_df, "skipped_vars_log.csv", row.names = FALSE)
+
+
+```
+
+```{r}
+
+# View 
+datatable(
+  converted_df,
+  rownames = FALSE,
+  options = list(
+    pageLength = 15,
+    columnDefs = list(
+      list(className = 'dt-left', targets = "_all")
+    )
+  )
+)
+
+```
+
+```{r}
+
+tx_model <- tx_model %>%
+  mutate(across(c(donspxm, drhtype), ~ {
+    x <- as.character(.)             # ensure character
+    x[x == "+"] <- "positive_+"
+    x[x == "-"] <- "negative_-"
+    factor(x)                        # convert back to factor
+  }))
+
+
+```
+
+```{r}
+# Missing data visualization
+missing_plot <- plot_missing(tx_model)
+
+```
+
+```{r}
+
+# Get the names of columns with missing values
+columns_with_missing <- missing_plot$data[missing_plot$data$pct_missing > .8]
+
+# View 
+datatable(
+  columns_with_missing,
+  rownames = FALSE,
+  options = list(
+    pageLength = 15,
+    columnDefs = list(
+      list(className = 'dt-left', targets = "_all")
+    )
+  )
+)
+
+```
+
+```{r}
+
+engineered_vars <- c(
+  "bmi_txpl", "egfr_tx", "listing_year",
+  "creat_tx", "creat_list", "hx_dialysis", "hx_renal_insuff",
+  "ast_tx", "alt_tx", "ast_list", "alt_list",
+  "bili_d_tx", "bili_t_tx", "bili_d_list", "bili_t_list", "fontan_liver_disease",
+  "prealbumin_tx", "prealbumin_list", "albumin_tx", "albumin_list",
+  "total_protein_tx", "total_protein_list", "failure_to_thrive",
+  "vent_tx", "vent_list", "trach_tx", "trach_list",
+  "vad_tx", "vad_list", "no_mcsd_list", "ecmo_tx", "ecmo_list",
+  "hx_cpr", "hx_shock",
+  "hla_tx_pre", "donor_crossmatch", "pra_tx", "pra_list",
+  "gs_turner", "gs_shone", "gs_costello", "gs_cardiofaciocutaneous",
+  "gs_digeorge", "gs_downs", "gs_leopard", "gs_noonan",
+  "chd_sv", "chd_heterotaxy", "hx_surgery", "dx_cardiomyopathy",
+  "serum_albumin_at_transplant_bin", "pra_max_at_listing_bin",
+  "alt_at_transplant_bin", "single_ventricle_chd_bin",
+  "egfr_at_transplant_bin", "bun_at_transplant_bin", "bmi_at_transplant_bin",
+  "dsecaccs_bin"
+)
+
+# Column names with >80% missingness
+columns_filtered_missing <- missing_plot$data %>%
+  filter(pct_missing > 0.8) %>%
+  pull(feature)
+
+# Engineered vars with high missingness
+high_missing_engineered_vars <- intersect(engineered_vars, columns_filtered_missing)
+
+
+cat("Number of engineered variables with >80% missingness:", length(high_missing_engineered_vars), "\n")
+print(high_missing_engineered_vars)
+
+```
+
+```{r}
+
+# Get the names of columns with missing values
+columns_with_missing <- missing_plot$data[missing_plot$data$pct_missing > .8]
+
+# Extract the character vector of feature values
+missing_rows <- as.character(columns_with_missing$feature)
+
+# Filter out columns that aren't in tx_model
+valid_missing <- intersect(missing_rows, colnames(tx_model))
+
+# Drop only the valid missing columns
+tx_model <- tx_model %>%
+  select(-all_of(valid_missing))
+
+```
+
+### Stale Data (no initial variation - need to recode)
+
+```{r}
+
+# Identify factor or character columns
+char_or_factor_cols <- names(tx_model)[sapply(tx_model, function(col) {
+  is.character(col) || is.factor(col)
+})]
+
+# Convert NA and "" to "Missing", and ensure factors
+tx_model <- tx_model %>%
+  mutate(across(all_of(char_or_factor_cols), ~ {
+    x <- as.character(.)
+    x[is.na(x) | trimws(x) == ""] <- "Missing"
+    factor(x)
+  }))
+
+
+summary(tx_model[char_or_factor_cols])
+
+```
+
+```{r}
+
+# frequency tables for factors
+tx_model <- tx_model %>%
+  mutate(across(where(~ is.character(.) || is.logical(.)), as.factor))
+
+
+factor_cols <- names(tx_model)[sapply(tx_model, is.factor)]
+freq_tables <- lapply(tx_model[factor_cols], function(col) {
+  as.data.frame(table(col, useNA = "ifany"))
+})
+names(freq_tables) <- factor_cols
+
+```
+
+### [CDC Data](https://github.com/CDC-DNPAO/CDCAnthro)
+
+```{r eval=FALSE}
+install.packages( 'https://raw.github.com/CDC-DNPAO/CDCAnthro/master/cdcanthro_0.1.3.tar.gz', type='source', repos=NULL )
+```
+
+Input variables for CDC Growth Charts:\
+-weight_txpl (kg)\
+-height_txpl (cm)\
+-age_listing (years). Multiply by 12 and add 6 for months\
+-Sex coded as 1 for Male, 2 for Female\
+-bmi_txpl
+
+```{r warning=FALSE, message=FALSE}
+
+library(cdcanthro)
+
+tx_model <- tx_model %>%
+  mutate(
+    age_in_months = age_listing * 12 + 6,
+    weight_kgs = weight_listing * 0.453592,
+    height_cm = height_listing * 2.54,
+    sex = recode(as.character(sex), "M" = 1L, "F" = 2L) %>% as.integer()
+  ) %>%
+  as.data.frame()
+
+orig_cols <- names(tx_model)
+
+tx_model <- cdcanthro(tx_model, age = age_in_months, wt = weight_kgs, ht = height_cm, bmi = bmi_txpl, all = TRUE)
+
+
+# CDC added data column names
+new_cols <- setdiff(names(tx_model), orig_cols)
+cat("New CDC columns added:\n")
+print(new_cols)
+
+```
+
+### Final Updated Model Data
+
+```{r}
+
+# Clean the modeling data ===
+tx_model <- tx_model %>%
+  # Replace NAs in numeric columns with 0
+  mutate(across(where(is.numeric), ~ replace_na(., 0))) %>%
+  
+  # Replace NAs in character/factor columns with "None"
+  mutate(across(where(~ is.character(.) || is.factor(.)), ~ replace_na(as.character(.), "None"))) %>%
+  
+  # Reconvert characters back to factor (important if factors needed for modeling)
+  mutate(across(where(is.character), as.factor))
+
+# Export modeling dataset (includes ev_time and ev_type for survival models, cdc data fields)
+
+tx_model_updated_features <- tx_model %>% 
+  colnames()
+
+write_csv(tx_model, "preprocessed_model_data_coa2.csv")
+write.csv(tx_model_updated_features, "tx_model_variables.csv", row.names = FALSE)
+
+```
+
+### Lagging Variables
+
+From data dictionary 'Contents_TRANSPLANT.doc', the additional variables below are **lagging indicators or leak information** not known until after the survival event:
+
+
+```{r}
+
+# Define keywords that indicate potential data leakage or post-outcome variables
+lagging_keywords <- c(
+  "graft_loss", "int_graft_loss", "dtx_",
+  "dcardiac", "dcon", "dpri", "dpricaus", "rec_",
+  "dneuro", "sdprathr", "int_dead", "listing_year",
+  "race", "sex", "drace_b", "rrace_a", "listing_year",
+  "hisp", "Iscntry", "dreject", "dsecaccsEmpty", "dmajbldEmpty",
+  "pishltgr1R", "drejectEmpty", "drejectHyperacute", "pishltgrEmpty",
+  "pishltgr", "dmajbld", "dsecaccs", "dsecaccs_bin"
+)
+
+lagging_keywords
+
+```
+
+#### Lagging Variables Values
+
+```{r}
+
+setDT(tx_model)
+
+# Identify lagging variables using keywords
+lagging_matches <- unique(unlist(sapply(lagging_keywords, function(pat) {
+  grep(pat, names(tx_model), value = TRUE, ignore.case = TRUE)
+})))
+
+# Filter to lagging variables that are of factor type
+factor_lagging_vars <- lagging_matches[sapply(lagging_matches, function(var) {
+  is.factor(tx_model[[var]])
+})]
+
+# Value counts (summary) for each factor variable
+for (var in factor_lagging_vars) {
+  cat("\n===== Factor Variable:", var, "=====\n")
+  print(summary(tx_model[[var]]))
+}
+
+
+```
+
+### Model Features
+
+```{r warning=FALSE, message=FALSE}
+
+# Filter columns: keep only those that don't match lagging variable patterns
+tx_model_lasso <- tx_model %>%
+  select(-matches(paste(lagging_keywords, collapse = "|")))
+
+
+```
+
+```{r}
+
+model_features <- tx_model_lasso %>% 
+  colnames() %>% 
+  as_tibble()
+
+# View 
+datatable(
+  model_features,
+  rownames = FALSE,
+  options = list(
+    pageLength = 15,
+    columnDefs = list(
+      list(className = 'dt-left', targets = "_all")
+    )
+  )
+)
+```
+
+### LASSO Model
+
+```{r warning=FALSE, message=FALSE}
+
+# Use robust data preparation approach from event_classification.qmd
+cat("Preparing data for LASSO modeling...\n")
+
+# Create classification-ready dataset with systematic variable exclusion
+# Note: lagging keywords already removed in tx_model_lasso creation above
+class_data <- tx_model_lasso %>%
+  # Handle infinite values by converting them to NA
+  mutate(across(where(is.numeric), ~if_else(is.infinite(.), NA_real_, .))) %>%
+  # Remove any columns that are entirely empty
+  select(-where(~all(is.na(.)))) %>%
+  # Remove identifier columns
+  select(-ptid_e, -ev_type, -ev_time) %>%
+  # Convert character columns to factors for proper handling
+  mutate(across(where(is.character), as.factor)) %>%
+  # Ensure ALL columns are either numeric or factor (no character columns remain)
+  mutate(across(where(is.character), as.factor))
+
+# Remove constant columns
+constant_cols <- names(class_data)[sapply(class_data, function(x) {
+  length(unique(na.omit(x))) == 1
+})]
+if(length(constant_cols) > 0) {
+  class_data <- class_data %>% select(-all_of(constant_cols))
+  cat("Removed", length(constant_cols), "constant columns\n")
+}
+
+# Impute any remaining missing values by data type
+cat("Imputing missing values by data type...\n")
+
+# Check data types before imputation
+cat("Data types before imputation:\n")
+print(sapply(class_data, class))
+
+# For numeric columns: use median
+numeric_cols <- names(class_data)[sapply(class_data, is.numeric)]
+if(length(numeric_cols) > 0) {
+  cat("Imputing", length(numeric_cols), "numeric columns with median\n")
+  class_data <- class_data %>%
+    mutate(across(all_of(numeric_cols), ~{
+      if(all(is.na(.))) {
+        warning("Column contains only NA values, using 0")
+        0
+      } else if(any(is.infinite(.))) {
+        warning("Column contains infinite values, replacing with median")
+        median(., na.rm = TRUE)
+      } else {
+        if_else(is.na(.), median(., na.rm = TRUE), .)
+      }
+    }))
+}
+
+# For factor columns: use mode (most frequent value)
+factor_cols <- names(class_data)[sapply(class_data, is.factor)]
+if(length(factor_cols) > 0) {
+  cat("Imputing", length(factor_cols), "factor columns with mode\n")
+  class_data <- class_data %>%
+    mutate(across(all_of(factor_cols), ~{
+      if(all(is.na(.))) {
+        warning("Factor column contains only NA values, using 'Unknown'")
+        factor("Unknown")
+      } else {
+        # Get mode safely
+        tab <- table(., useNA = "no")
+        if(length(tab) == 0) {
+          warning("Factor column has no valid values, using 'Unknown'")
+          factor("Unknown")
+        } else {
+          mode_val <- names(tab)[which.max(tab)]
+          if_else(is.na(.), factor(mode_val, levels = levels(.)), .)
+        }
+      }
+    }))
+}
+
+# For character columns: use mode
+char_cols <- names(class_data)[sapply(class_data, is.character)]
+if(length(char_cols) > 0) {
+  cat("Imputing", length(char_cols), "character columns with mode\n")
+  class_data <- class_data %>%
+    mutate(across(all_of(char_cols), ~{
+      if(all(is.na(.))) {
+        warning("Character column contains only NA values, using 'Unknown'")
+        "Unknown"
+      } else {
+        # Get mode safely
+        tab <- table(., useNA = "no")
+        if(length(tab) == 0) {
+          warning("Character column has no valid values, using 'Unknown'")
+          "Unknown"
+        } else {
+          mode_val <- names(tab)[which.max(tab)]
+          if_else(is.na(.), mode_val, .)
+        }
+      }
+    }))
+}
+
+cat("✓ Imputation completed\n")
+
+# Final check for non-finite values
+cat("Performing final data quality check...\n")
+
+# Check data types to ensure no character columns remain
+cat("Checking data types after conversion:\n")
+data_types <- sapply(class_data, class)
+print(table(data_types))
+
+# Check for any remaining character columns
+char_cols <- names(class_data)[sapply(class_data, is.character)]
+if(length(char_cols) > 0) {
+  cat("Warning: Found", length(char_cols), "remaining character columns:\n")
+  print(char_cols)
+  cat("Converting remaining character columns to factors...\n")
+  class_data <- class_data %>%
+    mutate(across(all_of(char_cols), as.factor))
+}
+
+# Check for NA values
+na_counts <- sapply(class_data, function(x) sum(is.na(x)))
+if(any(na_counts > 0)) {
+  cat("Warning: Found columns with NA values:\n")
+  print(na_counts[na_counts > 0])
+}
+
+# Check for infinite values
+inf_counts <- sapply(class_data, function(x) {
+  if(is.numeric(x)) sum(is.infinite(x)) else 0
+})
+if(any(inf_counts > 0)) {
+  cat("Warning: Found columns with infinite values:\n")
+  print(inf_counts[inf_counts > 0])
+}
+
+# Check for NaN values
+nan_counts <- sapply(class_data, function(x) {
+  if(is.numeric(x)) sum(is.nan(x)) else 0
+})
+if(any(nan_counts > 0)) {
+  cat("Warning: Found columns with NaN values:\n")
+  print(nan_counts[nan_counts > 0])
+}
+
+# Final data type verification
+cat("Final data type verification:\n")
+final_types <- sapply(class_data, class)
+print(table(final_types))
+
+# IMPORTANT: We don't convert to matrix here - that happens during model.matrix() for proper one-hot encoding
+# Just verify that all columns are either numeric or factor (no character columns)
+if(any(sapply(class_data, is.character))) {
+  stop("Data still contains character columns. One-hot encoding will fail.")
+}
+
+cat("✓ Data quality check passed - all columns are numeric or factor\n")
+cat("✓ One-hot encoding will be handled by model.matrix() during model fitting\n")
+
+cat("Classification LASSO - Final data dimensions:", paste(dim(class_data), collapse = " x "), "\n")
+
+# Debug: Check feature count after filtering
+cat("Debug: Feature count analysis:\n")
+cat("  Original tx_model columns:", ncol(tx_model), "\n")
+cat("  After lagging keywords filter:", ncol(tx_model_lasso), "\n")
+cat("  After final data preparation:", ncol(class_data), "\n")
+cat("  Features lost in lagging filter:", ncol(tx_model) - ncol(tx_model_lasso), "\n")
+cat("  Features lost in data prep:", ncol(tx_model_lasso) - ncol(class_data), "\n")
+
+# Ensure we have enough features for LASSO
+if (ncol(class_data) < 10) {
+  warning("Very few features remaining for LASSO modeling")
+  cat("  This may cause the model to fail or produce constant predictions\n")
+}
+
+# Create train/test split using transplant year
+train_indices <- which(tx_model_lasso$transplant_year >= 2010 & tx_model_lasso$transplant_year <= 2013)
+test_indices <- which(tx_model_lasso$transplant_year == 2014)
+
+# Prepare training data for LASSO
+cat("Preparing training data for LASSO...\n")
+train <- class_data[train_indices, ]
+test <- class_data[test_indices, ]
+
+# Add error checking for training data
+if (is.null(train) || nrow(train) == 0) {
+  stop("Failed to create training data from split")
+}
+cat("✓ Training data prepared successfully\n")
+
+# Add error checking for test data
+if (is.null(test) || nrow(test) == 0) {
+  stop("Failed to create test data from split")
+}
+cat("✓ Test data prepared successfully\n")
+
+# Prepare outcome and features with proper one-hot encoding
+y_train <- train$outcome
+y_test <- test$outcome
+
+# Debug: Check outcome variable
+cat("Debug: Outcome variable checks:\n")
+cat("  Outcome column exists in train:", "outcome" %in% colnames(train), "\n")
+cat("  Outcome column exists in test:", "outcome" %in% colnames(test), "\n")
+cat("  y_train class:", class(y_train), "\n")
+cat("  y_test class:", class(y_test), "\n")
+cat("  y_train unique values:", unique(y_train), "\n")
+cat("  y_test unique values:", unique(y_test), "\n")
+cat("  y_train has NAs:", any(is.na(y_train)), "\n")
+cat("  y_test has NAs:", any(is.na(y_test)), "\n")
+
+# Ensure outcome is numeric
+if (!is.numeric(y_train)) {
+  warning("y_train is not numeric, converting...")
+  y_train <- as.numeric(as.character(y_train))
+}
+if (!is.numeric(y_test)) {
+  warning("y_test is not numeric, converting...")
+  y_test <- as.numeric(as.character(y_test))
+}
+
+# Use model.matrix for proper one-hot encoding of categorical variables
+# This automatically converts factor columns to binary indicators (one-hot encoding)
+# Each factor level becomes a separate column with 0/1 values
+cat("Creating model matrices with one-hot encoding...\n")
+cat("Note: model.matrix() will automatically handle one-hot encoding of factor variables\n")
+x_train <- model.matrix(outcome ~ . - 1, data = train)
+x_test <- model.matrix(outcome ~ . - 1, data = test)
+
+# Remove the outcome column if it was included
+if ("outcome" %in% colnames(x_train)) {
+  x_train <- x_train[, colnames(x_train) != "outcome"]
+}
+if ("outcome" %in% colnames(x_test)) {
+  x_test <- x_test[, colnames(x_test) != "outcome"]
+}
+
+cat("✓ Model matrices created with one-hot encoding\n")
+cat("X_train dimensions:", paste(dim(x_train), collapse = " x "), "\n")
+cat("X_test dimensions:", paste(dim(x_test), collapse = " x "), "\n")
+
+# Verify the size of the new data frames
+cat("Training set size:", nrow(train), "\n")
+cat("Test set size:", nrow(test), "\n")
+cat("X_train dim:", paste(dim(x_train), collapse = " x "), "\n")
+cat("X_test dim:", paste(dim(x_test), collapse = " x "), "\n")
+
+# Add debugging information
+cat("Starting LASSO model fitting...\n")
+cat("x_train dimensions:", paste(dim(x_train), collapse = " x "), "\n")
+cat("y_train length:", length(y_train), "\n")
+cat("y_train summary:", table(y_train), "\n")
+
+# Debug: Check data quality
+cat("Debug: Data quality checks:\n")
+cat("  Outcome balance - 0s:", sum(y_train == 0), "1s:", sum(y_train == 1), "\n")
+cat("  Outcome proportion of 1s:", round(mean(y_train), 4), "\n")
+cat("  X_train has any variation:", any(apply(x_train, 2, function(x) length(unique(x)) > 1)), "\n")
+cat("  X_train column ranges:", paste(apply(x_train, 2, function(x) round(max(x) - min(x), 2)), collapse = ", "), "\n")
+
+# Check if outcome is too imbalanced
+if (mean(y_train) < 0.05 || mean(y_train) > 0.95) {
+  warning("Outcome is highly imbalanced - this may cause LASSO issues")
+  cat("  Consider using class weights or different sampling strategies\n")
+}
+
+# Fit classification LASSO with cross-validation on the TRAINING data ONLY
+# Note: Using type.measure = "auc" instead of "class" for imbalanced data
+# AUC focuses on ranking ability rather than classification error, which is
+# more robust when one class heavily dominates the dataset
+set.seed(1997)
+class_lasso_cv <- cv.glmnet(
+  x = x_train,  # TRAINING matrix
+  y = y_train,  # TRAINING outcome vector
+  family = "binomial",  # Binary classification
+  alpha = 1,  # L1 penalty (LASSO)
+  nfolds = 5,
+  type.measure = "auc"  # AUC is more robust for imbalanced data
+)
+
+# Add error checking for LASSO CV
+if (is.null(class_lasso_cv)) {
+  stop("Failed to fit LASSO cross-validation model")
+}
+cat("✓ LASSO cross-validation completed successfully\n")
+
+# Note: Using AUC-based cross-validation instead of classification error
+# This should help with the imbalanced outcome (4.9% positive cases)
+# and prevent over-regularization that was causing zero coefficients
+
+# Get optimal lambda from cross-validation
+class_optimal_lambda <- class_lasso_cv$lambda.min
+cat("Classification LASSO - Optimal lambda:", round(class_optimal_lambda, 6), "\n")
+
+# Debug: Check lambda values and CV results
+cat("Debug: Lambda range from CV:\n")
+cat("  Lambda min:", round(class_lasso_cv$lambda.min, 6), "\n")
+cat("  Lambda 1SE:", round(class_lasso_cv$lambda.1se, 6), "\n")
+cat("  CV AUC at min lambda:", round(max(class_lasso_cv$cvm), 4), "\n")
+cat("  Number of non-zero coefficients at min lambda:", sum(coef(class_lasso_cv, s = "lambda.min") != 0), "\n")
+cat("  Number of non-zero coefficients at 1SE lambda:", sum(coef(class_lasso_cv, s = "lambda.1se") != 0), "\n")
+
+# Check if lambda is reasonable
+if (class_optimal_lambda > 1) {
+  warning("Optimal lambda is very high (>1), this may cause all coefficients to be zero")
+  cat("  This suggests the model may be over-regularized\n")
+
+  # Try using lambda.1se instead, which is usually more conservative
+  cat("  Trying lambda.1se as alternative...\n")
+  class_optimal_lambda <- class_lasso_cv$lambda.1se
+  cat("  New lambda (1SE):", round(class_optimal_lambda, 6), "\n")
+
+  # If still too high, try a smaller value
+  if (class_optimal_lambda > 0.5) {
+    cat("  Lambda still too high, trying smaller value...\n")
+    # Find lambda that gives reasonable number of non-zero coefficients
+    lambda_seq <- class_lasso_cv$lambda[class_lasso_cv$lambda < 0.5]
+    if (length(lambda_seq) > 0) {
+      # Use the largest lambda that gives at least 5 non-zero coefficients
+      for (lam in rev(lambda_seq)) {
+        n_coefs <- sum(coef(class_lasso_cv, s = lam) != 0)
+        if (n_coefs >= 5) {
+          class_optimal_lambda <- lam
+          cat("  Selected lambda:", round(lam, 6), "with", n_coefs, "non-zero coefficients\n")
+          break
+        }
+      }
+    }
+  }
+}
+
+# Use the cross-validated glmnet fit directly (avoids mismatch when refitting)
+cat("Using cv.glmnet fitted model at lambda.min...\n")
+class_lasso_model <- class_lasso_cv$glmnet.fit
+
+# Add error checking for fitted model
+if (is.null(class_lasso_model)) {
+  stop("cv.glmnet did not return a fitted glmnet model")
+}
+cat("✓ Using cross-validated glmnet fit\n")
+
+# Debug: Check model coefficients
+cat("Debug: Model coefficient analysis:\n")
+model_coefs <- coef(class_lasso_model, s = class_optimal_lambda)
+cat("  Total coefficients:", length(model_coefs), "\n")
+cat("  Non-zero coefficients:", sum(model_coefs != 0), "\n")
+cat("  Intercept value:", round(model_coefs[1], 6), "\n")
+cat("  Non-zero coefficient values:", round(model_coefs[model_coefs != 0], 6), "\n")
+cat("  Coefficient range:", round(range(model_coefs), 6), "\n")
+
+# Check if model is meaningful
+if (sum(model_coefs != 0) <= 1) {
+  warning("Model has only intercept or very few non-zero coefficients")
+  cat("  This suggests the model may be over-regularized or data issues exist\n")
+}
+
+# Probability predictions on TEST data
+cat("Making predictions on test data...\n")
+lasso_probabilities <- predict(
+  class_lasso_model,
+  newx = x_test,
+  s = class_optimal_lambda,
+  type = "response"
+)
+
+# Add error checking for predictions
+if (is.null(lasso_probabilities) || length(lasso_probabilities) == 0) {
+  stop("Failed to generate LASSO predictions")
+}
+cat("✓ LASSO predictions generated successfully\n")
+
+# Debug: Check prediction values
+cat("Debug: Prediction analysis:\n")
+cat("  Prediction length:", length(lasso_probabilities), "\n")
+cat("  Prediction range:", round(range(lasso_probabilities), 6), "\n")
+cat("  Prediction mean:", round(mean(lasso_probabilities), 6), "\n")
+cat("  Prediction unique values:", round(unique(lasso_probabilities), 6), "\n")
+cat("  Number of unique predictions:", length(unique(lasso_probabilities)), "\n")
+
+# Check if predictions are constant
+if (length(unique(lasso_probabilities)) == 1) {
+  warning("All predictions are identical - this indicates a model problem")
+  cat("  Constant prediction value:", unique(lasso_probabilities), "\n")
+  cat("  This usually means all coefficients are zero or model didn't fit properly\n")
+}
+
+# Clean and align predictions + actuals
+cat("Cleaning and aligning predictions and actuals...\n")
+valid_idx <- !is.na(y_test)
+if (sum(valid_idx) == 0) {
+  stop("No valid test cases found after removing NA values")
+}
+
+lasso_actuals <- y_test[valid_idx]
+lasso_predictions <- as.numeric(lasso_probabilities[valid_idx])
+
+# Check if we have enough data for ROC analysis
+if (length(lasso_actuals) < 10) {
+  warning("Very few test cases available for ROC analysis")
+}
+
+cat("✓ Data cleaning completed. Valid cases:", length(lasso_actuals), "\n")
+
+# Turn actual into a 0/1 factor for ROC
+actual_factor <- factor(lasso_actuals, levels = c(0, 1))
+
+# Validate predictions
+if (any(is.na(lasso_predictions))) {
+  warning("Some predictions are NA, removing them")
+  valid_pred_idx <- !is.na(lasso_predictions)
+  lasso_actuals <- lasso_actuals[valid_pred_idx]
+  lasso_predictions <- lasso_predictions[valid_pred_idx]
+  actual_factor <- factor(lasso_actuals, levels = c(0, 1))
+}
+
+if (any(!is.finite(lasso_predictions))) {
+  warning("Some predictions are infinite, removing them")
+  finite_pred_idx <- is.finite(lasso_predictions)
+  lasso_actuals <- lasso_actuals[finite_pred_idx]
+  lasso_predictions <- lasso_predictions[finite_pred_idx]
+  actual_factor <- factor(lasso_actuals, levels = c(0, 1))
+}
+
+cat("Final data for ROC analysis - Actuals:", length(lasso_actuals), "Predictions:", length(lasso_predictions), "\n")
+
+# ROC object for threshold determination
+cat("Creating ROC object...\n")
+roc_obj <- roc(actual_factor, lasso_predictions, quiet = TRUE)
+
+# Check if ROC object was created successfully
+if (is.null(roc_obj)) {
+  warning("Failed to create ROC object, using default threshold 0.5")
+  roc_best_thresh <- 0.5
+} else {
+  # Determine thresholds with proper error handling (using safe approach)
+  cat("Calculating ROC-optimal threshold...\n")
+  best_vals <- coords(roc_obj, "best", ret = "threshold", transpose = FALSE)
+  roc_best_thresh <- median(as.numeric(unlist(best_vals)), na.rm = TRUE)
+}
+
+event_rate <- mean(lasso_actuals)
+recall_thresh <- max(0.15, event_rate)
+
+# Ensure both thresholds are single numeric values
+if (length(roc_best_thresh) > 1) {
+  warning("ROC threshold is a vector, using first value")
+  roc_best_thresh <- roc_best_thresh[1]
+}
+if (length(recall_thresh) > 1) {
+  warning("Recall threshold is a vector, using first value")
+  recall_thresh <- recall_thresh[1]
+}
+
+# Debug: show threshold values
+cat("Debug - roc_best_thresh:", roc_best_thresh, " (class:", class(roc_best_thresh), ")\n")
+cat("Debug - recall_thresh:", recall_thresh, " (class:", class(recall_thresh), ")\n")
+
+# Validate thresholds before use
+if (is.na(roc_best_thresh) || !is.finite(roc_best_thresh)) {
+  warning("ROC threshold is invalid, using default 0.5")
+  roc_best_thresh <- 0.5
+}
+if (is.na(recall_thresh) || !is.finite(recall_thresh)) {
+  warning("Recall threshold is invalid, using default 0.15")
+  recall_thresh <- 0.15
+}
+
+cat("Final validated thresholds - ROC:", roc_best_thresh, "Recall:", recall_thresh, "\n")
+
+cat("ROC-optimal threshold:", round(roc_best_thresh, 3), "\n")
+cat("Recall-friendly threshold:", round(recall_thresh, 3), "\n")
+
+# Evaluate at both thresholds using the helper function
+cat("Creating metrics at ROC-optimal threshold...\n")
+
+# Additional data validation before metrics calculation
+cat("Validating data for metrics calculation...\n")
+cat("lasso_predictions length:", length(lasso_predictions), "\n")
+cat("lasso_actuals length:", length(lasso_actuals), "\n")
+cat("NA in predictions:", sum(is.na(lasso_predictions)), "\n")
+cat("NA in actuals:", sum(is.na(lasso_actuals)), "\n")
+cat("Predictions range:", range(lasso_predictions, na.rm = TRUE), "\n")
+cat("Actuals unique values:", unique(lasso_actuals), "\n")
+
+# Final cleanup to ensure no NA values
+final_valid_idx <- !is.na(lasso_predictions) & !is.na(lasso_actuals)
+if (sum(final_valid_idx) < length(lasso_predictions)) {
+  cat("Removing", length(lasso_predictions) - sum(final_valid_idx), "rows with NA values\n")
+  lasso_predictions_clean <- lasso_predictions[final_valid_idx]
+  lasso_actuals_clean <- lasso_actuals[final_valid_idx]
+} else {
+  lasso_predictions_clean <- lasso_predictions
+  lasso_actuals_clean <- lasso_actuals
+}
+
+cat("Final clean data - Predictions:", length(lasso_predictions_clean), "Actuals:", length(lasso_actuals_clean), "\n")
+
+# Create metrics using helper functions
+metrics_roc <- create_classification_metrics(
+  probs = lasso_predictions_clean,
+  actual = lasso_actuals_clean,
+  cohort_name = "PHTS",
+  model_name = paste0("LASSO (ROC-optimal=", round(roc_best_thresh, 2), ")"),
+  threshold = roc_best_thresh
+)
+
+# Add error checking for ROC metrics
+if (is.null(metrics_roc)) {
+  stop("Failed to create ROC-optimal metrics")
+}
+cat("✓ ROC-optimal metrics created successfully\n")
+
+cat("Creating metrics at recall-friendly threshold...\n")
+metrics_recall <- create_classification_metrics(
+  probs = lasso_predictions_clean,
+  actual = lasso_actuals_clean,
+  cohort_name = "PHTS",
+  model_name = paste0("LASSO (Recall-friendly=", round(recall_thresh, 2), ")"),
+  threshold = recall_thresh
+)
+
+# Add error checking for recall metrics
+if (is.null(metrics_recall)) {
+  stop("Failed to create recall-friendly metrics")
+}
+cat("✓ Recall-friendly metrics created successfully\n")
+
+# Calculate calibration metrics
+cat("Calculating calibration metrics...\n")
+lasso_cal_metrics <- calculate_calibration_metrics(
+  predictions = lasso_predictions_clean,
+  actual = lasso_actuals_clean
+)
+
+# Add error checking for calibration metrics
+if (is.null(lasso_cal_metrics)) {
+  stop("Failed to create calibration metrics")
+}
+cat("✓ Calibration metrics calculated successfully\n")
+
+# Create final all_lasso_metrics object
+cat("Creating final all_lasso_metrics object...\n")
+
+# Comprehensive debugging checks
+cat("Debug - metrics_roc exists:", exists("metrics_roc"), "class:", class(metrics_roc), "rows:", ifelse(is.data.frame(metrics_roc), nrow(metrics_roc), "N/A"), "\n")
+cat("Debug - metrics_recall exists:", exists("metrics_recall"), "class:", class(metrics_recall), "rows:", ifelse(is.data.frame(metrics_recall), nrow(metrics_recall), "N/A"), "\n")
+cat("Debug - lasso_cal_metrics exists:", exists("lasso_cal_metrics"), "class:", class(lasso_cal_metrics), "rows:", ifelse(is.data.frame(lasso_cal_metrics), nrow(lasso_cal_metrics), "N/A"), "\n")
+
+# Wrap in tryCatch for robust error handling
+all_lasso_metrics <- tryCatch({
+  bind_rows(
+    metrics_roc,
+    metrics_recall,
+    lasso_cal_metrics
+  )
+}, error = function(e) {
+  cat("Error creating all_lasso_metrics:", e$message, "\n")
+  cat("Creating fallback minimal metrics...\n")
+
+  # Create minimal fallback metrics
+  data.frame(
+    Cohort = "PHTS",
+    Model = "LASSO",
+    Metric = "Fallback",
+    Value = NA_real_,
+    stringsAsFactors = FALSE
+  )
+})
+
+# Final validation of all_lasso_metrics
+if (is.null(all_lasso_metrics) || nrow(all_lasso_metrics) == 0) {
+  stop("Failed to create all_lasso_metrics object")
+}
+cat("✓ Final all_lasso_metrics object created successfully\n")
+
+# Calculate AUC with error handling
+cat("Calculating AUC...\n")
+lasso_auc <- tryCatch({
+  auc(roc_obj)
+}, error = function(e) {
+  cat("Error calculating AUC:", e$message, "\n")
+  NA_real_
+})
+
+cat("Test AUC:", round(lasso_auc, 3), "\n")
+
+# Extract coefficients for feature importance
+important_vars <- coef(class_lasso_model, s = class_optimal_lambda)
+```
+
+```{r}
+
+# Final output: Coefficients
+coef_df <- as.data.frame(as.matrix(important_vars))
+coef_df$feature <- rownames(coef_df)
+colnames(coef_df)[1] <- "coefficient"
+
+# Filter out zero coefficients (i.e., those that were shrunk to 0)
+nonzero_coefs <- coef_df %>%
+  filter(coefficient != 0) %>%
+  arrange(desc(abs(coefficient)))
+
+# View 
+datatable(
+  nonzero_coefs,
+  rownames = FALSE,
+  options = list(
+    pageLength = 15,
+    columnDefs = list(
+      list(className = 'dt-left', targets = "_all")
+    )
+  )
+)
+
+```
+
+#### Accuracy Metrics
+
+```{r warning=FALSE, message=FALSE}
+
+# The robust metrics have already been calculated above using helper functions
+# Display the comprehensive metrics that were created
+
+cat("=== LASSO Model Performance Summary ===\n")
+cat("ROC-optimal threshold:", round(roc_best_thresh, 3), "\n")
+cat("Recall-friendly threshold:", round(recall_thresh, 3), "\n")
+cat("Test AUC:", round(lasso_auc, 3), "\n")
+
+# Display the comprehensive metrics table
+cat("\n=== Comprehensive Metrics Table ===\n")
+print(all_lasso_metrics)
+
+# Create a summary metrics object for consistency with other models
+lasso_metrics <- list(
+  Model = "LASSO",
+  AUC = lasso_auc,
+  ROC_Threshold = roc_best_thresh,
+  Recall_Threshold = recall_thresh,
+  N_Train = nrow(train),
+  N_Test = nrow(test),
+  Event_Rate_Train = round(mean(y_train, na.rm = TRUE) * 100, 2),
+  Event_Rate_Test = round(mean(y_test, na.rm = TRUE) * 100, 2)
+)
+
+# Display summary
+cat("\n=== LASSO Summary Metrics ===\n")
+print(lasso_metrics)
+
+```
+
+### Survival Analysis Feature Importance
+
+#### CatBoost
+
+```{r warning=FALSE, message=FALSE}
+
+# CatBoost Model Setup - Classification Model with Robust Data Preparation
+# Target: outcome (binary: 0 = survival, 1 = event by 1 year)
+# Features: Exclude ptid_e, transplant_year, ev_type, ev_time to prevent data leakage
+
+library(catboost)
+
+cat("Preparing data for CatBoost modeling...\n")
+
+# Use the same robust data preparation approach as LASSO
+tx_model_catboost <- tx_model %>%
+  # Remove lagging keywords systematically (includes "ev_" pattern)
+  select(-matches(paste(lagging_keywords, collapse = "|"))) %>%
+  # Handle infinite values by converting them to NA
+  mutate(across(where(is.numeric), ~if_else(is.infinite(.), NA_real_, .))) %>%
+  # Remove any columns that are entirely empty
+  select(-where(~all(is.na(.)))) %>%
+  # Remove identifier columns
+  select(-ptid_e, -ev_time, -ev_type) %>%
+  # Convert character columns to factors for proper handling
+  mutate(across(where(is.character), as.factor))
+
+# Remove constant columns
+constant_cols <- names(tx_model_catboost)[sapply(tx_model_catboost, function(x) {
+  length(unique(na.omit(x))) == 1
+})]
+if(length(constant_cols) > 0) {
+  tx_model_catboost <- tx_model_catboost %>% select(-all_of(constant_cols))
+  cat("Removed", length(constant_cols), "constant columns\n")
+}
+
+# CatBoost can handle missing data natively - no explicit imputation needed
+cat("✓ CatBoost will handle missing values automatically\n")
+
+# Note: CatBoost has built-in handling for missing values, so we don't need to impute
+# This allows the model to learn optimal strategies for dealing with missing data
+
+# Ensure all character columns are converted to factors for CatBoost
+char_cols_catboost <- names(tx_model_catboost)[sapply(tx_model_catboost, is.character)]
+if(length(char_cols_catboost) > 0) {
+  cat("Converting", length(char_cols_catboost), "character columns to factors for CatBoost...\n")
+  tx_model_catboost <- tx_model_catboost %>%
+    mutate(across(all_of(char_cols_catboost), as.factor))
+}
+
+cat("CatBoost - Final data dimensions:", paste(dim(tx_model_catboost), collapse = " x "), "\n")
+
+# Create train/test split using transplant year
+train_indices <- which(tx_model$transplant_year >= 2010 & tx_model$transplant_year <= 2013)
+test_indices <- which(tx_model$transplant_year == 2014)
+
+# Prepare training data for CatBoost
+cat("Preparing training data for CatBoost...\n")
+train_catboost <- tx_model_catboost[train_indices, ]
+test_catboost <- tx_model_catboost[test_indices, ]
+
+# Add error checking for training data
+if (is.null(train_catboost) || nrow(train_catboost) == 0) {
+  stop("Failed to create CatBoost training data from split")
+}
+cat("✓ CatBoost training data prepared successfully\n")
+
+# Add error checking for test data
+if (is.null(test_catboost) || nrow(test_catboost) == 0) {
+  stop("Failed to create CatBoost test data from split")
+}
+cat("✓ CatBoost test data prepared successfully\n")
+
+# Prepare outcome and features (CatBoost handles factors natively)
+y_train <- train_catboost$outcome
+y_test <- test_catboost$outcome
+
+# CatBoost can handle categorical variables directly as factors - no one-hot encoding needed
+cat("Creating CatBoost data pools (factors handled natively)...\n")
+cat("Note: CatBoost automatically handles categorical variables without one-hot encoding\n")
+
+# Create data pools directly from the data frames (CatBoost handles factors internally)
+X_pool <- catboost.load_pool(data = train_catboost %>% select(-outcome), label = y_train)
+X_test_pool <- catboost.load_pool(data = test_catboost %>% select(-outcome))
+
+# Train model with robust error handling
+cat("Training CatBoost model...\n")
+set.seed(1997)
+model <- tryCatch({
+  catboost.train(
+    learn_pool = X_pool,
+    params = list(
+      loss_function = "Logloss",
+      iterations = 100,
+      learning_rate = 0.15,
+      depth = 6,
+      verbose = 0
+    )
+  )
+}, error = function(e) {
+  cat("Error training CatBoost model:", e$message, "\n")
+  stop("Failed to train CatBoost model")
+})
+
+if (is.null(model)) {
+  stop("Failed to train CatBoost model")
+}
+cat("✓ CatBoost model trained successfully\n")
+
+# Get feature importances with error handling
+cat("Extracting feature importance...\n")
+feature_importance <- tryCatch({
+  catboost.get_feature_importance(model, pool = X_pool)
+}, error = function(e) {
+  cat("Error extracting feature importance:", e$message, "\n")
+  stop("Failed to extract feature importance")
+})
+
+if (is.null(feature_importance)) {
+  stop("Failed to extract feature importance")
+}
+cat("✓ Feature importance extracted successfully\n")
+
+# Convert to tidy format with enframe
+importance_df <- as.data.frame(feature_importance) %>%
+  mutate(feature = rownames(.)) %>%
+  rename(importance = V1) %>%
+  filter(importance > 0) %>%
+  select(feature, importance) %>%
+  arrange(desc(importance))
+
+cat("✓ Feature importance data frame created successfully\n")
+
+# View 
+datatable(
+  importance_df,
+  rownames = FALSE,
+  options = list(
+    pageLength = 15,
+    columnDefs = list(
+      list(className = 'dt-left', targets = "_all")
+    )
+  )
+)
+
+```
+
+##### Accuracy Metrics
+
+```{r}
+
+##### Accuracy Metrics: CatBoost
+
+# Use the robust test data already prepared above
+cat("=== CatBoost Model Performance ===\n")
+
+# Make predictions using the test pool already created
+cat("Making CatBoost predictions on test data...\n")
+pred_prob_catboost <- catboost.predict(model, X_test_pool, prediction_type = "Probability")
+
+# Add error checking for predictions
+if (is.null(pred_prob_catboost) || length(pred_prob_catboost) == 0) {
+  stop("Failed to generate CatBoost predictions")
+}
+cat("✓ CatBoost predictions generated successfully\n")
+
+# Clean and validate predictions
+cat("Cleaning CatBoost predictions...\n")
+valid_idx <- !is.na(y_test)
+if (sum(valid_idx) == 0) {
+  stop("No valid test cases found for CatBoost")
+}
+
+catboost_actuals <- y_test[valid_idx]
+catboost_predictions <- as.numeric(pred_prob_catboost[valid_idx])
+
+# Validate predictions
+if (any(is.na(catboost_predictions))) {
+  warning("Some CatBoost predictions are NA, removing them")
+  valid_pred_idx <- !is.na(catboost_predictions)
+  catboost_actuals <- catboost_actuals[valid_pred_idx]
+  catboost_predictions <- catboost_predictions[valid_pred_idx]
+}
+
+if (any(!is.finite(catboost_predictions))) {
+  warning("Some CatBoost predictions are infinite, removing them")
+  finite_pred_idx <- is.finite(catboost_predictions)
+  catboost_actuals <- catboost_actuals[finite_pred_idx]
+  catboost_predictions <- catboost_predictions[finite_pred_idx]
+}
+
+cat("Final clean CatBoost data - Predictions:", length(catboost_predictions), "Actuals:", length(catboost_actuals), "\n")
+
+# Calculate metrics using helper functions
+cat("Creating CatBoost metrics...\n")
+catboost_metrics_roc <- create_classification_metrics(
+  probs = catboost_predictions,
+  actual = catboost_actuals,
+  cohort_name = "PHTS",
+  model_name = "CatBoost (ROC-optimal)",
+  threshold = 0.5
+)
+
+catboost_metrics_recall <- create_classification_metrics(
+  probs = catboost_predictions,
+  actual = catboost_actuals,
+  cohort_name = "PHTS",
+  model_name = "CatBoost (Recall-friendly)",
+  threshold = 0.4
+)
+
+# Calculate calibration metrics
+catboost_cal_metrics <- calculate_calibration_metrics(
+  predictions = catboost_predictions,
+  actual = catboost_actuals
+)
+
+# Create comprehensive CatBoost metrics
+all_catboost_metrics <- tryCatch({
+  bind_rows(
+    catboost_metrics_roc,
+    catboost_metrics_recall,
+    catboost_cal_metrics
+  )
+}, error = function(e) {
+  cat("Error creating all_catboost_metrics:", e$message, "\n")
+  cat("Creating fallback minimal metrics...\n")
+
+  data.frame(
+    Cohort = "PHTS",
+    Model = "CatBoost",
+    Metric = "Fallback",
+    Value = NA_real_,
+    stringsAsFactors = FALSE
+  )
+})
+
+# Calculate AUC
+catboost_auc <- tryCatch({
+  auc(factor(catboost_actuals, levels = c(0, 1)), catboost_predictions)
+}, error = function(e) {
+  cat("Error calculating CatBoost AUC:", e$message, "\n")
+  NA_real_
+})
+
+# Display comprehensive metrics
+cat("=== CatBoost Performance Summary ===\n")
+cat("Test AUC:", round(catboost_auc, 3), "\n")
+cat("Training set size:", nrow(train_catboost), "\n")
+cat("Test set size:", nrow(test_catboost), "\n")
+cat("Event rate (training):", round(mean(y_train, na.rm = TRUE) * 100, 2), "%\n")
+cat("Event rate (test):", round(mean(y_test, na.rm = TRUE) * 100, 2), "%\n")
+
+# Display the comprehensive metrics table
+cat("\n=== Comprehensive CatBoost Metrics Table ===\n")
+print(all_catboost_metrics)
+
+# Create a summary metrics object for consistency with other models
+catboost_metrics <- list(
+  Model = "CatBoost",
+  AUC = catboost_auc,
+  ROC_Threshold = 0.5,
+  Recall_Threshold = 0.4,
+  N_Train = nrow(train_catboost),
+  N_Test = nrow(test_catboost),
+  Event_Rate_Train = round(mean(y_train, na.rm = TRUE) * 100, 2),
+  Event_Rate_Test = round(mean(y_test, na.rm = TRUE) * 100, 2)
+)
+
+# Display summary
+cat("\n=== CatBoost Summary Metrics ===\n")
+print(catboost_metrics)
+
+```
+
+### Accelerated Oblique Random Survivial Forests (AORSF)
+
+```{r message=FALSE, warning=FALSE}
+
+library(bonsai)         
+library(aorsf)
+library(survival)
+
+# Prepare time and status with robust data preparation
+cat("Preparing data for AORSF modeling...\n")
+
+tx_model_aorsf <- tx_model %>%
+  mutate(
+    time = ev_time,
+    status = as.integer(ev_type == 1)
+  ) %>%
+  select(ptid_e, transplant_year, time, status, everything()) %>% 
+  select(-ev_type) %>%
+  # Remove lagging variables systematically
+  select(-matches(paste(lagging_keywords, collapse = "|"))) %>%
+  # Handle infinite values by converting them to NA
+  mutate(across(where(is.numeric), ~if_else(is.infinite(.), NA_real_, .))) %>%
+  # Remove any columns that are entirely empty
+  select(-where(~all(is.na(.)))) %>%
+  # Convert character columns to factors for proper handling
+  mutate(across(where(is.character), as.factor))
+
+# Remove constant columns
+constant_cols <- names(tx_model_aorsf)[sapply(tx_model_aorsf, function(x) {
+  length(unique(na.omit(x))) == 1
+})]
+if(length(constant_cols) > 0) {
+  tx_model_aorsf <- tx_model_aorsf %>% select(-all_of(constant_cols))
+  cat("Removed", length(constant_cols), "constant columns\n")
+}
+
+# Impute any remaining missing values by data type
+cat("Imputing missing values by data type for AORSF...\n")
+
+# For numeric columns: use median
+numeric_cols <- names(tx_model_aorsf)[sapply(tx_model_aorsf, is.numeric)]
+if(length(numeric_cols) > 0) {
+  cat("Imputing", length(numeric_cols), "numeric columns with median\n")
+  tx_model_aorsf <- tx_model_aorsf %>%
+    mutate(across(all_of(numeric_cols), ~{
+      if(all(is.na(.))) {
+        warning("Column contains only NA values, using 0")
+        0
+      } else if(any(is.infinite(.))) {
+        warning("Column contains infinite values, replacing with median")
+        median(., na.rm = TRUE)
+      } else {
+        if_else(is.na(.), median(., na.rm = TRUE), .)
+      }
+    }))
+}
+
+# For factor columns: use mode (most frequent value)
+factor_cols <- names(tx_model_aorsf)[sapply(tx_model_aorsf, is.factor)]
+if(length(factor_cols) > 0) {
+  cat("Imputing", length(factor_cols), "factor columns with mode\n")
+  tx_model_aorsf <- tx_model_aorsf %>%
+    mutate(across(all_of(factor_cols), ~{
+      if(all(is.na(.))) {
+        warning("Factor column contains only NA values, using 'Unknown'")
+        factor("Unknown")
+      } else {
+        # Get mode safely
+        tab <- table(., useNA = "no")
+        if(length(tab) == 0) {
+          warning("Factor column has no valid values, using 'Unknown'")
+          factor("Unknown")
+        } else {
+          mode_val <- names(tab)[which.max(tab)]
+          if_else(is.na(.), factor(mode_val, levels = levels(.)), .)
+        }
+      }
+    }))
+}
+
+# For character columns: use mode
+char_cols <- names(tx_model_aorsf)[sapply(tx_model_aorsf, is.character)]
+if(length(char_cols) > 0) {
+  cat("Imputing", length(char_cols), "character columns with mode\n")
+  tx_model_aorsf <- tx_model_aorsf %>%
+    mutate(across(all_of(char_cols), ~{
+      if(all(is.na(.))) {
+        warning("Character column contains only NA values, using 'Unknown'")
+        "Unknown"
+      } else {
+        # Get mode safely
+        tab <- table(., useNA = "no")
+        if(length(tab) == 0) {
+          warning("Character column has no valid values, using 'Unknown'")
+          "Unknown"
+        } else {
+          mode_val <- names(tab)[which.max(tab)]
+          if_else(is.na(.), mode_val, .)
+        }
+      }
+    }))
+}
+
+cat("✓ AORSF imputation completed\n")
+
+# Final check for non-finite values with detailed diagnostics
+cat("Performing final data quality check...\n")
+
+# Check for remaining NA/NaN/Inf values by column type
+numeric_cols_final <- names(tx_model_aorsf)[sapply(tx_model_aorsf, is.numeric)]
+factor_cols_final <- names(tx_model_aorsf)[sapply(tx_model_aorsf, is.factor)]
+char_cols_final <- names(tx_model_aorsf)[sapply(tx_model_aorsf, is.character)]
+
+cat("Column types after imputation:\n")
+cat("- Numeric columns:", length(numeric_cols_final), "\n")
+cat("- Factor columns:", length(factor_cols_final), "\n")
+cat("- Character columns:", length(char_cols_final), "\n")
+
+            # Check numeric columns for non-finite values
+            if(length(numeric_cols_final) > 0) {
+              # Convert to data frame for easier manipulation
+              tx_model_aorsf_df <- as.data.frame(tx_model_aorsf)
+
+              numeric_issues <- sapply(tx_model_aorsf_df[numeric_cols_final], function(col) {
+                any(!is.finite(col))
+              })
+
+              if(any(numeric_issues)) {
+                problem_cols <- names(numeric_issues)[numeric_issues]
+                cat("Warning: Non-finite values found in numeric columns:", paste(problem_cols, collapse = ", "), "\n")
+
+                # Fix these columns by replacing non-finite values with median
+                tx_model_aorsf_df <- tx_model_aorsf_df %>%
+                  mutate(across(all_of(problem_cols), ~{
+                    if_else(!is.finite(.), median(., na.rm = TRUE), .)
+                  }))
+
+                # Convert back to data.table
+                tx_model_aorsf <- as.data.table(tx_model_aorsf_df)
+                cat("Fixed non-finite values in numeric columns\n")
+              }
+            }
+
+            # Check factor columns for NA values
+            if(length(factor_cols_final) > 0) {
+              # Use data.table syntax for factor columns
+              factor_issues <- sapply(tx_model_aorsf[, factor_cols_final, with = FALSE], function(col) {
+                any(is.na(col))
+              })
+
+              if(any(factor_issues)) {
+                problem_cols <- names(factor_issues)[factor_issues]
+                cat("Warning: NA values found in factor columns:", paste(problem_cols, collapse = ", "), "\n")
+
+                # Fix these columns by replacing NA with mode using data.table syntax
+                for(col_name in problem_cols) {
+                  col_data <- tx_model_aorsf[[col_name]]
+                  if(any(is.na(col_data))) {
+                    tab <- table(col_data, useNA = "no")
+                    mode_value <- if(length(tab) == 0) "Unknown" else names(tab)[which.max(tab)]
+                    tx_model_aorsf[is.na(get(col_name)), (col_name) := mode_value]
+                  }
+                }
+                cat("Fixed NA values in factor columns\n")
+              }
+            }
+
+# Final validation - try to convert to matrix for AORSF
+cat("Validating data for AORSF model...\n")
+tryCatch({
+  # Test matrix conversion
+  test_matrix <- as.matrix(tx_model_aorsf %>% select(-ptid_e, -transplant_year))
+  cat("✓ Data successfully converted to matrix for AORSF\n")
+}, error = function(e) {
+  cat("Error in matrix conversion:", e$message, "\n")
+  cat("Attempting to fix remaining issues...\n")
+
+  # Convert any remaining character columns to factors
+  tx_model_aorsf <<- tx_model_aorsf %>%
+    mutate(across(where(is.character), as.factor))
+
+  # Try matrix conversion again
+  test_matrix <- as.matrix(tx_model_aorsf %>% select(-ptid_e, -transplant_year))
+  cat("✓ Data successfully converted to matrix after fixing character columns\n")
+})
+
+cat("AORSF - Final data dimensions:", paste(dim(tx_model_aorsf), collapse = " x "), "\n")
+
+# Extract raw feature names from Lasso (may include one-hot levels)
+lasso_keywords_raw <- nonzero_coefs$feature
+
+# Extract base feature name by splitting at underscore or space
+lasso_keywords_base <- gsub("[_ ].*", "", lasso_keywords_raw)
+
+# Combine with CatBoost keywords
+catboost_keywords <- importance_df$feature
+
+# Get union of both feature sets
+model_keywords <- union(catboost_keywords, lasso_keywords_base)
+
+# Subset dataset using exact matches (all_of)
+tx_model_aorsf <- tx_model_aorsf %>%
+  select(ptid_e, transplant_year, time, status, all_of(intersect(model_keywords, colnames(tx_model_aorsf))))
+
+# Split test data
+train <- tx_model_aorsf %>% filter(transplant_year >= 2010 & transplant_year <= 2013)
+test  <- tx_model_aorsf %>% filter(transplant_year == 2014)
+
+# Remove constant columns
+constant_cols <- names(train)[sapply(train, function(col) {
+  length(unique(na.omit(col))) == 1
+})]
+
+train <- train %>% select(-all_of(constant_cols))
+test <- test %>% select(-all_of(constant_cols))
+
+# Ensure consistent features between train and test
+common_features <- intersect(colnames(train), colnames(test))
+train <- train %>% select(all_of(common_features))
+test <- test %>% select(all_of(common_features))
+
+cat("AORSF Training set size:", nrow(train), "\n")
+cat("AORSF Test set size:", nrow(test), "\n")
+cat("Common features:", length(common_features), "\n")
+
+# AORSF Model Setup - Survival Analysis Model with Robust Error Handling
+# Target: Surv(time, status) where:
+#   - time = time to event or censoring in years
+#   - status = event indicator (0 = censored, 1 = event occurred)
+# Features: Exclude ptid_e, transplant_year to prevent data leakage
+
+cat("Fitting AORSF model...\n")
+set.seed(1997)
+
+survival_fit <- tryCatch({
+  orsf(
+    data   = train %>% select(-ptid_e, -transplant_year),
+    formula = Surv(time, status) ~ .,
+    n_tree  = 100  # Increased from 6 to 100
+  )
+}, error = function(e) {
+  cat("Error fitting AORSF model:", e$message, "\n")
+  stop("Failed to fit AORSF model")
+})
+
+if (is.null(survival_fit)) {
+  stop("Failed to fit AORSF model")
+}
+cat("✓ AORSF model fitted successfully\n")
+
+# model
+survival_fit
+
+```
+
+##### By Negation
+
+```{r}
+
+vi_negate <- orsf_vi_negate(survival_fit)
+negate_fi <- enframe(vi_negate, name = "feature", value = "importance") %>%
+  arrange(desc(importance))
+
+# View 
+datatable(
+  negate_fi,
+  rownames = FALSE,
+  options = list(
+    pageLength = 15,
+    columnDefs = list(
+      list(className = 'dt-left', targets = "_all")
+    )
+  )
+)
+
+
+```
+
+##### By Permutation
+
+```{r}
+
+vi_permute <- orsf_vi_permute(survival_fit)
+permute_fi <- enframe(vi_permute, name = "feature", value = "importance") %>%
+  arrange(desc(importance))
+
+# View
+datatable(
+  permute_fi,
+  rownames = FALSE,
+  options = list(
+    pageLength = 15,
+    columnDefs = list(
+      list(className = 'dt-left', targets = "_all")
+    )
+  )
+)
+
+
+```
+
+##### By ANOVA
+
+```{r}
+
+vi_anova <- orsf_vi_anova(survival_fit)
+anova_fi <- enframe(vi_anova, name = "feature", value = "importance") %>%
+  arrange(desc(importance))
+
+# View 
+datatable(
+  anova_fi,
+  rownames = FALSE,
+  options = list(
+    pageLength = 15,
+    columnDefs = list(
+      list(className = 'dt-left', targets = "_all")
+    )
+  )
+)
+```
+
+#### Accuracy Metrics
+
+```{r}
+
+#### Accuracy Metrics: AORSF
+
+# Use the robust test data already prepared above
+cat("=== AORSF Model Performance ===\n")
+
+# Evaluation time point (e.g., 14 days)
+eval_time <- 14
+cat("Evaluation time point:", eval_time, "days\n")
+
+# Use the test data already prepared above
+cat("Making AORSF predictions on test data...\n")
+
+# Predict risk at eval_time with error handling
+risk_pred_aorsf <- tryCatch({
+  predict(
+    object = survival_fit,
+    new_data = test %>% select(-ptid_e),
+    pred_horizon = eval_time,
+    pred_type = "risk"
+  ) %>% as.vector()
+}, error = function(e) {
+  cat("Error making AORSF predictions:", e$message, "\n")
+  stop("Failed to make AORSF predictions")
+})
+
+if (is.null(risk_pred_aorsf) || length(risk_pred_aorsf) == 0) {
+  stop("Failed to generate AORSF predictions")
+}
+cat("✓ AORSF predictions generated successfully\n")
+
+# Clean and validate predictions
+cat("Cleaning AORSF predictions...\n")
+valid_idx <- !is.na(test$status) & !is.na(test$time)
+if (sum(valid_idx) == 0) {
+  stop("No valid test cases found for AORSF")
+}
+
+aorsf_test_valid <- test[valid_idx, ]
+risk_pred_valid <- risk_pred_aorsf[valid_idx]
+
+# Validate predictions
+if (any(is.na(risk_pred_valid))) {
+  warning("Some AORSF predictions are NA, removing them")
+  valid_pred_idx <- !is.na(risk_pred_valid)
+  aorsf_test_valid <- aorsf_test_valid[valid_pred_idx, ]
+  risk_pred_valid <- risk_pred_valid[valid_pred_idx]
+}
+
+if (any(!is.finite(risk_pred_valid))) {
+  warning("Some AORSF predictions are infinite, removing them")
+  finite_pred_idx <- is.finite(risk_pred_valid)
+  aorsf_test_valid <- aorsf_test_valid[finite_pred_idx, ]
+  risk_pred_valid <- risk_pred_valid[finite_pred_idx]
+}
+
+cat("Final clean AORSF data - Predictions:", length(risk_pred_valid), "Test cases:", nrow(aorsf_test_valid), "\n")
+
+# Define binary outcome: event within time window
+y_true_aorsf <- with(aorsf_test_valid, ifelse(status == 1 & time <= eval_time, 1, 0))
+y_pred_aorsf <- ifelse(risk_pred_valid >= 0.5, 1, 0)
+
+# Calculate metrics using helper functions
+cat("Creating AORSF metrics...\n")
+aorsf_metrics_roc <- create_classification_metrics(
+  probs = risk_pred_valid,
+  actual = y_true_aorsf,
+  cohort_name = "PHTS",
+  model_name = "AORSF (ROC-optimal)",
+  threshold = 0.5
+)
+
+aorsf_metrics_recall <- create_classification_metrics(
+  probs = risk_pred_valid,
+  actual = y_true_aorsf,
+  cohort_name = "PHTS",
+  model_name = "AORSF (Recall-friendly)",
+  threshold = 0.4
+)
+
+# Calculate calibration metrics
+aorsf_cal_metrics <- calculate_calibration_metrics(
+  predictions = risk_pred_valid,
+  actual = y_true_aorsf
+)
+
+# Create comprehensive AORSF metrics
+all_aorsf_metrics <- tryCatch({
+  bind_rows(
+    aorsf_metrics_roc,
+    aorsf_metrics_recall,
+    aorsf_cal_metrics
+  )
+}, error = function(e) {
+  cat("Error creating all_aorsf_metrics:", e$message, "\n")
+  cat("Creating fallback minimal metrics...\n")
+
+  data.frame(
+    Cohort = "PHTS",
+    Model = "AORSF",
+    Metric = "Fallback",
+    Value = NA_real_,
+    stringsAsFactors = FALSE
+  )
+})
+
+# Calculate AUC with error handling
+aorsf_auc <- tryCatch({
+  auc(factor(y_true_aorsf, levels = c(0, 1)), risk_pred_valid)
+}, error = function(e) {
+  cat("Error calculating AORSF AUC:", e$message, "\n")
+  NA_real_
+})
+
+# Display comprehensive metrics
+cat("=== AORSF Performance Summary ===\n")
+cat("Test AUC:", round(aorsf_auc, 3), "\n")
+cat("Training set size:", nrow(train), "\n")
+cat("Test set size:", nrow(test), "\n")
+cat("Event rate (training):", round(mean(train$status, na.rm = TRUE) * 100, 2), "%\n")
+cat("Event rate (test):", round(mean(test$status, na.rm = TRUE) * 100, 2), "%\n")
+
+# Display the comprehensive metrics table
+cat("\n=== Comprehensive AORSF Metrics Table ===\n")
+print(all_aorsf_metrics)
+
+# Create a summary metrics object for consistency with other models
+aorsf_metrics <- list(
+  Model = "AORSF",
+  AUC = aorsf_auc,
+  ROC_Threshold = 0.5,
+  Recall_Threshold = 0.4,
+  N_Train = nrow(train),
+  N_Test = nrow(test),
+  Event_Rate_Train = round(mean(train$status, na.rm = TRUE) * 100, 2),
+  Event_Rate_Test = round(mean(test$status, na.rm = TRUE) * 100, 2),
+  Eval_Time = eval_time
+)
+
+# Display summary
+cat("\n=== AORSF Summary Metrics ===\n")
+print(aorsf_metrics)
+
+```
+
+### All Models
+
+```{r}
+
+# Combine all comprehensive metrics for display
+cat("=== Combining All Model Metrics ===\n")
+
+# Create a comprehensive summary table
+all_model_summary <- data.frame(
+  Model = c("LASSO", "CatBoost", "AORSF"),
+  AUC = c(lasso_auc, catboost_auc, aorsf_auc),
+  N_Train = c(nrow(train), nrow(train_catboost), nrow(train)),
+  N_Test = c(nrow(test), nrow(test_catboost), nrow(test)),
+  Event_Rate_Train = c(
+    round(mean(y_train, na.rm = TRUE) * 100, 2),
+    round(mean(y_train, na.rm = TRUE) * 100, 2),
+    round(mean(train$status, na.rm = TRUE) * 100, 2)
+  ),
+  Event_Rate_Test = c(
+    round(mean(y_test, na.rm = TRUE) * 100, 2),
+    round(mean(y_test, na.rm = TRUE) * 100, 2),
+    round(mean(test$status, na.rm = TRUE) * 100, 2)
+  ),
+  stringsAsFactors = FALSE
+)
+
+# Display comprehensive summary
+cat("=== All Models Performance Summary ===\n")
+print(all_model_summary)
+
+# Final Table
+datatable(
+  all_model_summary,
+  rownames = FALSE,
+  options = list(
+    pageLength = 10,
+    dom = 't',  # hide search/filter if desired
+    columnDefs = list(
+      list(className = 'dt-left', targets = "_all")
+    )
+  )
+)
+```
+
+### Feature Importance Comparison
+
+This section provides a comprehensive comparison of feature importance across all three methods (LASSO, CatBoost, and AORSF). By combining multiple methods, we can identify features that are consistently important across different modeling approaches.
+
+#### Normalization and Standardization
+
+```{r warning=FALSE, message=FALSE}
+
+library(ggplot2)
+library(plotly)
+
+# Function to normalize importance scores to [0,1] range
+# This allows fair comparison across different importance measures
+normalize_importance <- function(x) {
+  (x - min(x)) / (max(x) - min(x))
+}
+
+# LASSO importance (already normalized through standardization)
+# Using absolute coefficients to measure magnitude of effect
+lasso_importance <- nonzero_coefs %>%
+  select(feature, coefficient) %>%
+  filter(feature != "(Intercept)") %>%  # Remove intercept
+  mutate(
+    method = "LASSO",
+    importance = abs(coefficient)  # Use absolute values
+  ) %>%
+  select(feature, method, importance)
+
+# CatBoost importance
+# Normalize raw importance scores for comparison
+catboost_importance <- importance_df %>%
+  mutate(
+    method = "CatBoost",
+    importance = normalize_importance(importance)
+  ) %>%
+  select(feature, method, importance)
+
+# AORSF importance (combine all three methods)
+# Each method provides a different perspective on feature importance:
+# - Negate: Measures impact of removing feature
+# - Permute: Measures impact of randomizing feature
+# - ANOVA: Measures statistical significance
+aorsf_importance <- bind_rows(
+  negate_fi %>% mutate(method = "AORSF_Negate"),
+  permute_fi %>% mutate(method = "AORSF_Permute"),
+  anova_fi %>% mutate(method = "AORSF_ANOVA")
+) %>%
+  mutate(importance = normalize_importance(importance)) %>%
+  select(feature, method, importance)
+
+# Combine all importance measures for comprehensive analysis
+all_importance <- bind_rows(
+  lasso_importance,
+  catboost_importance,
+  aorsf_importance
+)
+
+
+# Calculate both average and maximum importance across methods
+avg_importance <- all_importance %>%
+  group_by(feature) %>%
+  summarize(
+    avg_importance = mean(importance),
+    max_importance = max(importance),
+    n_methods = n(),
+    methods = paste(unique(method), collapse = ", ")
+  ) %>%
+  arrange(desc(avg_importance))
+
+
+# Create range labels for average importance
+importance_ranges_avg <- avg_importance %>%
+  filter(feature != "(Intercept)") %>%
+  mutate(
+    rank = row_number(),
+    range = case_when(
+      rank <= 25 ~ "Top 25",
+      rank <= 50 ~ "26-50",
+      rank <= 75 ~ "51-75",
+      TRUE ~ "76+"
+    )
+  )
+
+# Create range labels for maximum importance
+importance_ranges_max <- avg_importance %>%
+  filter(feature != "(Intercept)") %>%
+  arrange(desc(max_importance)) %>%
+  mutate(
+    rank = row_number(),
+    range = case_when(
+      rank <= 25 ~ "Top 25",
+      rank <= 50 ~ "26-50",
+      rank <= 75 ~ "51-75",
+      TRUE ~ "76+"
+    )
+  )
+
+# Join range info back to the full importance table for average importance
+all_importance_with_range_avg <- all_importance %>%
+  filter(feature != "(Intercept)") %>%
+  left_join(
+    importance_ranges_avg %>% select(feature, range),
+    by = "feature"
+  )
+
+# Join range info back to the full importance table for maximum importance
+all_importance_with_range_max <- all_importance %>%
+  filter(feature != "(Intercept)") %>%
+  left_join(
+    importance_ranges_max %>% select(feature, range),
+    by = "feature"
+  )
+
+# Define ordered ranges
+range_levels <- c("Top 25", "26-50", "51-75", "76+")
+
+# Function to create plot
+create_importance_plot <- function(data, title) {
+  # Split data into traces per (method, range)
+  plot_data_list <- data %>%
+    filter(range %in% range_levels) %>%
+    mutate(range = factor(range, levels = range_levels)) %>%
+    group_by(method, range) %>%
+    group_split()
+
+  # Create plotly traces
+  traces <- map(plot_data_list, function(df) {
+    list(
+      y = factor(df$feature, levels = rev(unique(df$feature))),
+      x = df$importance,
+      name = unique(df$method),
+      type = "bar",
+      orientation = "h",
+      hovertemplate = paste(
+        "<b>%{y}</b><br>",
+        "Importance: %{x:.3f}<br>",
+        "Method: ", unique(df$method), "<br>",
+        "<extra></extra>"
+      )
+    )
+  })
+
+  # Generate visibility per dropdown button
+  visibility_buttons <- map(range_levels, function(rng) {
+    vis <- map_lgl(plot_data_list, ~ unique(.x$range) == rng)
+    list(
+      method = "restyle",
+      args = list("visible", vis),
+      label = rng
+    )
+  })
+
+  # Add "All" option
+  visibility_buttons <- append(list(list(
+    method = "restyle",
+    args = list("visible", rep(TRUE, length(traces))),
+    label = "All Features"
+  )), visibility_buttons)
+
+  # Build plot
+  plot_ly() %>%
+    add_trace(data = NULL) %>%
+    {
+      p <- .
+      for (tr in traces) {
+        p <- p %>% add_trace(
+          x = tr$x,
+          y = tr$y,
+          name = tr$name,
+          type = tr$type,
+          orientation = tr$orientation,
+          hovertemplate = tr$hovertemplate,
+          visible = TRUE
+        )
+      }
+      p
+    } %>%
+    layout(
+      title = title,
+      barmode = "group",
+      yaxis = list(
+        title = "Feature",
+        showticklabels = TRUE,
+        tickangle = 0,
+        tickfont = list(size = 10),
+        autorange = "reversed"
+      ),
+      xaxis = list(title = "Normalized Importance", range = c(0, 1)),
+      legend = list(title = list(text = "Method"), orientation = "h", y = -0.2),
+      margin = list(l = 200),
+      updatemenus = list(
+        list(
+          type = "dropdown",
+          active = 0,
+          buttons = visibility_buttons,
+          x = 0.1,
+          y = 1.1,
+          xanchor = "left",
+          yanchor = "top"
+        )
+      )
+    )
+}
+
+# Create both plots
+avg_plot <- create_importance_plot(all_importance_with_range_avg, "Feature Importance by Method (Average)")
+max_plot <- create_importance_plot(all_importance_with_range_max, "Feature Importance by Method (Maximum)")
+
+# Display both plots
+avg_plot
+max_plot
+
+# Add tables showing the features in each range for both methods
+features_by_range_avg <- importance_ranges_avg %>%
+  filter(feature != "(Intercept)") %>%
+  select(feature, range, avg_importance) %>%
+  arrange(range, desc(avg_importance))
+
+features_by_range_max <- importance_ranges_max %>%
+  filter(feature != "(Intercept)") %>%
+  select(feature, range, max_importance) %>%
+  arrange(range, desc(max_importance))
+
+# Display tables
+cat("Features by Range (Average Importance):\n")
+datatable(
+  features_by_range_avg,
+  rownames = FALSE,
+  options = list(
+    pageLength = 25,
+    columnDefs = list(
+      list(className = 'dt-left', targets = "_all")
+    )
+  )
+)
+
+cat("\nFeatures by Range (Maximum Importance):\n")
+datatable(
+  features_by_range_max,
+  rownames = FALSE,
+  options = list(
+    pageLength = 25,
+    columnDefs = list(
+      list(className = 'dt-left', targets = "_all")
+    )
+  )
+)
+```
+
+#### Feature Handling Summary
+
+This table summarizes how each method handles different types of features. Understanding these differences is crucial for interpreting the feature importance results.
+
+```{r warning=FALSE, message=FALSE}
+
+# Summary of feature handling across methods
+# This helps understand the strengths and limitations of each approach
+feature_handling <- data.frame(
+  Method = c("LASSO", "CatBoost", "AORSF"),
+  Categorical_Handling = c(
+    "One-hot encoding via model.matrix()",  # Explicit handling of categorical variables
+    "Internal handling",                    # Built-in categorical feature support
+    "Internal handling"                     # Built-in categorical feature support
+  ),
+  Constant_Columns = c(
+    "Removed",                              # Explicit removal of constant features
+    "No explicit handling",                 # May be less affected by constant features
+    "Removed"                               # Explicit removal of constant features
+  ),
+  Lagging_Variables = c(
+    "Removed (including race, sex, hisp, listing_year)",  # Explicit removal to prevent data leakage
+    "Removed (including race, sex, hisp, listing_year)",  # Explicit removal to prevent data leakage
+    "Removed (including race, sex, hisp, listing_year)"   # Explicit removal to prevent data leakage
+  ),
+  Importance_Measure = c(
+    "Standardized coefficients",            # Linear relationships
+    "Prediction value changes",             # Non-linear relationships and interactions
+    "Multiple measures (Negate, Permute, ANOVA)"  # Survival-specific importance
+  ),
+  Model_Configuration = c(
+    "CV-tuned lambda",                      # Cross-validated regularization
+    "100 trees, depth=6, lr=0.15",          # Optimized for binary classification
+    "100 trees, tuned threshold"            # Optimized for survival analysis
+  )
+)
+
+# Display feature handling summary
+datatable(
+  feature_handling,
+  rownames = FALSE,
+  options = list(
+    pageLength = 10,
+    dom = 't',
+    columnDefs = list(
+      list(className = 'dt-left', targets = "_all")
+    )
+  )
+)
+
+# Key Differences Summary
+key_differences <- data.frame(
+  Aspect = c(
+    "Prediction Type",
+    "Model Configuration",
+    "Evaluation Time Point",
+    "Output Type"
+  ),
+  LASSO = c(
+    "Binary classification (0/1)",          # Direct binary prediction
+    "Linear model with regularization",     # Simpler, interpretable model
+    "Overall outcome",                      # No time component
+    "Probability scores"                    # Direct probability estimates
+  ),
+  CatBoost = c(
+    "Binary classification (0/1)",          # Direct binary prediction
+    "Gradient boosting with 100 trees",     # Complex, non-linear model
+    "Overall outcome",                      # No time component
+    "Probability scores"                    # Direct probability estimates
+  ),
+  AORSF = c(
+    "Survival analysis",                    # Time-to-event prediction
+    "Random survival forest with 100 trees", # Survival-specific model
+    "14-day time point",                    # Specific time window
+    "Risk scores"                           # Needs thresholding
+  )
+)
+
+# Display key differences summary
+datatable(
+  key_differences,
+  rownames = FALSE,
+  options = list(
+    pageLength = 10,
+    dom = 't',
+    columnDefs = list(
+      list(className = 'dt-left', targets = "_all")
+    )
+  )
+)
+```
+
+### Model Performance Metrics
+
+```{r warning=FALSE, message=FALSE}
+
+# The robust metrics have already been calculated above using helper functions
+# This section provides a summary of the comprehensive metrics
+
+cat("=== Model Performance Metrics Summary ===\n")
+cat("All models have been evaluated using robust error handling and validation\n")
+cat("Comprehensive metrics are available in the individual model sections above\n")
+
+# Create a summary comparison table
+performance_summary <- data.frame(
+  Model = c("LASSO", "CatBoost", "AORSF"),
+  AUC = c(lasso_auc, catboost_auc, aorsf_auc),
+  ROC_Threshold = c(roc_best_thresh, 0.5, 0.5),
+  Recall_Threshold = c(recall_thresh, 0.4, 0.4),
+  N_Train = c(nrow(train), nrow(train_catboost), nrow(train)),
+  N_Test = c(nrow(test), nrow(test_catboost), nrow(test)),
+  Event_Rate_Train = c(
+    round(mean(y_train, na.rm = TRUE) * 100, 2),
+    round(mean(y_train, na.rm = TRUE) * 100, 2),
+    round(mean(train$status, na.rm = TRUE) * 100, 2)
+  ),
+  Event_Rate_Test = c(
+    round(mean(y_test, na.rm = TRUE) * 100, 2),
+    round(mean(y_test, na.rm = TRUE) * 100, 2),
+    round(mean(test$status, na.rm = TRUE) * 100, 2)
+  ),
+  stringsAsFactors = FALSE
+)
+
+# Add performance differences
+performance_summary <- performance_summary %>%
+  mutate(
+    AUC_Diff = AUC - lag(AUC),
+    N_Train_Diff = N_Train - lag(N_Train),
+    N_Test_Diff = N_Test - lag(N_Test)
+  )
+
+# Display performance summary
+cat("\n=== Performance Comparison Table ===\n")
+print(performance_summary)
+
+# Display as datatable
+datatable(
+  performance_summary,
+  rownames = FALSE,
+  options = list(
+    pageLength = 10,
+    dom = 't',
+    columnDefs = list(
+      list(className = 'dt-left', targets = "_all")
+    )
+  )
+)
+```
+
+```{r eval=FALSE}
+model_keywords
+```
+
+### Model Clinical Features
+
+This section analyzes clinical features that can be modified to improve patient outcomes, focusing on actionable interventions and risk stratification.
+
+```{r}
+
+library(tibble)
+
+actionable_features <- tribble(
+  ~Feature, ~Category, ~Potential_Intervention, ~Modifiability,
+
+  # Kidney Function
+  "txcreat_r", "Kidney Function", "Monitor kidney function", "Partially Modifiable",
+  "lcreat_r", "Kidney Function", "Monitor kidney function", "Partially Modifiable",
+  "hxdysdia", "Kidney Function", "Dialysis management", "Partially Modifiable",
+  "hxrenins", "Kidney Function", "Renal optimization", "Partially Modifiable",
+  "egfr_tx", "Kidney Function", "eGFR-based intervention", "Partially Modifiable",
+
+  # Liver Function
+  "txast", "Liver Function", "Liver function monitoring", "Partially Modifiable",
+  "lsast", "Liver Function", "Liver function monitoring", "Partially Modifiable",
+  "txalt", "Liver Function", "Liver function monitoring", "Partially Modifiable",
+  "lsalt", "Liver Function", "Liver function monitoring", "Partially Modifiable",
+  "txbili_d_r", "Liver Function", "Direct bilirubin assessment", "Partially Modifiable",
+  "lsbili_d_r", "Liver Function", "Direct bilirubin assessment", "Partially Modifiable",
+  "txbili_t_r", "Liver Function", "Total bilirubin assessment", "Partially Modifiable",
+  "lsbili_t_r", "Liver Function", "Total bilirubin assessment", "Partially Modifiable",
+  "hxfonlvr", "Liver Function", "Fontan liver disease management", "Partially Modifiable",
+
+  # Nutrition
+  "txpalb_r", "Nutrition", "Nutritional support", "Modifiable",
+  "lspalb_r", "Nutrition", "Nutritional support", "Modifiable",
+  "txsa_r", "Nutrition", "Albumin-based nutrition", "Modifiable",
+  "lssab_r", "Nutrition", "Albumin-based nutrition", "Modifiable",
+  "txtp_r", "Nutrition", "Protein intake optimization", "Modifiable",
+  "lstp_r", "Nutrition", "Protein intake optimization", "Modifiable",
+  "hxfail", "Nutrition", "Nutrition and growth support", "Modifiable",
+  "bmi_txpl", "Nutrition", "Nutritional optimization", "Modifiable",
+  "height_txpl", "Nutrition", "Monitor growth", "Modifiable",
+  "height_listing", "Nutrition", "Monitor growth", "Modifiable",
+  "weight_txpl", "Nutrition", "Monitor growth", "Modifiable",
+  "weight_listing", "Nutrition", "Monitor growth", "Modifiable",
+
+  # Respiratory
+  "txvent", "Respiratory", "Ventilation weaning plan", "Partially Modifiable",
+  "slvent", "Respiratory", "Ventilation support", "Partially Modifiable",
+  "ltxtrach", "Respiratory", "Tracheostomy care", "Partially Modifiable",
+  "hxtrach", "Respiratory", "Tracheostomy care", "Partially Modifiable",
+
+  # Cardiac
+  "txvad", "Cardiac", "VAD support", "Partially Modifiable",
+  "slvad", "Cardiac", "VAD support", "Partially Modifiable",
+  "slnomcsd", "Cardiac", "Consider MCSD", "Partially Modifiable",
+  "txecmo", "Cardiac", "ECMO support", "Partially Modifiable",
+  "slecmo", "Cardiac", "ECMO support", "Partially Modifiable",
+  "hxcpr", "Cardiac", "CPR risk mitigation", "Partially Modifiable",
+  "hxshock", "Cardiac", "Shock stabilization", "Partially Modifiable",
+
+  # Immunology
+  "hlatxpre", "Immunology", "HLA desensitization", "Partially Modifiable",
+  "donspac", "Immunology", "Crossmatch-based donor selection", "Partially Modifiable",
+  "txfcpra", "Immunology", "PRA monitoring", "Partially Modifiable",
+  "lsfcpra", "Immunology", "PRA monitoring", "Partially Modifiable",
+
+  # Genetic Syndromes
+  "hxcostlo", "Genetic Syndromes", "Syndrome-specific cardiac planning", "Non-Modifiable",
+  "hxcrd", "Genetic Syndromes", "Syndrome-specific care", "Non-Modifiable",
+  "hxdigorg", "Genetic Syndromes", "Immunodeficiency evaluation", "Non-Modifiable",
+  "hxdowns", "Genetic Syndromes", "Cognitive and cardiac risk assessment", "Non-Modifiable",
+  "hxleoprd", "Genetic Syndromes", "Genetic counseling", "Non-Modifiable",
+  "hxnoonan", "Genetic Syndromes", "Genetic counseling", "Non-Modifiable",
+
+  # Heart Disease Diagnosis
+  "chd_sv", "Heart Disease", "Single ventricle palliation planning", "Partially Modifiable",
+  "chd_heter", "Heart Disease", "Heterotaxy management", "Partially Modifiable",
+  "sec_dx", "Heart Disease", "Cardiomyopathy-specific care", "Partially Modifiable"
+)
+
+
+# Manual mapping for known name mismatches
+feature_map <- c(
+  "txsa_r" = "serum_albumin_at_transplant",
+  "egfr_tx" = "egfr_at_transplant",
+  "txbun_r" = "bun_at_transplant",
+  "txalt" = "alt_at_transplant",
+  "bmi_txpl" = "bmi_at_transplant",
+  "hxmed" = "medical_history_at_listing",
+  "hxfonlvr" = "fontan_liver_disease",
+  "txecmo" = "ecmo_at_transplant",
+  "slecmo" = "ecmo_list",
+  "hxcpr" = "cprmin"
+)
+
+# Add mapped feature names
+actionable_features <- actionable_features %>%
+  mutate(Mapped_Feature = ifelse(Feature %in% names(feature_map),
+                                 feature_map[Feature],
+                                 Feature))
+
+# Filter to keep only those in model_keywords
+filtered_actionable_features <- actionable_features %>%
+  filter(Mapped_Feature %in% model_keywords)
+
+# Identify missing features (after mapping)
+missing_features <- setdiff(actionable_features$Mapped_Feature, model_keywords)
+
+actionable_final <- actionable_features %>%
+  filter(Mapped_Feature %in% model_keywords) %>%
+  select(Mapped_Feature, Category, Potential_Intervention, Modifiability)
+
+# Display actionable features analysis
+datatable(
+  actionable_final,
+  rownames = FALSE,
+  options = list(
+    pageLength = 15,
+    columnDefs = list(
+      list(className = 'dt-left', targets = "_all")
+    )
+  )
+)
+
+```
+
+#### Feature Importance Key Clinical Findings
+
+```{r warning=FALSE, message=FALSE}
+
+# Analyze feature importance for actionable features
+actionable_importance <- all_importance %>%
+  filter(feature %in% actionable_features$Feature) %>%
+  left_join(actionable_features, by = c("feature" = "Feature")) %>%
+  group_by(feature, Category, Potential_Intervention, Modifiability) %>%
+  summarize(
+    avg_importance = mean(importance),
+    max_importance = max(importance),
+    methods = paste(unique(method), collapse = ", ")
+  ) %>%
+  arrange(desc(avg_importance))
+
+# Display actionable features analysis
+datatable(
+  actionable_importance,
+  rownames = FALSE,
+  options = list(
+    pageLength = 15,
+    columnDefs = list(
+      list(className = 'dt-left', targets = "_all")
+    )
+  )
+)
+```
+
+### Summary of Clinical Implications
+
+1.  **Nutrition-related factors** are highly modifiable and show significant importance:
+    -   Serum albumin levels
+    -   BMI
+    -   Failure to thrive
+2.  **Organ function optimization** opportunities:
+    -   Kidney function (eGFR, BUN)
+    -   Liver function (ALT)
+    -   Fontan liver disease management
+3.  **Support device management**:
+    -   Ventilator support
+    -   VAD management
+    -   ECMO management
+
+These findings suggest that a comprehensive approach focusing on nutritional optimization and organ function management could significantly impact patient outcomes.
+
+### Missing Data Implications
+
+Several important clinical features were not included in the final model due to high missingness or data quality issues:
+
+1.  **Failure to Thrive (hxfail)**
+    -   Critical indicator of nutritional status and overall health
+    -   Improved data collection could enhance risk stratification
+    -   Consider standardized assessment protocols
+2.  **Prealbumin (txpalb_r)**
+    -   Early marker of nutritional status
+    -   More sensitive than albumin for acute changes
+    -   Regular monitoring could improve nutritional intervention timing
+3.  **VAD at Listing (slvad)**
+    -   Important indicator of pre-transplant cardiac support
+    -   Could improve risk assessment for mechanical support
+    -   Consider standardized documentation of VAD type and duration
+4.  **Donor Crossmatch (donspac)**
+    -   Critical for immunological risk assessment
+    -   Improved data collection could enhance donor-recipient matching
+    -   Consider standardized crossmatch reporting
+5.  **Prealbumin at Transplant (prealbumin_tx)**
+    -   Critical nutritional marker at time of transplant
+    -   Could improve post-transplant outcome prediction
+    -   Consider routine pre-transplant nutritional assessment
+6.  **Prealbumin at Listing (prealbumin_list)**
+    -   Important baseline nutritional status indicator
+    -   Could help identify high-risk patients early
+    -   Consider standardized nutritional screening at listing
+7.  **Shone's Syndrome (gs_shone)**
+    -   Complex congenital heart disease variant
+    -   Could improve risk stratification for specific patient subgroups
+    -   Consider detailed genetic and anatomical documentation
+    
+    
+### Top 25
+
+```{r}
+
+top_25 <- all_importance_with_range_avg %>% 
+  filter(range == 'Top 25')
+
+top_25 %>% 
+  colnames()
+
+```
+
+
+```{r}
+
+library(data.table)
+
+# Ensure tx_model is a data.table
+tx_model <- as.data.table(tx_model)
+
+# Base columns always included
+base_columns <- c("outcome", "ev_type", "ev_time")
+
+# Copy top_25 and update renamed features
+top_25_fixed <- copy(top_25)
+
+# Fix column names before selection
+top_25_fixed$feature[top_25_fixed$feature == "primary_etiologyCongenital HD"] <- "primary_etiology"
+top_25_fixed$feature[top_25_fixed$feature == "efindEmpty"] <- "efind"
+
+# Final list of features
+selected_features <- top_25_fixed$feature
+column_select <- unique(c(base_columns, selected_features))
+
+# Check for existence in tx_model
+valid_columns <- column_select[column_select %in% names(tx_model)]
+
+# Subset using .. for data.table
+tx_model_top_25 <- tx_model[, ..valid_columns]
+
+# Create importance map
+importance_map <- setNames(top_25_fixed$importance, top_25_fixed$feature)
+
+
+# Add importance column for each variable in tx_model_top_25
+# Output is a long-format table (feature, value, importance) — optional
+importance_values <- sapply(names(tx_model_top_25), function(col) {
+  if (col %in% names(importance_map)) {
+    importance_map[[col]]
+  } else {
+    "outcome"
+  }
+})
+
+
+# Add metadata row-wise
+tx_model_top_25_meta <- rbindlist(lapply(seq_along(tx_model_top_25), function(i) {
+  data.table(
+    feature = names(tx_model_top_25)[i],
+    importance = importance_values[[i]],
+    value = tx_model_top_25[[i]]
+  )
+}), use.names = TRUE, fill = TRUE)
+
+
+```
+
+
+```{r}
+
+write_csv(tx_model_top_25, "phts_tx_model_top_25.csv")
+cat("✓ Top 25 features exported to phts_tx_model_top_25.csv\n")
+
+```
+
