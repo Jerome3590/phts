@@ -135,6 +135,17 @@ LASSO-based survival analysis and scorecard models:
 - `survival_analysis_lasso.qmd`: LASSO survival analysis
 - `methods_comparison_README.qmd`: Comparison of methods
 
+### 5. Parallel Processing
+
+The pipeline uses multiple parallelization strategies for efficient execution:
+
+- **furrr/future parallelization**: Parallel Monte Carlo CV splits (`scripts/04_fit_model.R`)
+- **Orchestration-level parallelism**: Multiple dataset cohorts run as separate processes (`scripts/run_three_datasets.R`)
+- **Threading control**: Environment variables prevent CPU oversubscription
+- **Parallel utilities**: Centralized configuration (`R/utils/parallel_utils.R`)
+
+**See `PARALLEL_PROCESSING.md` for comprehensive documentation.**
+
 ## Pipeline Stages
 
 ### Stage 1: Environment Setup
@@ -361,6 +372,15 @@ This runs RSF, CatBoost, and AORSF feature selection across all three time perio
 - **Logging**: Comprehensive pipeline logs with timestamps
 - **Progress Tracking**: JSON progress file for monitoring
 - **Split Reuse**: Paired comparisons across scenarios
+
+### Parallel Processing
+
+- **Multiple Strategies**: furrr/future, orchestration-level, and threading control
+- **Auto-Configuration**: Automatic worker detection and backend selection
+- **Resource Management**: Prevents CPU oversubscription via environment variables
+- **EC2-Compatible**: Robust core detection and backend fallbacks for cloud environments
+
+**See `PARALLEL_PROCESSING.md` for detailed documentation.**
 
 ## Environment Variables
 
