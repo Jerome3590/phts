@@ -5,7 +5,7 @@
 ### ✅ Phase 1: Archive Legacy Directory
 - **Archived**: `graft-loss/graft-loss-parallel-processing/` → `parallel_processing/graft-loss-parallel-processing/`
 - **Files moved**: 185 R files + documentation
-- **Added**: `ARCHIVE_README.md` explaining archive status
+- **Added**: `PARALLEL_PROCESSING_ARCHIVE.md` explaining archive status
 - **Impact**: Reduced active R files from 260 to 73 in `graft-loss/`
 
 ### ✅ Phase 2: Organize Test Scripts
@@ -69,7 +69,7 @@ tests/
 ```
 parallel_processing/
 └── graft-loss-parallel-processing/  # Historical/development code (185 R files)
-    ├── ARCHIVE_README.md
+    ├── PARALLEL_PROCESSING_ARCHIVE.md
     ├── scripts/R/                   # Parallel processing implementations
     ├── original_study/              # Original study replication
     ├── backup/                      # Backup scripts
