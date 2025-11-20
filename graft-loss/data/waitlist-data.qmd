@@ -1,0 +1,1226 @@
+---
+title: "Data for Waitlist Mortality"
+subtitle: "Pediatric HR Candidates"
+author: "Michael D. Porter, R. Jerome Dixon"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+format:
+  html:
+    toc: true
+    toc-depth: 5
+    code-fold: true
+    code-summary: "Show the code"
+    embed-resources: true
+    default-image-extension: svg
+    dpi: 600
+theme: lumen
+---
+
+## Purpose
+
+This notebook performs initial data exploration and shows how the survival data for modeling waitlist mortality is generated.
+
+```{r packages, include=FALSE}
+
+library(knitr)
+library(kableExtra)
+library(glue)
+library(skimr)
+library(lubridate)
+library(readxl)
+library(tidyverse)
+library(dplyr)
+library(magrittr)
+library(here)
+library(stringr)
+library(kableExtra)
+library(magrittr)
+library(tidyr)
+library(DataExplorer)
+library(ggplot2)
+library(patchwork)
+library(plotly)
+
+```
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(
+  echo = TRUE, 
+  out.width = "90%", fig.width=10, fig.height=10,
+  message = FALSE, warning = FALSE,
+  attr.output='style="max-height: 100px;"', # vertical scroll box
+  skimr_include_summary = FALSE
+)
+options(knitr.kable.NA = '') # set missing table values to blank
+options(width = 90)
+theme_set(theme_bw())
+
+```
+
+```{r utils, echo=FALSE}
+
+#: round number to specific number of decimal places
+digits <- function(x, k=2) formatC(x, digits=k, format="f")
+
+#: print table
+print_table <- function(x, digits=3, align="r", position = "left"){
+  kbl(x, align = align, digits=digits) %>% 
+  row_spec(0, align="c") %>% 
+  kable_styling(full_width = FALSE, position = position,
+                bootstrap_options = c("striped", "hover","responsive"))
+}
+
+
+#: Function to extract non-numeric values
+extract_non_numeric <- function(df, columns_to_check) {
+  # Ensure columns_to_check is a character vector
+  columns_to_check <- as.character(columns_to_check)
+
+  # Create a list to store data frames with non-numeric values for each column
+  non_numeric_dfs <- list()
+
+  # Loop through each column
+  for (col in columns_to_check) {
+    # Extract rows where the column value is non-numeric
+    non_numeric_rows <- df %>%
+      filter(!grepl("^[0-9]+(\\.[0-9]+)?$", .[[col]]) & !is.na(.[[col]]))
+
+    # Add the resulting data frame to the list if it's not empty
+    if (nrow(non_numeric_rows) > 0) {
+      non_numeric_dfs[[col]] <- non_numeric_rows
+    }
+  }
+
+  # Return the list of data frames with non-numeric values
+  return(non_numeric_dfs)
+}
+
+
+#: convert numeric strings to numeric data type
+convert_columns_to_numeric <- function(df, columns_to_convert) {
+  columns_to_convert <- as.character(columns_to_convert)
+
+  # Convert the specified columns to numeric, handle non-numeric values
+  df <- df %>%
+    mutate(across(all_of(columns_to_convert), ~case_when(
+      grepl("^[0-9]+(\\.[0-9]+)?$", .) ~ as.numeric(.),
+      TRUE ~ NA_real_
+    )))
+
+  # Return the modified numeric dataframe
+  return(df)
+}
+
+#: convert columns to factor data type
+convert_columns_to_categorical <- function(df, columns_to_convert) {
+  columns_to_convert <- as.character(columns_to_convert)
+
+  # Convert the specified columns to factor
+  df <- df %>%
+    mutate(across(all_of(columns_to_convert), as.factor))
+
+  # Return the modified dataframe with factors
+  return(df)
+}
+
+
+#: Recoding Race/Ethnicity
+recode_race <- function(ETHCAT){
+  recode(ETHCAT, 
+          `1` = "White", 
+          `2` = "Black", 
+          `4` = "Hispanic", 
+          `5` = "Asian", 
+          # `6` = "Amer Ind/Alaska Native", 
+          # `7` = "Native Hawaiian/other Pacific Islander",
+          # `9` = "Multiracial",
+          .default = "Other", .missing = "Unknown"
+          )  
+}
+
+#: Recoding Blood Type
+recode_ABO <- function(ABO){
+  recode(ABO, A1 = "A", A2 = "A", A1B = "AB", A2B = "AB", 
+         .missing = "Unknown")  
+}
+
+#: Recode Y = Yes, N = No, U = Unknown
+recode_YNU <- function(YNU){
+  recode(YNU, N = "No", Y = "Yes", U = "Unknown", .missing = "Unknown")
+}
+
+#: Recode P = Yes, N = No, anything else = Unknown
+recode_PNO <- function(PNO){
+  recode(PNO, N = "No", P = "Yes", .default = "Unknown", .missing = "Unknown")
+}
+
+#: Recoding Diabetes
+recode_DIAB <- function(DIAB){
+  recode(DIAB, 
+          `1` = "No", 
+          `2` = "Type I", 
+          `3` = "Type II",
+          `4` = "Type Other", 
+          `5` = "Type Unknown",
+         # `998` = "Diabetes Status Unknown",
+          .default = "Type Unknown", .missing = "Type Unknown"
+          )  
+}
+
+
+#: Function to create a EDA plot for each numerical column feature
+plot_numerical <- function(data) {
+  plot_list <- list()
+  figure_number <- 1
+  
+  data2 <- convert_columns_to_categorical(data, c("outcome_final"))
+
+  for(column_name in names(data2)) {
+    if(is.numeric(data2[[column_name]])) {
+      # Create histogram with 'outcome_final' as a grouping variable
+      p <- ggplot(data2, aes_string(x = column_name, fill = 'outcome_final')) +
+        geom_histogram(position = "identity", alpha = 0.6, bins = 12) +
+        labs(title = paste("Histogram of", column_name),
+             fill = "Final Outcome") +
+        theme_minimal() +
+        scale_fill_manual(labels = c("0", "1"),
+                          values = c("0" = "blue", "1" = "red")) +
+        theme(legend.position = "right")
+
+      if(!is.null(p)) {
+        plot_list[[length(plot_list) + 1]] <- p
+      }
+
+      if(length(plot_list) >= 3) {
+        print(wrap_plots(plot_list, ncol = 1))
+        #cat(paste("Figure", figure_number, ":", "Numerical Features\n\n"))
+        plot_list <- list()
+        #figure_number <- figure_number + 1
+      }
+    }
+  }
+
+  if(length(plot_list) > 0) {
+    print(wrap_plots(plot_list, ncol = 1))
+    #cat(paste("Figure", figure_number, ":", "Numerical Features\n\n"))
+  }
+}
+
+
+#: Function to create a EDA plot for each categorical column feature
+plot_categorical <- function(data) {
+  plot_list <- list()
+
+  # Recode 'outcome_final' NAs as 'Missing'
+  if("outcome_final" %in% names(data)) {
+    data$outcome_final <- factor(data$outcome_final)
+    levels(data$outcome_final) <- c(levels(data$outcome_final), "Missing")
+    data$outcome_final[is.na(data$outcome_final)] <- "Missing"
+  }
+
+  for(column_name in names(data)) {
+    if(is.factor(data[[column_name]])) {
+      # Recode NAs as 'Missing' in factor columns
+      data[[column_name]] <- factor(data[[column_name]])
+      levels(data[[column_name]]) <- c(levels(data[[column_name]]), "Missing")
+      data[[column_name]][is.na(data[[column_name]])] <- "Missing"
+      
+      # Check the number of levels
+      num_levels <- length(levels(data[[column_name]]))
+      
+      # Calculate proportions, skip if column is 'outcome_final'
+      if (column_name != "outcome_final") {
+        proportions_data <- data %>%
+          group_by(!!sym(column_name), outcome_final) %>%
+          summarise(count = n(), .groups = 'drop') %>%
+          mutate(total = sum(count)) %>%
+          mutate(proportion = count / total) %>%
+          ungroup()
+      } else {
+        proportions_data <- data %>%
+          group_by(!!sym(column_name)) %>%
+          summarise(count = n(), .groups = 'drop') %>%
+          mutate(total = sum(count)) %>%
+          mutate(proportion = count / total) %>%
+          ungroup()
+      }
+      
+      # Create the ggplot object
+      p <- ggplot(proportions_data, aes(x = !!sym(column_name), y = proportion, fill = outcome_final)) +
+        geom_bar(stat = "identity", position = "fill") +
+        labs(title = paste("Proportion Stacked Bar Chart of", column_name),
+             y = "Proportion", fill = "Final Outcome") +
+        theme_minimal() +
+        scale_fill_manual(labels = c("0", "1", "Missing"),
+                          values = c("0" = "blue", "1" = "red", "Missing" = "grey")) +
+        theme(legend.position = "right") +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+      # Conditionally add tooltip and hide x-axis for plotly charts
+      if(num_levels > 8) {
+        p_interactive <- ggplotly(p, tooltip = column_name) %>%
+          layout(xaxis = list(showticklabels = FALSE, title = ""))
+        plot_list[[length(plot_list) + 1]] <- p_interactive
+      } else {
+        plot_list[[length(plot_list) + 1]] <- p
+      }
+    }
+  }
+
+  return(plot_list)
+}
+
+```
+
+```{=css}
+/*| echo: false */
+
+h1.title {
+   font-size: 2.0em;
+   border-bottom: none;
+   padding-bottom: none;
+}
+
+h1 {
+   font-size: 1.3em;
+   font-weight: bold;
+   border-bottom: 1px solid #C0C0C0;
+   padding-bottom: none;
+}
+
+h2 {
+   font-weight: bold;
+   font-size: 1.15em;
+   /* padding-left:1.5em; */
+   /* text-indent:-1.2em; */
+}
+
+h3 {
+   font-weight: bold;
+   font-size: 1.0em;
+   /* padding-left:1.5em; */
+   /* text-indent:-1.2em; */
+}
+```
+
+### Thoracic Data (All Patients)
+
+The `thoracic` data has information collected on transplant candidates and recipients. The data was retrieved from UNOS on 2022-04-01.
+
+```{r}
+thoracic <- readRDS(here("data","thoracic.rds"))
+```
+
+```{r}
+
+thoracic %<>% 
+  mutate(VAD_DEVICE_TY_TCR = case_when(VAD_DEVICE_TY_TCR==1~"NONE",
+                                        VAD_DEVICE_TY_TCR==2~"LVAD",
+                                        VAD_DEVICE_TY_TCR==3~"RVAD",
+                                        VAD_DEVICE_TY_TCR==4~"TAH",
+                                        VAD_DEVICE_TY_TCR==5~"LVAD+RVAD",
+                                        VAD_DEVICE_TY_TCR==6~"LVAD/RVAD/TAH Unspecified"),
+          VAD_DEVICE_TY_TCR = as.factor(VAD_DEVICE_TY_TCR),
+          WL_ID_CODE = as.character(WL_ID_CODE)
+          ) 
+
+```
+
+```{r}
+
+## Read dictionary
+UNOS_dict = read_excel(
+  here("data", "STAR File Documentation.xls"), 
+  sheet = "THORACIC_FORMATS_FLATFILE",
+  skip = 1
+) %>% 
+  filter(`SAS ANALYSIS FORMAT` == "TH_DGN")%>% 
+  transmute(
+    code = as.numeric(`Data Field Value`),
+    descr = `Data Field Formatted Value`
+  ) %>% 
+  filter(!is.na(code)) 
+
+#: from SRTR: https://www.srtr.org/tools/posttransplant-outcomes/ "Additional Info" tab
+SRTR_dict = read_csv(
+  here("data", "SRTR-candidate-diagnosis.csv")) %>% 
+  transmute(
+    CAND_DIAG_CODE = `OPTN Diagnosis Code`,
+    SRTR_DIAG = str_remove(`SRTR Diagnosis Group`, "Heart: ")
+  ) 
+
+#: From McCulloch. If code == 999 (Other), then check free text
+Other_Cardiomyopathy = 
+c("ARRHYTHMOGENIC RIGHT VENTRICULAR CARDIOMYOPATHY", "ARRHYTHMOGENIC RV DYSPLASIA", 
+  "ARRYTHMOGENIC BIVENTRICULAR DYSFUNCTION", "BARTH SYNDROME", 
+  "BARTH SYNDROME, AND DCM", "BIVENTRICULAR NON-COMPACTION CARDIOMYOPATHY", 
+  "CARDIOMYOPATHY", "CONGENITAL ARRHYTHMIA", "CONGENITAL COMPLETE HEART BLOCK", 
+  "CONGENITAL HEART BLOCK", "CONGENITAL LONG QT SYNDROME", "HYPERTROPHIC", 
+  "HYPERTROPHIC/DILATED CARDIOMYOPATHY", "KAWASAKI'S SYNDROME, CORONARY ARTERY ANEURYSMS", 
+  "LEFT VENTRICULAR NON-COMPACTION", "LONG Q-T SYNDROME TYPE 3", 
+  "LONG QT SYNDROME", "LV NON-COMPACTION", "LVNC/MIXED PHENOTYPE CARDIOMYOPATHY", 
+  "MALIGANT VENTRICULAR TACHYCARDIA", "MALIGNANT ARRHYTHMIA", "MALIGNANT LONG QT SYNDROME, TYPE 3", 
+  "MATERNAL SJOGRENS", "MIXED HYPERTROPHIC AND DILATED CARDIOMYOPATHY", 
+  "MYOCARDITIS", "NON COMPACTION CARDIOMYOPATHY", "NON-COMPACTION", 
+  "NON-COMPACTION CARDIOMYOPATHY", "NON-COMPACTION WITH RESTRICTIVE PHYSIOLOGY", 
+  "POLYMORPHIC VENTRICULAR TACHYCARDIA", "PROLONGED QT SYNDROME", 
+  "REFRACTORY VENTRICULAR ARRHYTHMIA", "SUPRAVENTRICULAR TACHYCARDIA, WOLFF-PARKINSON WHIT", 
+  "VENTRICULAR ARRYTHMIA", "VTACH/SVT")
+
+Other_CHD = 
+c("CHD, TRICUSPID ATRESIA", "CONGENITAL HEART DISEASE, PULMONARY ATRESIA", 
+  "CONGESTIVE HEART FAILURE", "EBSTEINS ANOMALY", "HYPOPLASTIC AORTIC ARCH", 
+  "TETRALOGY OF FALLOT", "TETRALOGY OF FALLOT - CONGENITAL", "TETRALOGY OF FALLOT WITH VSD", 
+  "TRICUSPID ATRESIA", "UNBALANCED AV CANAL", "UNBALANCED AV CANAL WITH HYPOPLASTIC AORTIC ARCH"
+)
+
+```
+
+```{r}
+
+thoracic2 = thoracic %>%
+  mutate(
+    CAND_DIAG_CODE = THORACIC_DGN, 
+    CAND_DIAG_TXT = TCR_DGN_OSTXT, 
+    CAND_DIAG_TXT2 = DIAG_OSTXT
+  ) %>% 
+  left_join(UNOS_dict, by = c("CAND_DIAG_CODE" = "code")) %>% 
+  left_join(SRTR_dict, by = "CAND_DIAG_CODE") %>% 
+  mutate(
+    CAND_DIAG = case_when(
+      CAND_DIAG_CODE %in% c(1004,1006) ~ "Myocarditis",
+      CAND_DIAG_CODE %in% c(1205, 1206) ~ "Congenital Heart Disease Without Surgery",
+      CAND_DIAG_CODE == 1207 ~ "Congenital Heart Disease With Surgery",
+      CAND_DIAG_CODE %in% c(1000, 1001, 1002, 1003, 1005, 1007, 1049, 1209) ~ "Dilated Cardiomyopathy",
+      CAND_DIAG_CODE %in% c(1050, 1052, 1054, 1099) ~ "Restrictive Cardiomyopathy",
+      CAND_DIAG_CODE == 1201 ~ "Hypertrophic Cardiomyopathy",
+      CAND_DIAG_CODE == 1202 ~ "Valvular Heart Disease",
+      CAND_DIAG_CODE == 999 & CAND_DIAG_TXT %in% Other_Cardiomyopathy ~ "Dilated Cardiomyopathy",
+      #CAND_DIAG_CODE == 999 & CAND_DIAG_TXT %in% Other_CHD ~ "Congenital Heart Disease",
+      #!is.na(SRTR_DIAG) ~ SRTR_DIAG,
+      TRUE ~ "Other" 
+    )
+  ) 
+
+thoracic2 %>% 
+  head %>% 
+  print_table()
+
+```
+
+### Missing Data
+
+```{r }
+#| eval: true
+#| echo: true
+#| message: false
+#| warning: false
+#| results: hide
+#| label: fig-missing-data
+#| fig-subcap:
+#|   - "Missing Data"
+
+missing_plot <- plot_missing(thoracic2)
+
+```
+
+```{r}
+#| eval: true
+#| echo: true
+#| message: false
+#| warning: false
+#| results: hide
+
+# Get the names of columns with missing values
+columns_with_missing <- missing_plot$data[missing_plot$data$pct_missing > .8]
+
+```
+
+### All Features After Missing Data Removed
+
+```{r}
+#| eval: true
+#| echo: true
+#| message: false
+#| warning: false
+
+# Extract the character vector of feature values
+missing_rows <- as.character(columns_with_missing$feature)
+
+# Exclude columns with missing values from the original dataset
+filtered_candidate_diagnosis <- thoracic2 %>%
+  select(-one_of(missing_rows)) 
+
+features_80pct <- filtered_candidate_diagnosis %>% 
+  colnames() %>% 
+  as_tibble() 
+
+names(features_80pct)[1] <- "Thoracic Feature"
+
+print(features_80pct, n=nrow(features_80pct))
+
+```
+
+Below plots are for a quick visual inspection of the data. Here we do a second pass for data quality issues or redundant variables we wish to exclude.
+
+```{r eval=TRUE}
+#| label: fig-all-features
+#| fig-subcap:
+#|   - "All Features - Exploratory"
+
+plot_bar(thoracic2[,unlist(features_80pct)], maxcat = 365)
+
+```
+
+```{r}
+
+# After manual inspection
+numerical_features <- read_lines(here("data","variables_numeric.txt")) 
+
+no_info_features <- read_lines(here("data","variables_no_information.txt")) 
+
+additional_factors <- read_lines(here("data","variables_factor.txt"))
+
+text_features <- read_lines(here("data","variables_text_analysis.txt"))
+
+date_features <- read_lines(here("data","variables_date.txt"))
+
+feature_engineering <- read_lines(here("data","variables_feature_engineering.txt"))
+
+```
+
+*After visual inspection of above plots we identify these variables as containing no informative information:*
+`r no_info_features`
+
+
+### Categorical Features {#sec-categorical-features}
+
+```{r categorical-features-setup}
+
+# categorical features
+categorical_features <- setdiff(unlist(features_80pct), c(numerical_features,date_features,no_info_features,text_features))
+
+thoracic_categorical <- convert_columns_to_categorical(thoracic2[,categorical_features], categorical_features)
+
+```
+
+```{r categorical-features, results = "show"}
+
+thoracic_categorical %>% 
+  str() 
+
+```
+
+### Numerical Features {#sec-numerical-features}
+
+```{r numerical-features-setup}
+
+non_numeric_values <- extract_non_numeric(thoracic2[,numerical_features], numerical_features)
+
+# Replace -1 with 0 in INIT_AGE column
+thoracic2$INIT_AGE[thoracic2$INIT_AGE == -1] <- 0
+
+thoracic_numeric <- convert_columns_to_numeric(thoracic2[,numerical_features], numerical_features)
+
+```
+
+```{r numerical-features}
+
+thoracic_numeric %>% 
+  str()
+
+```
+
+### Potential Variables for Future Analysis/Feature Engineering
+
+#### Dates
+
+```{r}
+
+dates <- thoracic2[,date_features] 
+
+dates %>% 
+  head %>% 
+  print_table()
+
+```
+
+#### Text Analysis
+
+```{r}
+
+text <- thoracic2[,text_features] %>% 
+  arrange(PT_OTH1_OSTXT_DON) %>% 
+  head %>% 
+  print()
+
+```
+
+### Candidate Outcome/Target Variable
+
+```{r censoring-date}
+
+censoring_date = as.Date("2022-04-01")
+
+```
+
+```{r, echo=FALSE}
+if(max(thoracic2$END_DATE, na.rm=TRUE) != censoring_date) stop("Change censoring date")
+```
+
+The `REM_CD` is the coded reason for removal from the waitlist. The details are in the STAR documentation.
+
+-   The created `OUTCOME` variable corresponds to an *adverse* outcome defined as **death** (`REM_CD = 8`) or **Candidate too sick to transplant** (`REM_CD = 13`, "Cand. cond. deteriorated,too sick to tx").
+    -   `OUTCOME = 1` is adverse.
+    -   `OUTCOME = 0` is everything else (i.e., candidate was removed from the waitlist for anything besides death or deteriorization).
+
+```{r}
+
+REM_CD_code = readxl::read_excel(here("data", "STAR File Documentation.xls"),
+                                sheet = "THORACIC_FORMATS_FLATFILE",
+                                skip=1) %>%
+  filter(`SAS ANALYSIS FORMAT` == "REMCD") %>%
+  select(
+    REMOVAL_REASON = `Data Field Formatted Value`, 
+    REM_CD = `Data Field Value`
+  ) %>% 
+  mutate(
+    OUTCOME = 1L*(REM_CD %in% c("8", "13")),
+    OUTCOME_FULL = case_match(REM_CD,
+                         #: adverse outcomes
+                         "8" ~ "Death",
+                         "13" ~ "Too sick", # Cand. cond. deteriorated,too sick to tx
+                         #: Still alive or Tx'ed
+                         c("2", "3", "4", "14", "15", "21", "23") ~ "Tx",
+                         "6" ~ "Alive",  # Refused transplant
+                         "7" ~ "Alive",  # Transferred to another center 
+                         "12" ~ "Alive", # Cand. condition improved, tx not needed
+                         "16" ~ "Alive", # Candidate Removed in Error
+                         #: other
+                         "10" ~ "Listed in Error",
+                         "24" ~ "Lost contact",
+                         .default = "Other"
+                         )
+  )
+
+REM_CD_code %>% 
+  arrange(-OUTCOME) %>% 
+  head %>% 
+  print_table()
+
+```
+
+### Waitlist Data
+
+```{r load-waitlist-data}
+
+WL = read_rds(here("data", "cand_wl_hist.rds"))
+
+```
+
+Waitlist Summary
+
+This summarizes the waitlist history for each patient (`PT_CODE`). Note that a patient can be on multiple waitlists (`WL_ID_CODE`) due to multiple transplants, multiple simultaneous listings, transferred listings, etc.
+
+The `WL_PT` data has the fields:
+
+-   `PT_CODE` is the persistent patient identifier
+
+-   `WL_ID_CODE` is the waitlist candidate identifier
+
+-   `start_dt` is the time the candidate was placed on the waitlist
+
+-   `end_dt` is the time the candidates was removed from the waitlist (or right censored)
+
+-   `days_total` is the total number of days on the waitlist (including inactive time)
+
+-   `n_wl` is the number of waitlists the patient has been on
+
+-   `seq_wl` is the sequence number of the current waitlist. If `seq_wl=2` then current waitlist is the patient's 2nd.
+
+-   `days_from_last_wl` is the number of days from the end of the previous waitlist to the start of the current waitlist. It will be missing (`NA`) for the patient's first waitlist.
+
+-   There is right censoring (candidates sill on the waitlist) at time of data collection (2022-04-01). There are two ways to identify this. First, the waitlist data won't have a row with `CHG_TY ="D"`. Second is the `thoracic` data field `END_DATE = "`r censoring_date`". Using the second approach, we append the`END_DATE`from thoracic data and set the`end_dt\` to the maximum of CHG_DT or END_DATE.
+
+```{r WL_PT}
+
+WL_PT = WL %>% 
+  mutate(WL_ID_CODE = as.character(WL_ID_CODE)) %>%
+  left_join(
+    thoracic2 %>% select(WL_ID_CODE, REM_CD, END_DATE)
+    ) %>% 
+  mutate(END_DATE = as.Date(END_DATE, format = "%Y-%m-%d")) %>%
+  group_by(PT_CODE, WL_ID_CODE, REM_CD) %>% 
+    summarize(
+      start_dt = min(CHG_DT),
+      end_dt = max(CHG_DT),
+      end_dt = pmax(end_dt, END_DATE[1]), # right censoring
+      days_total = as.numeric(difftime(end_dt, start_dt, units = "day"))
+    ) %>% 
+  group_by(PT_CODE) %>% 
+    mutate(
+      n_wl = n_distinct(WL_ID_CODE), 
+      seq_wl = row_number(start_dt)
+    ) %>% 
+    arrange(seq_wl, start_dt) %>% 
+    mutate(
+      days_from_last_wl = as.numeric(difftime(start_dt, lag(end_dt), units = "day"))
+    ) %>% 
+  ungroup() %>% 
+  arrange(PT_CODE, seq_wl, start_dt)
+
+```
+
+```{r, echo=FALSE}
+
+WL_PT %>% 
+  arrange(-REM_CD) %>%
+  head %>%
+  print_table()
+
+```
+
+This contains the waitlist time *at each status*. Note that a candidate's status can change while on the same waitlist. There is one row for each status change. For example, if a candidate started at Status 1A, then changed to 1B, then back to 1A, there would be three rows.
+
+### Population (Final Cohort for Analysis)
+
+#### 1. Pediatric Candidate (Age \< 18) on waitlist for heart
+
+```{r}
+
+thor1 = thoracic2 %>% 
+  filter(
+    WL_ORG == "HR",    
+    INIT_AGE < 18, 
+  )
+
+```
+
+There are `r nrow(thor1)` pediatric waitlists/candidates.
+
+#### 2. Added to waitlist between 2010 - 2019
+
+```{r}
+
+date_rng = c("2010-01-01", "2019-12-31") %>% as.Date()
+thor2 = thor1 %>% 
+  semi_join(WL_PT %>% filter(between(start_dt, date_rng[1], date_rng[2])))
+
+```
+
+This removed `r nrow(thor1) - nrow(thor2)` and leaves `r nrow(thor2)`.
+
+#### 3. No prior heart transplants
+
+We can discuss allowing these candidates. My initial reason for exclusion is keep things simple. Otherwise, we'd need to keep track of the number of past transplants and the time from the last transplant (some are only a few days).
+
+```{r}
+thor3 = thor2 %>% 
+  filter(NUM_PREV_TX == 0 & !(PREV_TX %in% "Y") & CAND_DIAG != "Retransplant/Graft Failure") 
+```
+
+This removed `r nrow(thor2) - nrow(thor3)` and leaves `r nrow(thor3)`.
+
+#### 4. Patient's first heart waitlist
+
+Keep only the data from the first time a patient was listed. This will exclude the waitlists corresponding to patients i) who had previous heart transplants, ii) are listed multiple times, and iii) were transferred to another center.
+
+We could keep some of these, but handling the multiple waitlists and transfers becomes a little tricky.
+
+```{r}
+
+thor4 = thor3 %>% 
+  semi_join(WL_PT %>% filter(seq_wl == 1))
+
+```
+
+This removed `r nrow(thor3) - nrow(thor4)` and leaves `r nrow(thor4)`.
+
+#### 5. Remove waitlists with mistakes and unknown outcomes
+
+The removal codes corresponding to listing mistakes (`REM_CD = 10` "Candidate listed in error") and candidates lost (`REM_CD = 24` "Unable to contact candidate") are removed from the data.
+
+```{r}
+thor5 = thor4 %>% filter( !(REM_CD %in% c("10","24")) )
+```
+
+This removed `r nrow(thor4) - nrow(thor5)` and leaves `r nrow(thor5)`.
+
+```{r}
+
+population = thor5 %>% select(WL_ID_CODE, REM_CD)
+
+population %>% 
+  str()
+
+```
+
+### Waitlist Survival Data
+
+The `WL_SURV` data has the fields:
+
+-   `WL_ID_CODE` is the waitlist candidate identifier
+-   `START_DT` is the time the candidate was placed on the waitlist
+-   `STATUS` is the candidate's status (1A, 1B, 2)
+-   `days_at_status` is the number of days the candidate was at that status on the waitlist.
+-   `outcome_at_status` the outcome at the given status. 1 for adverse, 0 alive.
+-   `days_total` is the total number of additional days the candidate was on the waitlist (at any status) from `START_DT`.
+-   `outcome_final` the final outcome for the waitlist. 1 for adverse, 0 alive.
+-   `seq` is the sequence number of status changes
+-   `final` is an indicator that the current row/status is the final one. The candidate was removed from the waitlist.
+-   `hist_{1A, 1B, 2, active, inactive, total}` is the number of days the candidate was at the corresponding status prior to the `START_DT` (for the current waitlist). For example, if `hist_1A=5` then at the `START_DT` the candidate has been listed at 1A status for 5 days. Note that this only corresponds to the *current waitlist*. If the candidate was listed on previous or multiple waitlists, this won't account for those.
+
+There are a few ways to model the waitlist survival.
+
+1.  At the time the patient is first added to the waitlist, predict how long candidate will survive without a transplant. Filter the data to use `seq = 1`, `days_total`, and `outcome_final`. The `hist_` predictors will all be 0 and not useful for this modeling.
+
+2.  At the start of each status change, predict how much longer candidate will survive before they receive a transplant. Because the candidate may have been on the waitlist at another status, the `hist_` predictors will be important for modeling outcomes.
+
+    a.  Could use `days_at_status` and `outcome_at_status` to model how long candidate will survive *if they stayed at that status*.
+    b.  Could use `days_total` and `outcome_final` to model how long candidate will survive *regardless of future status changes*.
+
+3.  In the clinical support setting, we will want to model the survival at time of offer. This is similar to approach 2 except the offers come at random times (not at status changes). I think 2b will be the best for this, but need to give it more thought; I'd probably want to build the model from the actual offer times. However we only have offers from 2010-2020.
+
+Other considerations:
+
+-   There is right censoring (patients sill on the waitlist) at time of data collection (2022-04-01). The censoring date is added for any candidates who were still on the waitlist at this date.
+
+-   This assumes pediatric candidates only that have status of 1A, 1B, or 2. It doesn't check or calculate for other statuses (e.g. adult, old system).
+
+```{r waitlist-survival}
+
+WL_SURV = WL %>% 
+  mutate(WL_ID_CODE = as.character(WL_ID_CODE)) %>%
+  #: final population
+  inner_join(population, by = "WL_ID_CODE") %>% 
+  #: add censoring date at time of data collection 
+  complete(
+    WL_ID_CODE, CHG_TY = "D",
+    fill = list(CHG_DT = censoring_date)
+  ) %>% 
+  group_by(WL_ID_CODE) %>%     
+    arrange(CHG_DT) %>% 
+    #: add STATUS to censored waitlists
+    fill(STATUS, .direction = "down") %>% 
+    filter(lag(STATUS) != STATUS | is.na(lag(STATUS)) | CHG_TY == "D") %>% 
+    mutate(
+      days_at_status = as.numeric(difftime(lead(CHG_DT), CHG_DT, units = "day")),
+      seq = min_rank(CHG_DT),           # sequence of status changes
+      final = 1L*(lead(CHG_TY) == "D"), # indicator of final status change
+      STATUS2 = STATUS,
+      days2 = days_at_status,
+    ) %>% 
+    filter(CHG_TY != "D") %>% 
+    pivot_wider(names_from = STATUS2, values_from = days2, values_fill = 0) %>% 
+    mutate(
+      hist_1A = cumsum(`Status 1A`) %>% lag(default = 0),
+      hist_1B = cumsum(`Status 1B`) %>% lag(default = 0),
+      hist_2 = cumsum(`Status 2`) %>% lag(default = 0),
+      hist_active = hist_1A + hist_1B + hist_2,
+      hist_inactive = cumsum(`Temporarily Inactive`) %>% lag(default = 0),
+      hist_total = hist_active + hist_inactive,
+      days_total = sum(days_at_status) - hist_total
+    ) %>% 
+  ungroup()  %>% 
+  arrange(WL_ID_CODE, CHG_DT) %>%
+  #: add removal code
+  mutate(REM_CD = as.character(REM_CD)) %>% 
+  left_join(REM_CD_code %>% select(REM_CD, outcome = OUTCOME), 
+            by = "REM_CD") %>% 
+  #: set outcome for waitlist/status pair
+  mutate(
+    outcome_final = outcome,  # final outcome
+    outcome_at_status = ifelse(final == 1, outcome, 0L) # outcome at status
+  ) %>% 
+  select(
+    WL_ID_CODE, START_DT = CHG_DT, STATUS, 
+    days_at_status, outcome_at_status,
+    days_total, outcome_final,
+    seq, final, starts_with("hist_"),
+  ) 
+
+```
+
+```{r, echo=FALSE}
+
+WL_SURV %>% 
+  head %>% 
+  print_table()
+
+```
+
+```{r}
+
+surv_data = WL_SURV %>% filter(seq == 1) %>% 
+  semi_join(population, by="WL_ID_CODE") %>% 
+  select(WL_ID_CODE, days_total, outcome_final)
+
+surv_data %>% 
+  str()
+
+```
+
+### Candidate Variables
+
+#### Targeted Model (Firezer's list)
+
+```{r}
+
+# From Firezer's list with a couple additional from Mike's code for consolidation
+
+features <- read_lines(here("data","variables2.txt")) 
+
+investigate_features <- unique(c(features))
+
+investigate_features
+
+```
+
+#### Candidate Risk Level Attributes
+
+-   Life Support
+
+    -   `ECMO_CAND_REG` PATIENT ON LIFE SUPPORT - ECMO
+    -   `LIFE_SUPPORT_CAND_REG` CANDIDATE LIFE SUPPORT
+
+-   VAD
+
+    -   `VAD_DEVICE_TY_TCR` VAD
+
+-   Ventilator
+
+    -   `VENTILATOR_CAND_REG` PATIENT ON LIFE SUPPORT - VENTILATOR
+    -   `VENT_AFTER_LISTING_CAND` VENTILATORY SUPPORT BETWEEN LISTING AND TRANSPLANT.
+
+-   Functional Status of candidate `FUNC_STAT_CAND_REG`
+
+-   Transfusions `TRANSFUSIONS_CAND`
+
+-   Diabetes `DIAB`
+    
+    -   `No`
+    -   `Type I`
+    -   `Type II`
+    -   `Type Other`
+    -   `Type Unknown`
+
+-   Hemo
+
+    -   `HEMO_CO_TCR`
+    -   `HEMO_PA_MN_TCR`
+    -   `HEMO_PCW_TCR`
+
+-   Defibrillator
+
+    -   `IMPL_DEFIBRIL` IMPLANTABLE CARDIOVERTER DEFIBRILLATOR (ICD)
+
+```{r}
+# Functional Status
+library(readxl)
+
+FUNC_STAT_dict = read_excel(
+  here("data", "STAR File Documentation.xls"), 
+  sheet = "THORACIC_FORMATS_FLATFILE",
+  skip = 1
+) %>% 
+  filter(`SAS ANALYSIS FORMAT` == "FUNCSTAT") %>% 
+  transmute(
+    code = `Data Field Value`,
+    descr = `Data Field Formatted Value`
+  ) %>% 
+  # convert to integer code; drop non-numeric values
+  filter(!is.na(code), code != "**OTHER**", code != "Null or Missing") %>% 
+  mutate(code = as.integer(code)) 
+
+
+recode_FUNC_STAT <- function(FUNC_STAT){
+  ind = match(FUNC_STAT, FUNC_STAT_dict$code)
+  FUNC_STAT_dict$descr[ind]
+}
+
+```
+
+```{r candidate_risk_data}
+
+candidate_risk_data = thoracic2 %>% 
+  semi_join(population, by="WL_ID_CODE") %>% 
+  transmute(
+    WL_ID_CODE,
+    #: Life Support in general 
+    #LIFE_SUPPORT_CAND_REG = recode_YNU(LIFE_SUP_TCR),
+    #: ECMO (Life Support)
+    ECMO_CAND_REG = ifelse(ECMO_TCR == 1, "Yes", "No"),
+    #: VAD 
+    VAD_DEVICE_TY_TCR,
+    #: PATIENT ON LIFE SUPPORT - VENTILATOR
+    VENTILATOR_CAND_REG = ifelse(VENTILATOR_TCR == 1, "Yes", "No"),
+    #: VENTILATORY SUPPORT BETWEEN LISTING AND TRANSPLANT
+    # VENT_AFTER_LISTING_CAND = recode_YNU(VENT_SUPPORT_AFTER_LIST), # Same as below
+    #: Life Support (Other)
+    # IABP_TCR
+    # IABP_TRR
+    # PGE_TCR
+    # PGE_TRR
+    # HEMO
+    #HEMO_CO_TCR,
+    #HEMO_PA_MN_TCR,
+    #HEMO_PCW_TCR,
+    IMPL_DEFIBRIL,
+    MOST_RCNT_CREAT,
+    INIT_STAT,
+    INOTROPES_TCR,
+    #LIFE_SUP_TCR,
+    PGE_TCR,
+    TOT_SERUM_ALBUM,
+    #PRIOR_CARD_SURG_TCR,
+    DIAB = recode_DIAB(DIAB),
+    #: Functional Status 
+    FUNC_STAT_CAND_REG = recode_FUNC_STAT(FUNC_STAT_TCR),
+    #: transfusions
+    #TRANSFUSIONS_CAND = recode_YNU(TRANSFUSIONS),
+    #: transplant history
+    WL_OTHER_ORG = case_when( 
+      MULTIORG == "Y" ~ "Y",
+      WLHL == "Y" ~ "Y",
+      WLIN == "Y" ~ "Y",
+      WLKI == "Y" ~ "Y",
+      WLKP == "Y" ~ "Y",
+      WLLI == "Y" ~ "Y",
+      WLLU == "Y" ~ "Y",
+      .default = "N"
+    )
+    # NUM_PREV_TX, # number of prev HR TX (self-reported?)
+    # PREV_TX_HR = PREV_TX,# {Y,N} previous HR TX (from data); NA if no Tx (data leakage warning: this is missing if not transplanted)
+    #PREV_TX_ANY_ORGAN = PREV_TX_ANY,
+    # DAYS_SINCE_PREV_TX_HR = PRVTXDIF, this is at time of TX
+  )
+
+candidate_risk_data %>% 
+  str()
+
+```
+
+#### Candidate Demographic Attributes
+
+```{r candidate_demo_data}
+
+candidate_demographic_data = thoracic2 %>% 
+  semi_join(population, by="WL_ID_CODE") %>% 
+  transmute(
+    WL_ID_CODE, 
+    #: Patient ID
+    PT_CODE,
+    #: Center
+    LISTING_CTR_CODE,
+    #: Age at time of registration or listing
+    AGE = INIT_AGE, 
+    #: Gender {M,F}
+    GENDER,
+    #: Race
+    RACE = recode_race(ETHCAT),    
+    #: Weight in kg
+    WEIGHT_KG = coalesce(INIT_WGT_KG_CALC, WGT_KG_TCR), 
+    #: Height in cm
+    HEIGHT_CM = coalesce(INIT_HGT_CM_CALC, HGT_CM_TCR),
+    #: BMI
+    BMI = coalesce(INIT_BMI_CALC, BMI_TCR),
+    #: Blood Type
+    ABO = recode_ABO(ABO),
+  )
+
+candidate_demographic_data %>% 
+  str()
+
+```
+
+#### Candidate Diagnostic Attributes
+
+-   The candidate diagnosis is found in the thoracic data.
+    -   `THORACIC_DGN`: Waitlist Candidate Diagnosis (No missing values for our patients)  
+    -   `TCR_DGN`: Candidate Diagnosis at Listing  
+    -   `DIAG`: Diagnosis from at Transplant and if missing, from TCR  
+    -   `TCR_DGN_OSTXT` and `DIAG_OSTXT` give text diagnosis  
+-   Diagnosis group {*Cardiomyopathy*, *Congenital Heart Disease*, *Other*} is based on SRTR plus McCulloch using the free text fields.  
+    -   <https://www.srtr.org/tools/posttransplant-outcomes/> see tab "Additional Info" for SRTR diagnosis  
+    
+    We finally use `CAND_DIAG` with below coding from `THORACIC_DGN`:  
+        Codes: 1004,1006 ~ "Myocarditis",   
+        Codes: 1205, 1206 ~ "Congenital Heart Disease Without Surgery",  
+        Code:  1207 ~ "Congenital Heart Disease With Surgery",   
+        Codes: 1000, 1001, 1002, 1003, 1005, 1007, 1049, 1209 ~ "Dilated Cardiomyopathy",   
+        Codes: 1050, 1052, 1054, 1099 ~ "Restrictive Cardiomyopathy",   
+        Code:  1201 ~ "Hypertrophic Cardiomyopathy",   
+        Code:  1202 ~ "Valvular Heart Disease",   
+        Code:  999 and DIAG_OSTXT in Other_Cardiomyopathy ~ "Dilated Cardiomyopathy"   
+      
+      For all other codes: ~ "Other"  
+
+```{r}
+
+candidate_diagnosis = thoracic2 %>% 
+  semi_join(population, by="WL_ID_CODE") %>% 
+  transmute(
+    WL_ID_CODE,
+    #CAND_DIAG_CODE,
+    #DIAG,
+    #CAND_DIAG_TXT,
+    #CAND_DIAG_TXT2,
+    CAND_DIAG
+    )
+  
+candidate_diagnosis %>% 
+  str()
+
+```
+
+### Listing Center Features
+
+```{r listing-centers}
+
+library(haven)
+library(readr)
+
+thoracic_center <- read_sas(here('data','Center Info','thoracic_ctr_ids.sas7bdat'))
+
+thoracic_center$WL_ID_CODE <- as.character(thoracic_center$WL_ID_CODE)
+
+```
+
+#### Listing Center Volume
+
+- Calculating new variables:
+    - `LISTING_CTR_TX_COUNT` is the number of *pediatric* candidate institution heart transplants for match runs during 2010-2019. 
+        - Excludes transplants from donors >= 30 
+    - `LISTING_CTR_TX_AVG` is the average number of *pediatric* candidate institution transplants for match runs during 2010-2019. 
+        - Excludes transplants from donors >= 30
+
+- The counts are the number of *pediatric heart* transplants between 2010 and 2019.     
+    - Because our PTR data excludes patients who received HR from donors over 30, there may have been a few additional transplants that aren't counted.
+
+
+```{r Transplant_CTR_Volume, message=FALSE}
+
+PTR_all = read_csv(here('data','PTR_all.csv'))
+
+lctr_volume = PTR_all %>% 
+  # pediatric patients who received a HR during study period
+  filter(
+    AGE_PT < 18, 
+    ORGAN_PLACED == "HR",
+  ) %>% 
+  # keep last record (sometimes there are multiple match runs and accepts)
+  group_by(WL_ID_CODE) %>% 
+    slice_max(MATCH_SUBMIT_DT, with_ties = FALSE) %>% 
+  ungroup() %>% 
+  count(LISTING_CTR_CODE, name = "LISTING_CTR_TX_COUNT", sort=TRUE) %>% 
+  mutate(LISTING_CTR_TX_AVG = LISTING_CTR_TX_COUNT/10)
+
+
+```
+
+#### Listing Center Refusals
+
+```{r}
+
+lctr_refusals <- read_csv(here('data','Center Info','refusals.csv'))
+
+lctr_refusals %<>%
+  select(1,3)
+
+```
+
+#### Listing Center Wait Times
+
+```{r}
+
+lctr_waiting_time <- read_csv(here('data','Center Info','waiting_time.csv'))
+
+lctr_waiting_time %<>%
+  select(1,3,10,11,12)
+
+```
+
+### Listing Center Attributes
+
+```{r}
+
+listing_center_attributes = thoracic_center %>% 
+  distinct(LISTING_CTR_CODE, .keep_all = FALSE) %>% 
+  inner_join(lctr_refusals, by="LISTING_CTR_CODE") %>% 
+  inner_join(lctr_waiting_time, by="LISTING_CTR_CODE") %>% 
+  left_join(lctr_volume, by="LISTING_CTR_CODE") %>% 
+  distinct() 
+
+```
+
+
+```{r}
+
+listing_center_attributes %>% 
+  str()
+
+```
+
+## Final Survival Analysis Dataset
+
+```{r}
+# Function to remove duplicate columns while ensuring WL_ID_CODE is always retained
+remove_duplicate_columns <- function(df, existing_cols) {
+  new_cols <- setdiff(names(df), existing_cols)
+  # Ensure WL_ID_CODE is always included
+  df %>%
+    select(WL_ID_CODE, all_of(new_cols))
+}
+
+# Initialize a vector to keep track of columns already included
+existing_columns <- character(0)
+
+# Apply the function to each dataframe in the list
+survival_analysis <- list(
+  candidate_demographic_data,
+  candidate_risk_data,
+  candidate_diagnosis,
+  surv_data
+) %>% 
+  map(function(df) {
+    df_clean <- remove_duplicate_columns(df, existing_columns)
+    existing_columns <<- union(existing_columns, names(df_clean))
+    df_clean
+  }) %>% 
+  reduce(left_join, by = "WL_ID_CODE")
+
+```
+
+
+```{r}
+
+survival_analysis %<>% 
+  left_join(listing_center_attributes, by = "LISTING_CTR_CODE") %>% 
+  mutate(median_wait_days_status = case_when(
+    INIT_STAT == '2010' ~ median_wait_days_1A,
+    INIT_STAT == '2020' ~ median_wait_days_1B,
+    INIT_STAT == '2030' ~ median_wait_days_2,
+    INIT_STAT == '2999' ~ median_wait_days,
+    TRUE ~ NA_real_ 
+  ))
+
+```
+
+
+```{r}
+
+survival_analysis %<>% 
+  select(-c(median_wait_days_1A, median_wait_days_1B, median_wait_days_2, LISTING_CTR_TX_COUNT))
+
+```
+
+
+```{r save-datasets, eval=FALSE}
+
+survival_analysis %>%
+  write_csv(here("data", "survival_analysis.csv"))
+
+survival_analysis %>%
+  write_rds(here("data", "survival_analysis.rds"))
+
+```

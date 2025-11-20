@@ -1,0 +1,3 @@
+variable,path,reason
+tx_mcsd,catboost,near_zero_variance
+tx_mcsd,encoded,near_zero_variance

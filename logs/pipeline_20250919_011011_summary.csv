@@ -1,3 +1,0 @@
-"step","status","start_time","end_time","duration_sec","warnings","error_message"
-"04_fit_model","missing",NA,NA,NA,0,"Missing script: scripts/04_fit_model.R"
-"05_generate_outputs","missing",NA,NA,NA,0,"Missing script: scripts/05_generate_outputs.R"

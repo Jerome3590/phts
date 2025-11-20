@@ -1,0 +1,49 @@
+{
+  "timestamp": "2025-09-20T08:09:45-0400",
+  "dataset_primary": "full",
+  "heuristic": {
+    "primary_metric": "mean_mc_cindex",
+    "tie_ci_overlap_threshold": 0.005,
+    "rules_order": ["primary_metric", "tie_rule_sd", "tie_rule_dispersion", "tie_rule_clinical_consensus"]
+  },
+  "selection": {
+    "chosen_model": "ORSF",
+    "chosen_rule": "tie_rule_sd",
+    "path": ["Primary metric: RSF (mean C-index=0.3798)", "Tie resolved by SD: ORSF (SD=0.0064)"]
+  },
+  "models": {
+    "ORSF": {
+      "model": "ORSF",
+      "mean_cindex": 0.3786,
+      "sd_cindex": 0.0064,
+      "n_splits": 2,
+      "ci_lower": 0.3698,
+      "ci_upper": 0.3875,
+      "feature_dispersion": "NA",
+      "selected": true,
+      "selection_rank": 2
+    },
+    "RSF": {
+      "model": "RSF",
+      "mean_cindex": 0.3798,
+      "sd_cindex": 0.0129,
+      "n_splits": 2,
+      "ci_lower": 0.362,
+      "ci_upper": 0.3977,
+      "feature_dispersion": "NA",
+      "selected": false,
+      "selection_rank": 1
+    },
+    "XGB": {
+      "model": "XGB",
+      "mean_cindex": 0.3692,
+      "sd_cindex": 0.0003,
+      "n_splits": 2,
+      "ci_lower": 0.3688,
+      "ci_upper": 0.3696,
+      "feature_dispersion": "NA",
+      "selected": false,
+      "selection_rank": 3
+    }
+  }
+}
