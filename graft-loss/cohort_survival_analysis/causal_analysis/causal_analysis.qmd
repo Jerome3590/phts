@@ -45,7 +45,7 @@ suppressWarnings({
 })
 
 # Local helpers
-source(file.path("cohort_analysis", "helpers.R"))
+source(file.path("cohort_analysis", "classification_helpers.R"))
 
 set.seed(1997)
 ```
