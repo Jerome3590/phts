@@ -135,10 +135,15 @@ LASSO-based survival analysis and scorecard models:
 - `survival_analysis_lasso.qmd`: LASSO survival analysis
 - `methods_comparison_README.qmd`: Comparison of methods
 
-### 5. Parallel Processing
+### 5. Parallel Processing (`parallel_processing/`)
 
-The pipeline uses multiple parallelization strategies for efficient execution:
+The pipeline supports both unparallelized and parallelized execution modes:
 
+- **Main Pipeline** (`graft-loss/scripts/`): Runs in unparallelized mode by default for verification and development
+- **Parallel Processing** (`parallel_processing/graft-loss-parallel-processing/`): Enhanced implementations with parallelization for production runs
+- **Workflow**: Run unparallelized mode first to verify everything works, then use parallel processing implementations
+
+**Parallelization Strategies**:
 - **furrr/future parallelization**: Parallel Monte Carlo CV splits (`scripts/04_fit_model.R`)
 - **Orchestration-level parallelism**: Multiple dataset cohorts run as separate processes (`scripts/run_three_datasets.R`)
 - **Threading control**: Environment variables prevent CPU oversubscription
