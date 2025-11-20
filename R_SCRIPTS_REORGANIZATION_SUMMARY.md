@@ -117,5 +117,5 @@ parallel_processing/
 
 - `R_SCRIPTS_REORGANIZATION_PLAN.md` - Detailed reorganization plan
 - `R_SCRIPTS_REORGANIZATION_SUMMARY.md` - This summary document
-- `parallel_processing/graft-loss-parallel-processing/ARCHIVE_README.md` - Archive explanation
+- `parallel_processing/graft-loss-parallel-processing/PARALLEL_PROCESSING_ARCHIVE.md` - Archive explanation
 

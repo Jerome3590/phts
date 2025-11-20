@@ -1,10 +1,10 @@
-# Archived: graft-loss-parallel-processing
+# Parallel Processing Archive: graft-loss-parallel-processing
 
 ## Status: ARCHIVED
 
-This directory has been archived as of the R script reorganization. It contains historical development code, parallel processing implementations, and documentation from earlier iterations of the pipeline.
+This directory contains archived parallel processing implementations, historical development code, and documentation from earlier iterations of the pipeline. It was moved here during the R script reorganization to separate active code from historical/development code.
 
-**Location**: This archive is now located in `parallel_processing/graft-loss-parallel-processing/` (renamed from `archive/` for clarity).
+**Location**: `parallel_processing/graft-loss-parallel-processing/`
 
 ## Contents
 
