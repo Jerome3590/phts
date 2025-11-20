@@ -3,6 +3,7 @@
 # This script replicates the feature selection methodology from the original study:
 # - Uses RSF permutation importance to select top 20 features
 # - Uses CatBoost feature importance to select top 20 features
+# - Uses AORSF (Accelerated Oblique Random Survival Forest) feature importance to select top 20 features
 # - Runs across three time periods:
 #   1. Original study period (2010-2019)
 #   2. Full study (2010-2024)
@@ -24,15 +25,9 @@ library(janitor)  # Required for clean_names() in clean_phts()
 library(haven)  # Required for read_sas() in clean_phts()
 library(riskRegression)  # For Score() function used in original study
 library(prodlim)  # Required for ranger_predictrisk
+library(aorsf)
+library(catboost)
 
-# CatBoost - check if available
-if (requireNamespace("catboost", quietly = TRUE)) {
-  library(catboost)
-  catboost_available <- TRUE
-} else {
-  catboost_available <- FALSE
-  warning("CatBoost package not available - CatBoost feature importance will be skipped")
-}
 
 # Source required functions - check for correct path first
 cat("Sourcing required functions...\n")
@@ -62,6 +57,7 @@ if (file.exists(here("graft-loss-parallel-processing", "scripts", "R", "clean_ph
 # Configuration
 n_predictors <- 20  # Target: will be adjusted to available Wisotzkey variables
 n_trees_rsf <- 500  # Number of trees for RSF (matching original study)
+n_trees_aorsf <- 100  # Number of trees for AORSF
 horizon <- 1  # 1-year prediction horizon
 
 # Define Wisotzkey variables (15 core variables from original study)
@@ -225,8 +221,10 @@ prepare_modeling_data <- function(data) {
   return(data)
 }
 
-# Helper function to calculate C-index
-calculate_cindex <- function(time, status, risk_scores) {
+# Helper function to calculate both time-dependent and time-independent C-index
+# Returns a list with both cindex_td (time-dependent) and cindex_ti (time-independent)
+# horizon parameter is required - if NULL, only time-independent is calculated
+calculate_cindex <- function(time, status, risk_scores, horizon = NULL) {
   # Remove missing / invalid
   valid_idx <- !is.na(time) & !is.na(status) & !is.na(risk_scores) &
                is.finite(time) & is.finite(risk_scores) & time > 0
@@ -239,15 +237,24 @@ calculate_cindex <- function(time, status, risk_scores) {
   events <- sum(status == 1)
   cat("  [cindex] n =", n,
       " valid =", n,
-      " events =", events, "\n")
+      " events =", events)
   
-  if (n < 10 || events < 1) return(NA_real_)
-  if (length(unique(risk)) == 1) return(0.5)
+  if (!is.null(horizon)) {
+    cat(", horizon =", horizon)
+  }
+  cat("\n")
   
-  # Harrell's C-index: pairwise comparisons
-  num_conc <- 0
-  num_disc <- 0
-  num_ties <- 0
+  if (n < 10 || events < 1) {
+    return(list(cindex_td = NA_real_, cindex_ti = NA_real_))
+  }
+  if (length(unique(risk)) == 1) {
+    return(list(cindex_td = 0.5, cindex_ti = 0.5))
+  }
+  
+  # Always calculate time-independent Harrell's C-index
+  num_conc_ti <- 0
+  num_disc_ti <- 0
+  num_ties_ti <- 0
   
   for (i in seq_len(n)) {
     if (status[i] != 1) next
@@ -256,24 +263,81 @@ calculate_cindex <- function(time, status, risk_scores) {
       # Comparable if event time is earlier for i
       if (time[i] < time[j]) {
         if (risk[i] > risk[j]) {
-          num_conc <- num_conc + 1
+          num_conc_ti <- num_conc_ti + 1
         } else if (risk[i] < risk[j]) {
-          num_disc <- num_disc + 1
+          num_disc_ti <- num_disc_ti + 1
         } else {
-          num_ties <- num_ties + 1
+          num_ties_ti <- num_ties_ti + 1
         }
       }
     }
   }
   
-  denom <- num_conc + num_disc + num_ties
-  if (denom == 0) return(NA_real_)
+  denom_ti <- num_conc_ti + num_disc_ti + num_ties_ti
+  if (denom_ti == 0) {
+    cindex_ti <- NA_real_
+  } else {
+    c_raw_ti <- (num_conc_ti + 0.5 * num_ties_ti) / denom_ti
+    cindex_ti <- max(c_raw_ti, 1 - c_raw_ti)  # Orientation-safe
+  }
   
-  c_raw <- (num_conc + 0.5 * num_ties) / denom
+  # Calculate time-dependent C-index if horizon is provided
+  cindex_td <- NA_real_
+  if (!is.null(horizon) && is.finite(horizon) && horizon > 0) {
+    # Time-dependent AUC: compare patients with events before horizon vs those at risk at horizon
+    # This matches riskRegression::Score() behavior for time-dependent AUC
+    num_conc_td <- 0
+    num_disc_td <- 0
+    num_ties_td <- 0
+    
+    # Identify patients with events before horizon (cases)
+    event_before_horizon <- (status == 1) & (time <= horizon)
+    
+    # Identify patients at risk at horizon (controls):
+    # - Patients with time > horizon (they were at risk at horizon, regardless of eventual status)
+    # - Note: Patients censored before horizon (status == 0 & time <= horizon) are excluded
+    #   because we don't know if they would have had an event before horizon
+    at_risk_at_horizon <- (time > horizon)
+    
+    n_events_before <- sum(event_before_horizon)
+    n_at_risk <- sum(at_risk_at_horizon)
+    
+    cat("  [cindex] Events before horizon:", n_events_before, 
+        ", At risk at horizon:", n_at_risk, "\n")
+    
+    if (n_events_before > 0 && n_at_risk > 0) {
+      # Compare each patient with event before horizon to each patient at risk at horizon
+      for (i in seq_len(n)) {
+        if (!event_before_horizon[i]) next  # Only consider patients with events before horizon
+        
+        for (j in seq_len(n)) {
+          if (i == j) next
+          if (!at_risk_at_horizon[j]) next  # Only compare to patients at risk at horizon
+          
+          # For time-dependent AUC: higher risk should predict event before horizon
+          # Patient i has event before horizon (case), patient j is at risk at horizon (control)
+          # So risk[i] > risk[j] is concordant (higher risk → event before horizon)
+          if (risk[i] > risk[j]) {
+            num_conc_td <- num_conc_td + 1
+          } else if (risk[i] < risk[j]) {
+            num_disc_td <- num_disc_td + 1
+          } else {
+            num_ties_td <- num_ties_td + 1
+          }
+        }
+      }
+      
+      denom_td <- num_conc_td + num_disc_td + num_ties_td
+      if (denom_td > 0) {
+        c_raw_td <- (num_conc_td + 0.5 * num_ties_td) / denom_td
+        cindex_td <- max(c_raw_td, 1 - c_raw_td)  # Orientation-safe
+      }
+    } else {
+      cat("  [cindex] Warning: Insufficient events for time-dependent C-index\n")
+    }
+  }
   
-  # Orientation-safe: if risk is reversed (e.g., survival), 1 - c_raw is the correct value
-  c_fixed <- max(c_raw, 1 - c_raw)
-  as.numeric(c_fixed)
+  return(list(cindex_td = as.numeric(cindex_td), cindex_ti = as.numeric(cindex_ti)))
 }
 
 # Predict risk at given times from a ranger survival model
@@ -432,7 +496,8 @@ select_features_rsf <- function(data, n_predictors = 20, n_trees = 500, horizon 
   })
   
   # 2) C-index via riskRegression::Score (original study style)
-  cindex <- NA_real_
+  cindex_td <- NA_real_
+  cindex_ti <- NA_real_
   if (!is.null(rsf_predictions)) {
     # Ensure predictions and data are aligned
     # Use original time_vec and status_vec (before recipe processing) to match CatBoost approach
@@ -475,7 +540,12 @@ select_features_rsf <- function(data, n_predictors = 20, n_trees = 500, horizon 
       cat("    score_data$status sum:", sum(score_data$status, na.rm=TRUE), "\n")
       cat("    horizon:", horizon, "\n")
       
-      cindex <- tryCatch({
+      # Calculate both time-dependent and time-independent C-index
+      cindex_result <- calculate_cindex(score_data$time, score_data$status, rsf_predictions_clean, horizon = horizon)
+      cindex_ti <- cindex_result$cindex_ti
+      
+      # Try riskRegression::Score for time-dependent (matching original study)
+      cindex_td <- tryCatch({
         evaluation <- riskRegression::Score(
           object  = list(RSF = pred_matrix),
           formula = survival::Surv(time, status) ~ 1,
@@ -494,20 +564,24 @@ select_features_rsf <- function(data, n_predictors = 20, n_trees = 500, horizon 
         }
         as.numeric(auc_tab$AUC[this_row])
       }, error = function(e) {
-        cat("  Warning: Score() failed, using concordance():", e$message, "\n")
-        # Fallback to concordance
-        calculate_cindex(score_data$time, score_data$status, rsf_predictions_clean)
+        cat("  Warning: Score() failed, using manual calculate_cindex():", e$message, "\n")
+        # Fallback to manual time-dependent C-index calculation
+        cindex_result$cindex_td
       })
     }
   }
     
-    if (is.na(cindex)) {
-      cat("  Warning: RSF C-index is NA\n")
+    if (is.na(cindex_td)) {
+      cat("  Warning: RSF time-dependent C-index is NA\n")
       cat("    Time range:", range(score_data$time, na.rm = TRUE), "\n")
       cat("    Status sum:", sum(score_data$status, na.rm = TRUE), "\n")
       cat("    Prediction range:", range(rsf_predictions, na.rm = TRUE), "\n")
     } else {
-      cat("  RSF C-index:", round(cindex, 4), "\n")
+      cat("  RSF time-dependent C-index:", round(cindex_td, 4), "\n")
+    }
+    
+    if (!is.na(cindex_ti)) {
+      cat("  RSF time-independent C-index:", round(cindex_ti, 4), "\n")
     }
   } else {
     cat("  Warning: RSF predictions are NULL or empty\n")
@@ -519,8 +593,9 @@ select_features_rsf <- function(data, n_predictors = 20, n_trees = 500, horizon 
     dplyr::slice(1:n_predictors) %>%
     dplyr::rename(feature = name, importance = value)
   
-  # Add scalar C-index column (avoid mutate(cindex = cindex))
-  importance_df$cindex <- cindex
+  # Add both C-index columns
+  importance_df$cindex_td <- cindex_td
+  importance_df$cindex_ti <- cindex_ti
   
   cat("  RSF selected", nrow(importance_df), "features\n")
   
@@ -565,8 +640,12 @@ catboost_cindex_score <- function(predictions, time, status, horizon) {
   cat("    score_data$status sum:", sum(score_data$status, na.rm=TRUE), "\n")
   cat("    horizon:", horizon, "\n")
   
-  # Run Score()
-  cindex <- tryCatch({
+  # Calculate both time-dependent and time-independent C-index
+  cindex_result <- calculate_cindex(time, status, risk_scores, horizon = horizon)
+  cindex_ti <- cindex_result$cindex_ti
+  
+  # Try riskRegression::Score for time-dependent (matching original study)
+  cindex_td <- tryCatch({
     evaluation <- riskRegression::Score(
       object  = list(CatBoost = risk_matrix),  # must be n × 1 matrix
       formula = survival::Surv(time, status) ~ 1,
@@ -589,12 +668,12 @@ catboost_cindex_score <- function(predictions, time, status, horizon) {
     as.numeric(auc_tab$AUC[this_row])
     
   }, error = function(e) {
-    # Fallback to calculate_cindex (same as RSF) if Score() fails
-    cat("  Warning: Score() failed, using calculate_cindex():", e$message, "\n")
-    calculate_cindex(time, status, risk_scores)
+    # Fallback to calculate_cindex if Score() fails
+    cat("  Warning: Score() failed, using manual calculate_cindex():", e$message, "\n")
+    cindex_result$cindex_td
   })
   
-  return(cindex)
+  return(list(cindex_td = cindex_td, cindex_ti = cindex_ti))
 }
 
 # CatBoost Feature Importance
@@ -724,24 +803,32 @@ select_features_catboost <- function(data, n_predictors = 20, horizon = 1) {
   
   # Calculate C-index using original study method (riskRegression::Score)
   # For consistency with RSF, use the same C-index calculation method
-  cindex <- NA_real_
+  cindex_td <- NA_real_
+  cindex_ti <- NA_real_
   if (!is.null(catboost_predictions)) {
     # Convert horizon from years to days for Score() if needed
     # (Score() expects times in same units as time variable)
     # Since time is in years and horizon is in years, use as-is
-    cindex <- catboost_cindex_score(
+    cindex_result <- catboost_cindex_score(
       predictions = catboost_predictions,  # signed-time
       time        = time_vec,
       status      = status_vec,
       horizon     = horizon
     )
     
-    if (is.na(cindex)) {
-      cat("  Warning: CatBoost C-index calculation returned NA\n")
+    cindex_td <- cindex_result$cindex_td
+    cindex_ti <- cindex_result$cindex_ti
+    
+    if (is.na(cindex_td)) {
+      cat("  Warning: CatBoost time-dependent C-index calculation returned NA\n")
       cat("    Time range:", range(time_vec, na.rm = TRUE), "\n")
       cat("    Status sum:", sum(status_vec, na.rm = TRUE), "\n")
     } else {
-      cat("  CatBoost C-index:", round(cindex, 4), "\n")
+      cat("  CatBoost time-dependent C-index:", round(cindex_td, 4), "\n")
+    }
+    
+    if (!is.na(cindex_ti)) {
+      cat("  CatBoost time-independent C-index:", round(cindex_ti, 4), "\n")
     }
   }
   
@@ -769,9 +856,248 @@ select_features_catboost <- function(data, n_predictors = 20, horizon = 1) {
   ) %>%
     arrange(desc(importance)) %>%
     slice(1:min(n_predictors, nrow(.))) %>%
-    mutate(cindex = cindex)
+    mutate(cindex_td = cindex_td, cindex_ti = cindex_ti)
   
   cat("  CatBoost selected", nrow(importance_df), "features\n")
+  
+  return(importance_df)
+}
+
+# AORSF Feature Importance
+select_features_aorsf <- function(data, n_predictors = 20, n_trees = 100, horizon = 1) {
+  cat("  Running AORSF feature importance...\n")
+  
+  # Check if AORSF is available (self-contained)
+  aorsf_available <- requireNamespace("aorsf", quietly = TRUE)
+  
+  if (!aorsf_available) {
+    warning("aorsf package not available - skipping AORSF feature importance")
+    return(NULL)
+  }
+  
+  # Extract time and status before processing
+  time_vec <- data$time
+  status_vec <- data$status
+  
+  # Prepare data: remove ID, time, status for feature selection
+  feature_data <- data %>%
+    select(-any_of(c("ID", "ptid_e", "time", "status")))
+  
+  # Create recipe and prepare data
+  recipe_prep <- tryCatch({
+    make_recipe(data, dummy_code = FALSE) %>% prep()
+  }, error = function(e) {
+    cat("  Warning: Recipe preparation failed, using raw data:", e$message, "\n")
+    return(NULL)
+  })
+  
+  if (is.null(recipe_prep)) {
+    # Fallback: use cleaned raw features
+    prepared_data <- feature_data
+  } else {
+    prepared_data <- juice(recipe_prep) %>%
+      select(-any_of(c("ID", "ptid_e", "time", "status")))
+  }
+  
+  # Ensure we have matching rows
+  n_rows <- min(nrow(prepared_data), length(time_vec))
+  
+  # Create AORSF data with time and status properly added
+  aorsf_data <- prepared_data[1:n_rows, , drop = FALSE] %>%
+    select(-any_of(c("time", "status")))
+  
+  # Add time and status as new columns
+  aorsf_data$time <- time_vec[1:n_rows]
+  aorsf_data$status <- status_vec[1:n_rows]
+  
+  # Ensure time and status are numeric/integer
+  aorsf_data$time <- as.numeric(aorsf_data$time)
+  aorsf_data$status <- as.integer(aorsf_data$status)
+  
+  # Remove any rows with invalid survival data
+  valid_rows <- !is.na(aorsf_data$time) & !is.na(aorsf_data$status) & 
+                aorsf_data$time > 0 & aorsf_data$status %in% c(0, 1)
+  aorsf_data <- aorsf_data[valid_rows, ]
+  
+  if (nrow(aorsf_data) < 10) {
+    stop("Not enough valid rows for AORSF after filtering")
+  }
+  
+  # Remove constant columns (AORSF requirement)
+  constant_cols <- names(aorsf_data)[sapply(aorsf_data, function(x) {
+    if (is.numeric(x)) {
+      length(unique(na.omit(x))) == 1
+    } else {
+      length(unique(na.omit(x))) == 1
+    }
+  })]
+  
+  if (length(constant_cols) > 0) {
+    cat("  Removing constant columns:", paste(constant_cols, collapse = ", "), "\n")
+    aorsf_data <- aorsf_data %>% select(-all_of(constant_cols))
+  }
+  
+  # Convert character columns to factors for AORSF
+  aorsf_data <- aorsf_data %>%
+    mutate(across(where(is.character), as.factor))
+  
+  # Fit AORSF model
+  aorsf_model <- tryCatch({
+    set.seed(42)
+    aorsf::orsf(
+      data = aorsf_data,
+      formula = Surv(time, status) ~ .,
+      n_tree = n_trees,
+      na_action = 'impute_meanmode'
+    )
+  }, error = function(e) {
+    cat("  Error fitting AORSF model:", e$message, "\n")
+    return(NULL)
+  })
+  
+  if (is.null(aorsf_model)) {
+    return(NULL)
+  }
+  
+  # Get predictions for C-index calculation
+  aorsf_predictions <- tryCatch({
+    risk_pred <- predict(aorsf_model, new_data = aorsf_data, pred_type = 'risk', pred_horizon = horizon)
+    
+    # Log AORSF prediction structure
+    cat("  [AORSF DEBUG] Raw prediction object:\n")
+    cat("    Class:", paste(class(risk_pred), collapse=", "), "\n")
+    cat("    Type:", typeof(risk_pred), "\n")
+    if (is.matrix(risk_pred)) {
+      cat("    Dimensions:", paste(dim(risk_pred), collapse="x"), "\n")
+      cat("    First few values:", paste(head(risk_pred[, 1], 5), collapse=", "), "\n")
+      cat("    Range:", paste(range(risk_pred[, 1], na.rm=TRUE), collapse=" to "), "\n")
+    } else {
+      cat("    Length:", length(risk_pred), "\n")
+      cat("    First few values:", paste(head(risk_pred, 5), collapse=", "), "\n")
+      cat("    Range:", paste(range(risk_pred, na.rm=TRUE), collapse=" to "), "\n")
+    }
+    
+    # Extract as vector
+    if (is.matrix(risk_pred)) {
+      pred_vec <- as.numeric(risk_pred[, 1])
+    } else {
+      pred_vec <- as.numeric(risk_pred)
+    }
+    
+    # Log extracted vector
+    cat("  [AORSF DEBUG] After extraction:\n")
+    cat("    Class:", paste(class(pred_vec), collapse=", "), "\n")
+    cat("    Length:", length(pred_vec), "\n")
+    cat("    Any NA:", any(is.na(pred_vec)), "(", sum(is.na(pred_vec)), ")\n")
+    cat("    Any Inf:", any(is.infinite(pred_vec)), "(", sum(is.infinite(pred_vec)), ")\n")
+    cat("    Range:", paste(range(pred_vec, na.rm=TRUE), collapse=" to "), "\n")
+    
+    pred_vec
+  }, error = function(e) {
+    cat("  Warning: AORSF risk prediction failed:", e$message, "\n")
+    return(NULL)
+  })
+  
+  # Calculate C-index using riskRegression::Score (consistent with RSF and CatBoost)
+  cindex_td <- NA_real_
+  cindex_ti <- NA_real_
+  if (!is.null(aorsf_predictions)) {
+    # Ensure predictions and data are aligned
+    n_use <- min(length(aorsf_predictions), nrow(aorsf_data))
+    
+    aorsf_time_vec <- aorsf_data$time[1:n_use]
+    aorsf_status_vec <- aorsf_data$status[1:n_use]
+    aorsf_pred_vec <- aorsf_predictions[1:n_use]
+    
+    # Ensure no missing values
+    valid_idx <- !is.na(aorsf_time_vec) & !is.na(aorsf_status_vec) & 
+                 !is.na(aorsf_pred_vec) & 
+                 is.finite(aorsf_time_vec) & is.finite(aorsf_pred_vec) &
+                 aorsf_time_vec > 0
+    
+    if (sum(valid_idx) < 10) {
+      cat("  Warning: Too few valid observations for C-index\n")
+    } else {
+      # Build a clean scoring dataset
+      score_data <- data.frame(
+        time   = as.numeric(aorsf_time_vec[valid_idx]),
+        status = as.integer(aorsf_status_vec[valid_idx]),
+        row.names = NULL
+      )
+      aorsf_predictions_clean <- aorsf_pred_vec[valid_idx]
+      
+      # Log what we're passing to Score()
+      cat("  [AORSF DEBUG] Before Score() call:\n")
+      cat("    score_data rows:", nrow(score_data), "\n")
+      cat("    predictions length:", length(aorsf_predictions_clean), "\n")
+      pred_matrix <- as.matrix(aorsf_predictions_clean)
+      cat("    as.matrix() dim:", paste(dim(pred_matrix), collapse="x"), "\n")
+      cat("    score_data$time range:", paste(range(score_data$time, na.rm=TRUE), collapse=" to "), "\n")
+      cat("    score_data$status sum:", sum(score_data$status, na.rm=TRUE), "\n")
+      cat("    horizon:", horizon, "\n")
+      
+      # Calculate both time-dependent and time-independent C-index
+      cindex_result <- calculate_cindex(score_data$time, score_data$status, aorsf_predictions_clean, horizon = horizon)
+      cindex_ti <- cindex_result$cindex_ti
+      
+      # Try riskRegression::Score for time-dependent (matching original study)
+      cindex_td <- tryCatch({
+        evaluation <- riskRegression::Score(
+          object  = list(AORSF = pred_matrix),
+          formula = survival::Surv(time, status) ~ 1,
+          data    = score_data,
+          times   = horizon,
+          summary = "risks",
+          metrics = "auc",
+          se.fit  = FALSE
+        )
+        
+        auc_tab <- evaluation$AUC$score
+        if ("times" %in% names(auc_tab)) {
+          this_row <- which.min(abs(auc_tab$times - horizon))
+        } else {
+          this_row <- 1L
+        }
+        as.numeric(auc_tab$AUC[this_row])
+      }, error = function(e) {
+        cat("  Warning: Score() failed, using manual calculate_cindex():", e$message, "\n")
+        # Fallback to manual time-dependent C-index calculation
+        cindex_result$cindex_td
+      })
+    }
+    
+    if (is.na(cindex_td)) {
+      cat("  Warning: AORSF time-dependent C-index is NA\n")
+    } else {
+      cat("  AORSF time-dependent C-index:", round(cindex_td, 4), "\n")
+    }
+    
+    if (!is.na(cindex_ti)) {
+      cat("  AORSF time-independent C-index:", round(cindex_ti, 4), "\n")
+    }
+  } else {
+    cat("  Warning: AORSF predictions are NULL or empty\n")
+  }
+  
+  # Extract feature importance using negate method (most common)
+  importance_raw <- tryCatch({
+    aorsf::orsf_vi_negate(aorsf_model)
+  }, error = function(e) {
+    cat("  Error extracting AORSF importance:", e$message, "\n")
+    return(NULL)
+  })
+  
+  if (is.null(importance_raw)) {
+    return(NULL)
+  }
+  
+  # Create importance data frame
+  importance_df <- tibble::enframe(importance_raw, name = "feature", value = "importance") %>%
+    dplyr::arrange(dplyr::desc(importance)) %>%
+    dplyr::slice(1:min(n_predictors, nrow(.))) %>%
+    dplyr::mutate(cindex_td = cindex_td, cindex_ti = cindex_ti)
+  
+  cat("  AORSF selected", nrow(importance_df), "features\n")
   
   return(importance_df)
 }
@@ -822,15 +1148,47 @@ analyze_time_period <- function(period_name, period_data) {
     return(NULL)
   })
   
-  # Extract C-index values
-  rsf_cindex <- if (!is.null(rsf_features) && "cindex" %in% names(rsf_features)) {
-    rsf_features$cindex[1]
+  # AORSF feature importance
+  aorsf_features <- tryCatch({
+    select_features_aorsf(prepared_data, n_predictors = n_predictors_adj, n_trees = n_trees_aorsf, horizon = horizon)
+  }, error = function(e) {
+    cat("  ERROR in AORSF feature importance:", e$message, "\n")
+    return(NULL)
+  })
+  
+  # Extract C-index values (both time-dependent and time-independent)
+  rsf_cindex_td <- if (!is.null(rsf_features) && "cindex_td" %in% names(rsf_features)) {
+    rsf_features$cindex_td[1]
   } else {
     NA_real_
   }
   
-  catboost_cindex <- if (!is.null(catboost_features) && "cindex" %in% names(catboost_features)) {
-    catboost_features$cindex[1]
+  rsf_cindex_ti <- if (!is.null(rsf_features) && "cindex_ti" %in% names(rsf_features)) {
+    rsf_features$cindex_ti[1]
+  } else {
+    NA_real_
+  }
+  
+  catboost_cindex_td <- if (!is.null(catboost_features) && "cindex_td" %in% names(catboost_features)) {
+    catboost_features$cindex_td[1]
+  } else {
+    NA_real_
+  }
+  
+  catboost_cindex_ti <- if (!is.null(catboost_features) && "cindex_ti" %in% names(catboost_features)) {
+    catboost_features$cindex_ti[1]
+  } else {
+    NA_real_
+  }
+  
+  aorsf_cindex_td <- if (!is.null(aorsf_features) && "cindex_td" %in% names(aorsf_features)) {
+    aorsf_features$cindex_td[1]
+  } else {
+    NA_real_
+  }
+  
+  aorsf_cindex_ti <- if (!is.null(aorsf_features) && "cindex_ti" %in% names(aorsf_features)) {
+    aorsf_features$cindex_ti[1]
   } else {
     NA_real_
   }
@@ -842,8 +1200,13 @@ analyze_time_period <- function(period_name, period_data) {
     event_rate = mean(prepared_data$status, na.rm = TRUE),
     rsf_features = rsf_features,
     catboost_features = catboost_features,
-    rsf_cindex = rsf_cindex,
-    catboost_cindex = catboost_cindex
+    aorsf_features = aorsf_features,
+    rsf_cindex_td = rsf_cindex_td,
+    rsf_cindex_ti = rsf_cindex_ti,
+    catboost_cindex_td = catboost_cindex_td,
+    catboost_cindex_ti = catboost_cindex_ti,
+    aorsf_cindex_td = aorsf_cindex_td,
+    aorsf_cindex_ti = aorsf_cindex_ti
   )
   
   return(results)
@@ -883,6 +1246,13 @@ for (period_name in names(all_results)) {
     write_csv(results$catboost_features, catboost_file)
     cat("  Saved:", catboost_file, "\n")
   }
+  
+  # Save AORSF features
+  if (!is.null(results$aorsf_features)) {
+    aorsf_file <- file.path(output_dir, paste0(period_name, "_aorsf_top20.csv"))
+    write_csv(results$aorsf_features, aorsf_file)
+    cat("  Saved:", aorsf_file, "\n")
+  }
 }
 
 # Create comparison tables
@@ -895,7 +1265,7 @@ rsf_comparison <- map_dfr(names(all_results), function(period_name) {
   }
   all_results[[period_name]]$rsf_features %>%
     mutate(period = period_name, rank = row_number()) %>%
-    select(period, rank, feature, importance, cindex)
+    select(period, rank, feature, importance, cindex_td, cindex_ti)
 })
 
 if (nrow(rsf_comparison) > 0) {
@@ -920,7 +1290,7 @@ catboost_comparison <- map_dfr(names(all_results), function(period_name) {
   }
   all_results[[period_name]]$catboost_features %>%
     mutate(period = period_name, rank = row_number()) %>%
-    select(period, rank, feature, importance, cindex)
+    select(period, rank, feature, importance, cindex_td, cindex_ti)
 })
 
 if (nrow(catboost_comparison) > 0) {
@@ -936,6 +1306,31 @@ if (nrow(catboost_comparison) > 0) {
   catboost_wide_file <- file.path(output_dir, "catboost_comparison_wide.csv")
   write_csv(catboost_wide, catboost_wide_file)
   cat("  Saved:", catboost_wide_file, "\n")
+}
+
+# AORSF comparison across periods
+aorsf_comparison <- map_dfr(names(all_results), function(period_name) {
+  if (is.null(all_results[[period_name]]) || is.null(all_results[[period_name]]$aorsf_features)) {
+    return(NULL)
+  }
+  all_results[[period_name]]$aorsf_features %>%
+    mutate(period = period_name, rank = row_number()) %>%
+    select(period, rank, feature, importance, cindex_td, cindex_ti)
+})
+
+if (nrow(aorsf_comparison) > 0) {
+  aorsf_comparison_file <- file.path(output_dir, "aorsf_comparison_all_periods.csv")
+  write_csv(aorsf_comparison, aorsf_comparison_file)
+  cat("  Saved:", aorsf_comparison_file, "\n")
+  
+  # Create wide format comparison
+  aorsf_wide <- aorsf_comparison %>%
+    select(period, rank, feature) %>%
+    pivot_wider(names_from = period, values_from = feature, values_fill = NA)
+  
+  aorsf_wide_file <- file.path(output_dir, "aorsf_comparison_wide.csv")
+  write_csv(aorsf_wide, aorsf_wide_file)
+  cat("  Saved:", aorsf_wide_file, "\n")
 }
 
 # Feature overlap analysis
@@ -983,6 +1378,27 @@ if (nrow(catboost_comparison) > 0) {
   }
 }
 
+# AORSF overlap
+if (nrow(aorsf_comparison) > 0) {
+  aorsf_features_by_period <- aorsf_comparison %>%
+    group_by(period) %>%
+    summarise(features = list(feature), .groups = 'drop')
+  
+  if (nrow(aorsf_features_by_period) > 1) {
+    # Find common features across all periods
+    all_aorsf_features <- Reduce(intersect, aorsf_features_by_period$features)
+    cat("AORSF features common to all periods:", length(all_aorsf_features), "\n")
+    if (length(all_aorsf_features) > 0) {
+      cat("  ", paste(head(all_aorsf_features, 10), collapse = ", "), "\n")
+    }
+    
+    # Save overlap analysis
+    overlap_file <- file.path(output_dir, "aorsf_feature_overlap.csv")
+    write_csv(data.frame(feature = all_aorsf_features), overlap_file)
+    cat("  Saved:", overlap_file, "\n")
+  }
+}
+
 # Summary statistics
 cat("\n=== Summary Statistics ===\n")
 summary_stats <- map_dfr(names(all_results), function(period_name) {
@@ -993,8 +1409,13 @@ summary_stats <- map_dfr(names(all_results), function(period_name) {
       event_rate = NA,
       n_rsf_features = NA,
       n_catboost_features = NA,
-      rsf_cindex = NA_real_,
-      catboost_cindex = NA_real_
+      n_aorsf_features = NA,
+      rsf_cindex_td = NA_real_,
+      rsf_cindex_ti = NA_real_,
+      catboost_cindex_td = NA_real_,
+      catboost_cindex_ti = NA_real_,
+      aorsf_cindex_td = NA_real_,
+      aorsf_cindex_ti = NA_real_
     ))
   }
   results <- all_results[[period_name]]
@@ -1004,8 +1425,13 @@ summary_stats <- map_dfr(names(all_results), function(period_name) {
     event_rate = round(results$event_rate * 100, 2),
     n_rsf_features = ifelse(is.null(results$rsf_features), 0, nrow(results$rsf_features)),
     n_catboost_features = ifelse(is.null(results$catboost_features), 0, nrow(results$catboost_features)),
-    rsf_cindex = round(ifelse(is.null(results$rsf_cindex), NA_real_, results$rsf_cindex), 4),
-    catboost_cindex = round(ifelse(is.null(results$catboost_cindex), NA_real_, results$catboost_cindex), 4)
+    n_aorsf_features = ifelse(is.null(results$aorsf_features), 0, nrow(results$aorsf_features)),
+    rsf_cindex_td = round(ifelse(is.null(results$rsf_cindex_td), NA_real_, results$rsf_cindex_td), 4),
+    rsf_cindex_ti = round(ifelse(is.null(results$rsf_cindex_ti), NA_real_, results$rsf_cindex_ti), 4),
+    catboost_cindex_td = round(ifelse(is.null(results$catboost_cindex_td), NA_real_, results$catboost_cindex_td), 4),
+    catboost_cindex_ti = round(ifelse(is.null(results$catboost_cindex_ti), NA_real_, results$catboost_cindex_ti), 4),
+    aorsf_cindex_td = round(ifelse(is.null(results$aorsf_cindex_td), NA_real_, results$aorsf_cindex_td), 4),
+    aorsf_cindex_ti = round(ifelse(is.null(results$aorsf_cindex_ti), NA_real_, results$aorsf_cindex_ti), 4)
   )
 })
 
@@ -1014,6 +1440,83 @@ write_csv(summary_stats, summary_file)
 cat("  Saved:", summary_file, "\n")
 print(summary_stats)
 
+# Create combined C-index comparison table (both time-dependent and time-independent)
+cat("\n=== Creating Combined C-index Comparison ===\n")
+
+# Time-dependent C-index comparison
+cindex_td_comparison <- summary_stats %>%
+  select(period, rsf_cindex_td, catboost_cindex_td, aorsf_cindex_td) %>%
+  pivot_longer(cols = c(rsf_cindex_td, catboost_cindex_td, aorsf_cindex_td),
+               names_to = "method",
+               values_to = "cindex") %>%
+  mutate(
+    method = case_when(
+      method == "rsf_cindex_td" ~ "RSF",
+      method == "catboost_cindex_td" ~ "CatBoost",
+      method == "aorsf_cindex_td" ~ "AORSF",
+      TRUE ~ method
+    ),
+    cindex_type = "time_dependent"
+  )
+
+# Time-independent C-index comparison
+cindex_ti_comparison <- summary_stats %>%
+  select(period, rsf_cindex_ti, catboost_cindex_ti, aorsf_cindex_ti) %>%
+  pivot_longer(cols = c(rsf_cindex_ti, catboost_cindex_ti, aorsf_cindex_ti),
+               names_to = "method",
+               values_to = "cindex") %>%
+  mutate(
+    method = case_when(
+      method == "rsf_cindex_ti" ~ "RSF",
+      method == "catboost_cindex_ti" ~ "CatBoost",
+      method == "aorsf_cindex_ti" ~ "AORSF",
+      TRUE ~ method
+    ),
+    cindex_type = "time_independent"
+  )
+
+# Combine both
+cindex_comparison <- bind_rows(cindex_td_comparison, cindex_ti_comparison)
+
+cindex_comparison_file <- file.path(output_dir, "cindex_comparison_all_methods.csv")
+write_csv(cindex_comparison, cindex_comparison_file)
+cat("  Saved:", cindex_comparison_file, "\n")
+
+# Create wide format C-index comparison (time-dependent)
+cindex_td_wide <- cindex_td_comparison %>%
+  select(period, method, cindex) %>%
+  pivot_wider(names_from = method, values_from = cindex)
+
+cindex_td_wide_file <- file.path(output_dir, "cindex_td_comparison_wide.csv")
+write_csv(cindex_td_wide, cindex_td_wide_file)
+cat("  Saved:", cindex_td_wide_file, "\n")
+
+# Create wide format C-index comparison (time-independent)
+cindex_ti_wide <- cindex_ti_comparison %>%
+  select(period, method, cindex) %>%
+  pivot_wider(names_from = method, values_from = cindex)
+
+cindex_ti_wide_file <- file.path(output_dir, "cindex_ti_comparison_wide.csv")
+write_csv(cindex_ti_wide, cindex_ti_wide_file)
+cat("  Saved:", cindex_ti_wide_file, "\n")
+
+# Create combined wide format
+cindex_wide <- summary_stats %>%
+  select(period, rsf_cindex_td, rsf_cindex_ti, catboost_cindex_td, catboost_cindex_ti, 
+         aorsf_cindex_td, aorsf_cindex_ti)
+
+cindex_wide_file <- file.path(output_dir, "cindex_comparison_wide.csv")
+write_csv(cindex_wide, cindex_wide_file)
+cat("  Saved:", cindex_wide_file, "\n")
+
 cat("\n=== Analysis Complete ===\n")
 cat("All results saved to:", output_dir, "\n")
+cat("\nMethods compared:\n")
+cat("  - RSF: Random Survival Forest with permutation importance\n")
+cat("  - CatBoost: Gradient boosting with feature importance\n")
+cat("  - AORSF: Accelerated Oblique Random Survival Forest with negate importance\n")
+cat("\nAll three methods provide:\n")
+cat("  - Top 20 feature rankings\n")
+cat("  - Feature importance scores\n")
+cat("  - C-index (Concordance Index) performance metrics\n")
 

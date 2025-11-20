@@ -1,4 +1,0 @@
-{
-    "containers.commands.runInteractive": "${containerCommand} run --rm -it ${exposedPorts} ${tag}",
-    "r.alwaysUseActiveTerminal": true
-}
