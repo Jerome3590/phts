@@ -384,6 +384,10 @@ This runs RSF, CatBoost, and AORSF feature selection across all three time perio
 - `MC_START_AT=1`: Starting split index (for resuming)
 - `REUSE_BASE_SPLITS=1`: Reuse splits across scenarios
 - `MC_XGB_USE_GLOBAL=1`: Use global encoded matrix for XGB (default)
+- `MC_SPLIT_WORKERS`: Number of workers for parallel CV splits (auto-detected if not set)
+- `MC_WORKER_THREADS`: Threads per worker for BLAS/OpenMP (default: 1)
+
+**See `PARALLEL_PROCESSING.md` for detailed parallel processing documentation.**
 
 ### Scenarios
 
@@ -410,6 +414,7 @@ This runs RSF, CatBoost, and AORSF feature selection across all three time perio
 
 - **Feature Importance README**: Comprehensive guide for `replicate_20_features.R`
 - **Concordance Index README**: Detailed explanation of C-index implementation
+- **Parallel Processing Documentation**: Complete guide to parallelization strategies (`PARALLEL_PROCESSING.md`)
 - **Updated Pipeline README**: Reflects latest structure and capabilities
 
 ## Requirements
