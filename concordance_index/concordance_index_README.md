@@ -256,12 +256,12 @@ cindex_td <- tryCatch({
 ## Files in This Directory
 
 - `README.md` - This file
-- `test_riskRegression_Score.R` - Format testing for Score()
+- `tests/concordance_index/test_riskRegression_Score.R` - Format testing for Score()
 - `test_results_summary.md` - Summary of test findings
-- `test_rsf_score_format.R` - RSF-specific tests
-- `test_score_response_type.R` - Response type investigation
-- `test_score_minimal.R` - Minimal reproducible examples
-- `test_score_response_type.R` - Response type error investigation
+- `tests/concordance_index/test_rsf_score_format.R` - RSF-specific tests
+- `tests/concordance_index/test_score_response_type.R` - Response type investigation
+- `tests/concordance_index/test_score_minimal.R` - Minimal reproducible examples
+- `tests/concordance_index/test_prediction_formats.R` - Prediction format tests
 
 ## Conclusion
 
