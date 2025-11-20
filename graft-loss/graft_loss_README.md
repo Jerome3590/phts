@@ -35,10 +35,9 @@ graph TB
     B3 --> B3c[graft_loss_feature_importance.ipynb]
     B3 --> B3d[outputs]
     
-    B --> B4[graft-loss-parallel-processing]
-    B4 --> B4a[scripts/R]
-    B4 --> B4b[model_setup]
-    B4 --> B4c[pipeline]
+    B --> B5[tests]
+    B5 --> B5a[concordance_index]
+    B5 --> B5b[feature_importance]
     
     C --> C1[concordance_index_README.md]
     C --> C2[test_riskRegression_Score.R]

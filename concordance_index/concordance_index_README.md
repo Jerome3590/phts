@@ -20,7 +20,7 @@ The original Wisotzkey et al. (2023) study used `riskRegression::Score()` to cal
 2. **Format Sensitivity**
    - The function is sensitive to input format (vector vs matrix, named vs unnamed lists)
    - Required careful data structure preparation
-   - Multiple format variations were tested (see `test_riskRegression_Score.R`)
+   - Multiple format variations were tested (see `tests/concordance_index/test_riskRegression_Score.R`)
 
 3. **Inconsistent Behavior**
    - Same data could produce different results or errors across runs
