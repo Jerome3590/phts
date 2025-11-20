@@ -135,17 +135,17 @@ LASSO-based survival analysis and scorecard models:
 - `survival_analysis_lasso.qmd`: LASSO survival analysis
 - `methods_comparison_README.qmd`: Comparison of methods
 
-### 5. Parallel Processing (`parallel_processing/`)
+### 5. Parallel Processing Implementation (`graft-loss/graft-loss-parallel-processing/`)
 
-The pipeline supports both unparallelized and parallelized execution modes:
+**Development Strategy**: The pipeline is currently running in **unparallelized mode** for verification. Once the unparallelized version is verified, parallel processing implementations will be integrated.
 
-- **Main Pipeline** (`graft-loss/scripts/`): Runs in unparallelized mode by default for verification and development
-- **Parallel Processing** (`parallel_processing/graft-loss-parallel-processing/`): Enhanced implementations with parallelization for production runs
-- **Workflow**: Run unparallelized mode first to verify everything works, then use parallel processing implementations
+**Current Status**:
+- **Active Pipeline** (`graft-loss/scripts/`): Unparallelized mode (for verification)
+- **Parallel Processing Code** (`graft-loss/graft-loss-parallel-processing/`): Ready for integration after verification
 
-**Parallelization Strategies**:
-- **furrr/future parallelization**: Parallel Monte Carlo CV splits (`scripts/04_fit_model.R`)
-- **Orchestration-level parallelism**: Multiple dataset cohorts run as separate processes (`scripts/run_three_datasets.R`)
+**Parallelization Strategies** (to be integrated):
+- **furrr/future parallelization**: Parallel Monte Carlo CV splits
+- **Orchestration-level parallelism**: Multiple dataset cohorts run as separate processes
 - **Threading control**: Environment variables prevent CPU oversubscription
 - **Parallel utilities**: Centralized configuration (`R/utils/parallel_utils.R`)
 
