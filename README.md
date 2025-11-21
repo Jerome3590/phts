@@ -166,6 +166,14 @@ LASSO-based survival analysis and scorecard models:
 - **`R/make_final_features.R`**: Feature engineering
 - **`R/make_labels.R`**: Survival outcome labeling
 
+**Data Source**: `phts_txpl_ml.sas7bdat`
+- **File**: `data/phts_txpl_ml.sas7bdat` (matches original study)
+- **Censoring Implementation**: The original study's `clean_phts()` function includes proper censoring handling:
+  - Sets event times of 0 to 1/365 (prevents invalid zero times for survival analysis)
+  - Properly maintains censored observations (status = 0) throughout the analysis
+  - Ensures consistent survival structure matching the original Wisotzkey study
+- **Why this file**: The original study used `phts_txpl_ml.sas7bdat` specifically because it includes the censoring implementation needed for accurate survival modeling
+
 **Data Coverage**: 2010-2024 (TXPL_YEAR)
 
 **Filtering Options**:
@@ -225,11 +233,32 @@ LASSO-based survival analysis and scorecard models:
 
 ## Feature Selection Methods
 
+### Workflow Alignment with Original Repository
+
+Our feature selection workflow **matches the original repository** ([bcjaeger/graft-loss](https://github.com/bcjaeger/graft-loss)):
+
+1. **Feature Selection from ALL Variables**: Uses all available variables (not pre-filtered to Wisotzkey variables)
+2. **Recipe Preprocessing**: Applies `make_recipe()` → `prep()` → `juice()` with median/mode imputation
+3. **Top 20 Selection**: Selects top 20 features using permutation importance (RSF) or feature importance (CatBoost, AORSF)
+4. **Wisotzkey Identification**: After selecting top 20, identifies which of those features are Wisotzkey variables (15 core variables from original study)
+
+This workflow ensures:
+- **Unbiased feature selection**: Not constrained to pre-defined variable set
+- **Reproducibility**: Matches original study methodology exactly
+- **Transparency**: Clear identification of Wisotzkey overlap in selected features
+
+**Key Implementation Details**:
+- **Data Source**: Uses `phts_txpl_ml.sas7bdat` (matches original study) with proper censoring implementation
+- **Censoring Handling**: Event times of 0 are set to 1/365 to prevent invalid survival times
+- Excludes outcome/leakage variables (`int_dead`, `int_death`, `graft_loss`, `txgloss`, `death`, `event`)
+- Uses `dummy_code = FALSE` for recipe preprocessing (preserves categorical structure)
+- Applies same RSF parameters as original: `num.trees = 500`, `importance = 'permutation'`, `splitrule = 'extratrees'`
+
 ### RSF Permutation Importance
 
 - **Method**: Random Survival Forest with permutation importance
-- **Parameters**: `num.trees = 500`, `importance = 'permutation'`
-- **Use**: Matches original Wisotzkey study methodology
+- **Parameters**: `num.trees = 500`, `importance = 'permutation'`, `splitrule = 'extratrees'`, `num.random.splits = 10`, `min.node.size = 20`
+- **Use**: Matches original Wisotzkey study methodology and repository implementation
 - **Output**: Top 20 features ranked by permutation importance
 
 ### CatBoost Feature Importance
