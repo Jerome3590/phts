@@ -15,48 +15,22 @@ The PHTS Graft Loss Prediction Pipeline is a complete end-to-end analytical fram
 
 ```mermaid
 graph TB
-    A[phts] --> B[graft-loss]
-    A --> C[concordance_index]
-    A --> D[eda]
-    A --> E[lasso]
-    
-    B --> B1[scripts]
-    B1 --> B1a[00_setup.R]
-    B1 --> B1b[01_prepare_data.R]
-    B1 --> B1c[02_resampling.R]
-    B1 --> B1d[03_prep_model_data.R]
-    B1 --> B1e[04_fit_model.R]
-    B1 --> B1f[05_generate_outputs.R]
-    B1 --> B1g[run_pipeline.R]
-    
-    B --> B2[R]
-    B2 --> B2a[clean_phts.R]
-    B2 --> B2b[make_final_features.R]
-    B2 --> B2c[make_recipe.R]
-    B2 --> B2d[fit_rsf.R]
-    B2 --> B2e[fit_orsf.R]
-    B2 --> B2f[fit_xgb.R]
-    B2 --> B2g[utils]
-    
-    B --> B3[feature_importance]
-    B3 --> B3a[replicate_20_features.R]
-    B3 --> B3b[replicate_20_features_README.md]
-    B3 --> B3c[graft_loss_feature_importance.ipynb]
-    B3 --> B3d[outputs]
-    
-    B --> B5[tests]
-    B5 --> B5a[concordance_index]
-    B5 --> B5b[feature_importance]
-    
-    C --> C1[concordance_index_README.md]
-    C --> C2[test_riskRegression_Score.R]
-    C --> C3[test_results_summary.md]
-    
-    D --> D1[phts_eda.qmd]
-    D --> D2[phts_feature_importance.qmd]
-    
-    E --> E1[lasso_scorecard_model.qmd]
-    E --> E2[survival_analysis_lasso.qmd]
+    ROOT[phts] --> GL[graft-loss]
+    ROOT --> CI[concordance_index]
+    ROOT --> EDA[eda]
+    ROOT --> LMTP[lmtp-workshop]
+    ROOT --> DL[survival_analysis_deep_learning_asa]
+
+    GL --> GL_feat[feature_importance]
+    GL_feat --> GL_nb[graft_loss_feature_importance_20_MC_CV.ipynb]
+    GL_feat --> GL_script[replicate_20_features_MC_CV.R]
+    GL_feat --> GL_docs[MC-CV READMEs + outputs]
+
+    GL --> GL_cohort[cohort_analysis]
+    GL --> GL_surv[cohort_survival_analysis]
+    GL --> GL_lasso[lasso]
+    GL --> GL_uni[univariate_analysis]
+    GL --> GL_unified[unified_cohort_survival_analysis]
 ```
 
 ## Workflow Overview
@@ -96,20 +70,19 @@ graph LR
 
 ### 1. Feature Importance Analysis (`graft-loss/feature_importance/`)
 
-Comprehensive feature selection and importance analysis replicating the original Wisotzkey study methodology:
+Comprehensive Monte Carlo cross-validation feature-importance workflow replicating the original Wisotzkey study and extending it:
 
-- **`replicate_20_features.R`**: Main script for feature selection
-  - RSF permutation importance (matching original study)
-  - CatBoost feature importance
-  - AORSF feature importance (matching original study's final model)
-  - Dual C-index calculation (time-dependent and time-independent)
-  - Comparison across three time periods (2010-2019, 2010-2024, 2010-2024 excluding COVID)
+- **Notebook:** `graft_loss_feature_importance_20_MC_CV.ipynb`  
+  - Runs RSF, CatBoost, and AORSF with stratified 75/25 train/test MC-CV splits.  
+  - Supports 100-split development runs and 1000-split publication-grade runs.  
+  - Evaluates time-dependent and Harrell C-index on held-out test data.
 
-- **Outputs**: 
-  - Top 20 features per method per time period
-  - C-index comparisons (both types)
-  - Feature overlap analysis
-  - Summary statistics
+- **Script:** `replicate_20_features_MC_CV.R`  
+  - Scripted version of the same MC-CV pipeline (for EC2 / batch runs).
+
+- **Outputs (`graft-loss/feature_importance/outputs/`):**  
+  - Top 20 features per method per period (`*_rsf_top20.csv`, `*_catboost_top20.csv`, `*_aorsf_top20.csv`).  
+  - C-index comparison tables and summary statistics across methods and cohorts.
 
 ### 2. Concordance Index Implementation (`concordance_index/`)
 
