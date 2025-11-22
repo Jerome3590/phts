@@ -1,0 +1,4 @@
+period,RSF,CatBoost,AORSF
+original,0.9987,0.8703,0.9961
+full,0.9982,0.8093,0.9955
+full_no_covid,0.9988,0.87,0.9975

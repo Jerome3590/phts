@@ -1,0 +1,4 @@
+method,n_wisotzkey_in_top20,wisotzkey_features
+RSF,7,prim_dx; hxsurg; txbun_r; txecmo; weight_txpl; pra_listing; listing_year
+CatBoost,5,txpl_year; txalt; bmi_txpl; egfr_tx; listing_year
+AORSF,6,prim_dx; hxsurg; txsa_r; txbun_r; txecmo; pra_listing

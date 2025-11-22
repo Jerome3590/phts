@@ -9,6 +9,8 @@
 *.txt
 *.zip
 
+archive/
+
 */catboost_info/*
 data/*
 

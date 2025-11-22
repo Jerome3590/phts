@@ -1,0 +1,7 @@
+method,model_type,n_features,cindex_td,cindex_ti,features
+RSF,Selected_Wisotzkey,7,0.95221821456239375,0.8093714576727834,prim_dx; hxsurg; txbun_r; txecmo; weight_txpl; pra_listing; listing_year
+CatBoost,Selected_Wisotzkey,5,0.7050992021570935,0.7319406560992814,txpl_year; txalt; bmi_txpl; egfr_tx; listing_year
+AORSF,Selected_Wisotzkey,6,0.8373474490155243,0.7298650080206635,prim_dx; hxsurg; txsa_r; txbun_r; txecmo; pra_listing
+RSF,All_Wisotzkey,15,0.9819132132041491,0.8488617653090804,prim_dx; txmcsd; chd_sv; hxsurg; txsa_r; txbun_r; txecmo; txpl_year; weight_txpl; txalt; bmi_txpl; pra_listing; egfr_tx; hxmed; listing_year
+CatBoost,All_Wisotzkey,15,0.7848938053987705,0.7930133582335145,prim_dx; txmcsd; chd_sv; hxsurg; txsa_r; txbun_r; txecmo; txpl_year; weight_txpl; txalt; bmi_txpl; pra_listing; egfr_tx; hxmed; listing_year
+AORSF,All_Wisotzkey,15,0.9622433169337881,0.8352963246972313,prim_dx; txmcsd; chd_sv; hxsurg; txsa_r; txbun_r; txecmo; txpl_year; weight_txpl; txalt; bmi_txpl; pra_listing; egfr_tx; hxmed; listing_year

@@ -1,0 +1,4 @@
+period,rsf_cindex_td,rsf_cindex_ti,catboost_cindex_td,catboost_cindex_ti,aorsf_cindex_td,aorsf_cindex_ti,final_rsf_selected_cindex_td,final_rsf_selected_cindex_ti,final_catboost_selected_cindex_td,final_catboost_selected_cindex_ti,final_aorsf_selected_cindex_td,final_aorsf_selected_cindex_ti,final_rsf_all_cindex_td,final_rsf_all_cindex_ti,final_catboost_all_cindex_td,final_catboost_all_cindex_ti,final_aorsf_all_cindex_td,final_aorsf_all_cindex_ti
+original,0.9987,0.857,0.8703,0.8865,0.9961,0.8998,0.8958,0.7302,0.8359,0.86240000000000006,0.6989,0.6109,0.979,0.8159,0.8548,0.8718,0.9682,0.8186
+full,0.9982,0.8829,0.8093,0.8208,0.9955,0.9127,0.9522,0.8094,0.7051,0.7319,0.8373,0.7299,0.9819,0.8489,0.7849,0.793,0.9622,0.8353
+full_no_covid,0.9988,0.8599,0.87,0.8778,0.9975,0.9039,0.9015,0.73740000000000006,0.8314,0.8514,0.6983,0.6118,0.9803,0.8214,0.8509,0.8603,0.9703,0.8203
