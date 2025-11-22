@@ -53,8 +53,6 @@ graph LR
     C --> C1[RSF]
     C --> C2[CatBoost]
     C --> C3[AORSF]
-    C --> C4[XGBoost]
-    C --> C5[Cox PH]
     
     D --> D1[Time-Dependent C-index]
     D --> D2[Time-Independent C-index]
@@ -172,22 +170,18 @@ LASSO-based survival analysis and scorecard models:
 
 **Dual Data Paths**:
 - **Native categoricals**: `final_data_catboost.rds` (for CatBoost, AORSF)
-- **Encoded**: `final_data_encoded.rds` (for XGBoost, RSF with dummy coding)
+- **Encoded**: `final_data_encoded.rds` (encoded/dummy-coded variant; used by historical pipelines)
 
 ### Stage 5: Model Fitting
 
-- **`scripts/04_fit_model.R`**: Fits multiple survival models
+- **`scripts/04_fit_model.R`**: Fits multiple survival models (legacy pipeline)
 - **`R/fit_rsf.R`**: Random Survival Forest (ranger)
 - **`R/fit_orsf.R`**: Oblique Random Survival Forest (aorsf)
-- **`R/fit_xgb.R`**: XGBoost Survival
-- **`R/fit_cph.R`**: Cox Proportional Hazards
 
-**Models Available**:
+**Models Available (current MC-CV workflow):**
 - **RSF**: Random Survival Forest with permutation importance
 - **AORSF**: Accelerated Oblique Random Survival Forest (matches original study)
 - **CatBoost**: Gradient boosting with native categorical handling
-- **XGBoost**: Gradient boosting with encoded features
-- **Cox PH**: Traditional survival regression
 
 **Model Selection**: Standardized heuristic based on C-index, stability, and interpretability
 
@@ -369,7 +363,7 @@ This runs RSF, CatBoost, and AORSF feature selection across all three time perio
 
 ### Comprehensive Model Comparison
 
-- **Multiple Algorithms**: RSF, AORSF, CatBoost, XGBoost, Cox PH
+- **Multiple Algorithms**: RSF, AORSF, CatBoost
 - **Multiple Time Periods**: Original study, full period, COVID-excluded
 - **Multiple Metrics**: Time-dependent and time-independent C-indexes
 
@@ -402,7 +396,6 @@ This runs RSF, CatBoost, and AORSF feature selection across all three time perio
 - `USE_ENCODED=1`: Use encoded (dummy-coded) data variant
 - `CATBOOST_USE_FULL=1`: CatBoost uses all features (default)
 - `ORSF_FULL=1`: ORSF uses all features
-- `XGB_FULL=1`: XGBoost uses all features
 
 ### Monte Carlo CV
 
@@ -410,7 +403,6 @@ This runs RSF, CatBoost, and AORSF feature selection across all three time perio
 - `MC_MAX_SPLITS=1000`: Maximum number of splits
 - `MC_START_AT=1`: Starting split index (for resuming)
 - `REUSE_BASE_SPLITS=1`: Reuse splits across scenarios
-- `MC_XGB_USE_GLOBAL=1`: Use global encoded matrix for XGB (default)
 - `MC_SPLIT_WORKERS`: Number of workers for parallel CV splits (auto-detected if not set)
 - `MC_WORKER_THREADS`: Threads per worker for BLAS/OpenMP (default: 1)
 
