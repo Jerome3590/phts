@@ -119,7 +119,7 @@ wisotzkey_variables <- c(
 )
 
 # Create output directory
-output_dir <- here("graft-loss", "feature_importance", "outputs")
+output_dir <- here("feature_importance", "outputs")
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
 cat("Output directory:", output_dir, "\n\n")
@@ -332,6 +332,16 @@ run_mc_cv_method <- function(data, method, period_name, mc_splits) {
           feature_importance <- model$variable.importance
           
         } else if (method == "AORSF") {
+          # Remove constant columns from training data (can occur after train/test split)
+          constant_cols <- names(train_data)[sapply(train_data, function(x) {
+            length(unique(na.omit(x))) <= 1
+          })]
+          constant_cols <- setdiff(constant_cols, c("time", "status"))
+          if (length(constant_cols) > 0) {
+            train_data <- train_data %>% select(-any_of(constant_cols))
+            test_data <- test_data %>% select(-any_of(constant_cols))
+          }
+          
           # AORSF model
           model <- aorsf::orsf(
             data = train_data,
@@ -349,6 +359,16 @@ run_mc_cv_method <- function(data, method, period_name, mc_splits) {
           feature_importance <- aorsf::orsf_vi_permute(model)
           
         } else if (method == "CatBoost") {
+          # Remove constant columns from training data (can occur after train/test split)
+          constant_cols <- names(train_data)[sapply(train_data, function(x) {
+            length(unique(na.omit(x))) <= 1
+          })]
+          constant_cols <- setdiff(constant_cols, c("time", "status"))
+          if (length(constant_cols) > 0) {
+            train_data <- train_data %>% select(-any_of(constant_cols))
+            test_data <- test_data %>% select(-any_of(constant_cols))
+          }
+          
           # CatBoost model
           # Prepare data
           train_pool <- catboost.load_pool(
@@ -366,7 +386,9 @@ run_mc_cv_method <- function(data, method, period_name, mc_splits) {
             iterations = 100,
             learning_rate = 0.1,
             depth = 6,
-            verbose = FALSE
+            thread_count = 1,
+            logging_level = 'Silent',
+            verbose = 0L  # Integer 0 for silent mode (not boolean FALSE)
           )
           
           model <- catboost.train(train_pool, params = params)
@@ -374,8 +396,14 @@ run_mc_cv_method <- function(data, method, period_name, mc_splits) {
           # Predict on TEST data
           predictions <- catboost.predict(model, test_pool)
           
-          # Get feature importance
-          feature_importance <- catboost.get_feature_importance(model)
+          # Get feature importance - CatBoost returns a matrix with rownames as feature names
+          # IMPORTANT: catboost.get_feature_importance() returns a matrix (not a named vector)
+          # - Values are in the first column: importance_matrix[, 1]
+          # - Feature names are in rownames: rownames(importance_matrix)
+          # Convert to named vector for consistency with RSF and AORSF (which return named vectors directly)
+          importance_matrix <- catboost.get_feature_importance(model)
+          feature_importance <- as.numeric(importance_matrix[, 1])
+          names(feature_importance) <- rownames(importance_matrix)
         }
         
         # Calculate C-index on TEST data
@@ -430,28 +458,26 @@ run_mc_cv_method <- function(data, method, period_name, mc_splits) {
   cindex_ti_values <- cindex_ti_values[!is.na(cindex_ti_values)]
   
   # Aggregate feature importance across splits
+  # All methods (RSF, AORSF, CatBoost) return named numeric vectors
   all_feature_names <- unique(unlist(lapply(successful_splits, function(x) {
     if (is.null(x$feature_importance)) return(NULL)
-    if (is.data.frame(x$feature_importance)) return(rownames(x$feature_importance))
     names(x$feature_importance)
   })))
   
   aggregated_importance <- sapply(all_feature_names, function(feature) {
     importances <- sapply(successful_splits, function(x) {
-      if (is.null(x$feature_importance)) return(NA)
-      if (is.data.frame(x$feature_importance)) {
-        idx <- which(rownames(x$feature_importance) == feature)
-        if (length(idx) > 0) return(x$feature_importance[idx, 1]) else return(NA)
-      } else {
-        if (feature %in% names(x$feature_importance)) {
-          return(x$feature_importance[feature])
-        } else {
-          return(NA)
-        }
+      if (is.null(x$feature_importance)) return(NA_real_)
+      if (feature %in% names(x$feature_importance)) {
+        return(as.numeric(x$feature_importance[feature]))
       }
+      return(NA_real_)
     })
     mean(importances, na.rm = TRUE)
   })
+  
+  # Ensure aggregated_importance is a numeric vector
+  aggregated_importance <- as.numeric(aggregated_importance)
+  names(aggregated_importance) <- all_feature_names
   
   # Sort by importance and get top 20
   top_features <- sort(aggregated_importance, decreasing = TRUE)[1:min(n_predictors, length(aggregated_importance))]
