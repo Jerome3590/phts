@@ -13,6 +13,8 @@ archive/
 
 background/
 
+graft-loss/doc/
+
 */catboost_info/*
 data/*
 
