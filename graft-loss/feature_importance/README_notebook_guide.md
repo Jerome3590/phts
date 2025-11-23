@@ -84,7 +84,7 @@ n_workers   <- 30     # use 30 of 32 cores on EC2
 
 Use tmux/screen or Jupyter-on-EC2 as outlined in `README_ready_to_run.md` if you expect multi-hour runtimes.
 
-### Debug Mode (from `README_debug_mode.md`, adapted)
+### Debug Mode
 
 To smoke-test the full pipeline in 2–5 minutes:
 
