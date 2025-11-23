@@ -142,9 +142,9 @@ prepare_modeling_data <- function(data) {
   if (time_col != "time") data <- data %>% rename(time = !!time_col)
   if (status_col != "status") data <- data %>% rename(status = !!status_col)
   
-  # Exclude leakage variables
+  # Exclude leakage variables and identifier columns
   exclude_exact <- c(
-    "ptid_e", "int_dead", "int_death", "graft_loss", "txgloss", "death", "event",
+    "ID", "ptid_e", "int_dead", "int_death", "graft_loss", "txgloss", "death", "event",
     "dpricaus", "deathspc", "concod", "age_death",
     "patsupp", "pmorexam", "papooth", "pacuref", "pishltgr",
     "pathero", "pcadrec", "pcadrem", "pdiffib", "cpathneg",
@@ -513,7 +513,10 @@ run_mc_cv_method <- function(data, method, period_name, mc_splits) {
               results_summary$cindex_ti_sd,
               results_summary$cindex_ti_ci_lower,
               results_summary$cindex_ti_ci_upper))
-  cat(sprintf("Top 5 features: %s\n", paste(names(top_features)[1:min(5, length(top_features))], collapse = ", ")))
+  # Display top 10 features sorted alphabetically for easier comparison
+  top10_features <- names(top_features)[1:min(10, length(top_features))]
+  top10_features_sorted <- sort(top10_features)
+  cat(sprintf("Top 10 features (alphabetical): %s\n", paste(top10_features_sorted, collapse = ", ")))
   
   return(results_summary)
 }
@@ -606,13 +609,14 @@ for (period_name in period_names) {
     result <- run_mc_cv_method(period_data, method, period_name, mc_splits)
     period_results[[method]] <- result
     
-    # Save top features
+    # Save top features (sorted alphabetically for easier comparison)
     top_features_df <- tibble(
       feature = names(result$top_features),
       importance = as.numeric(result$top_features),
       cindex_td = result$cindex_td_mean,
       cindex_ti = result$cindex_ti_mean
-    )
+    ) %>%
+      arrange(feature)  # Sort alphabetically for easier visual comparison
     
     output_file <- file.path(output_dir, sprintf("%s_%s_top20.csv", 
                                                   period_name, tolower(method)))
