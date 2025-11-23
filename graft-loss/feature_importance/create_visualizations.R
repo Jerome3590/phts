@@ -122,11 +122,47 @@ feature_matrix <- feature_matrix %>%
       0
     }
   ) %>%
-  ungroup() %>%
-  mutate(importance = importance_normalized) %>%
-  select(-importance_normalized)
+  ungroup()
 
 cat("\nDebug: After normalization - importance range by method:\n")
+print(feature_matrix %>% 
+      group_by(method) %>% 
+      summarise(min_imp = min(importance_normalized), 
+                max_imp = max(importance_normalized), 
+                mean_imp = mean(importance_normalized), 
+                .groups = "drop"))
+
+# Determine algorithm ranking by C-index for each period
+# Best algorithm gets scale factor 3, second best gets 2, third gets 1
+cat("\nDetermining algorithm ranking by C-index for scaling...\n")
+algorithm_ranking <- cindex_comparison %>%
+  select(period, method, cindex_td_mean) %>%
+  group_by(period) %>%
+  arrange(desc(cindex_td_mean)) %>%
+  mutate(
+    rank = row_number(),
+    scale_factor = case_when(
+      rank == 1 ~ 3,  # Best algorithm
+      rank == 2 ~ 2,  # Second best algorithm
+      rank == 3 ~ 1   # Third algorithm (no scaling)
+    )
+  ) %>%
+  ungroup() %>%
+  select(period, method, scale_factor)
+
+cat("Algorithm ranking and scale factors:\n")
+print(algorithm_ranking)
+
+# Apply scaling to normalized feature importance
+feature_matrix <- feature_matrix %>%
+  left_join(algorithm_ranking, by = c("period", "method")) %>%
+  mutate(
+    importance_scaled = importance_normalized * scale_factor,
+    importance = importance_scaled  # Use scaled values for heatmap
+  ) %>%
+  select(-importance_scaled)
+
+cat("\nDebug: After scaling - importance range by method:\n")
 print(feature_matrix %>% 
       group_by(method) %>% 
       summarise(min_imp = min(importance), 
@@ -226,7 +262,52 @@ ggsave(file.path(plot_dir, "cindex_heatmap.png"), p2, width = 12, height = 6, dp
 cat("✓ Saved: cindex_heatmap.png\n")
 
 # ============================================================================
-# 3. C-INDEX TABLE
+# 3. SCALED FEATURE IMPORTANCE BAR CHART
+# ============================================================================
+
+cat("\nCreating scaled feature importance bar chart...\n")
+
+# Aggregate scaled importance by feature across all periods and methods
+# Sum the scaled importance values for each feature
+scaled_feature_importance <- feature_matrix %>%
+  group_by(feature) %>%
+  summarise(
+    total_scaled_importance = sum(importance_normalized * scale_factor, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(total_scaled_importance)) %>%
+  # Get top 20 features
+  slice_head(n = 20)
+
+# Order features by total scaled importance
+scaled_feature_importance <- scaled_feature_importance %>%
+  mutate(feature = factor(feature, levels = rev(scaled_feature_importance$feature)))
+
+p3 <- ggplot(scaled_feature_importance, aes(x = feature, y = total_scaled_importance)) +
+  geom_bar(stat = "identity", fill = "steelblue", alpha = 0.8) +
+  coord_flip() +
+  labs(
+    title = "Scaled Feature Importance (Top 20 Features)",
+    subtitle = "Importance scaled by algorithm performance: Best C-index (×3), Second best (×2), Third (×1)",
+    x = "Feature",
+    y = "Scaled Normalized Importance"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 12, face = "bold"),
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(size = 11, hjust = 0.5),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+
+ggsave(file.path(plot_dir, "scaled_feature_importance_bar_chart.png"), p3, 
+       width = 12, height = 10, dpi = 300)
+cat("✓ Saved: scaled_feature_importance_bar_chart.png\n")
+
+# ============================================================================
+# 4. C-INDEX TABLE
 # ============================================================================
 
 cat("\nCreating C-index table...\n")
@@ -272,9 +353,11 @@ cat("Visualization Summary\n")
 cat("========================================\n")
 cat("Plots saved to:", plot_dir, "\n")
 cat("Created visualizations:\n")
-cat("  1. feature_importance_heatmap.png - Feature importance by cohort and algorithm\n")
+cat("  1. feature_importance_heatmap.png - Feature importance by cohort and algorithm (scaled by C-index)\n")
 cat("  2. cindex_heatmap.png - Concordance index by cohort and algorithm\n")
-cat("  3. cindex_table.csv - Concordance index table with confidence intervals\n")
+cat("  3. scaled_feature_importance_bar_chart.png - Bar chart of scaled feature importance (top 20)\n")
+cat("  4. cindex_table.csv - Concordance index table with confidence intervals\n")
 cat("\nAll visualizations use MC-CV results with 95% confidence intervals.\n")
-cat("Feature importance values are normalized within each method-period combination.\n")
+cat("Feature importance values are normalized within each method-period combination,\n")
+cat("then scaled by algorithm performance: Best C-index algorithm (×3), Second best (×2), Third (×1).\n")
 

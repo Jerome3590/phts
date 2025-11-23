@@ -20,8 +20,10 @@ A complete, runnable Jupyter notebook (R kernel) that implements Monte Carlo Cro
 | **4. Load Data** | 3 | Load PHTS data and define time periods |
 | **5. Run Analysis** | 2 | Execute MC-CV for all methods/periods |
 | **6. Save Results** | 3 | Create and save summary tables |
+| **7. Sync to S3** | 1 | Upload results and code to S3 |
+| **8. Visualize Results** | 1 | Create feature importance heatmaps, C-index heatmaps, and scaled bar charts |
 
-**Total:** 14 code cells + 4 markdown cells = 18 cells
+**Total:** 15 code cells + 5 markdown cells = 20 cells
 
 ---
 
@@ -165,6 +167,24 @@ full_no_covid_aorsf_top20.csv
 cindex_comparison_mc_cv.csv
 summary_statistics_mc_cv.csv
 ```
+
+### Visualization Files
+
+Created in `graft-loss/feature_importance/outputs/plots/`:
+
+```
+feature_importance_heatmap.png          # Feature importance by cohort and algorithm (scaled by C-index)
+cindex_heatmap.png                      # Concordance index by cohort and algorithm
+scaled_feature_importance_bar_chart.png # Bar chart of scaled feature importance (top 20 features)
+cindex_table.csv                        # Concordance index table with confidence intervals
+```
+
+**Note:** Feature importance values in the heatmap are normalized within each method-period combination, then scaled by algorithm performance:
+- **Best C-index algorithm:** ×3 scaling factor
+- **Second best C-index algorithm:** ×2 scaling factor  
+- **Third algorithm:** ×1 (no scaling)
+
+The scaled bar chart aggregates scaled importance values across all periods and algorithms to show the top 20 most important features overall.
 
 ---
 
