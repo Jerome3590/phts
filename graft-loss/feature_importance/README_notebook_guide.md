@@ -179,12 +179,13 @@ scaled_feature_importance_bar_chart.png # Bar chart of scaled feature importance
 cindex_table.csv                        # Concordance index table with confidence intervals
 ```
 
-**Note:** Feature importance values in the heatmap are normalized within each method-period combination, then scaled by algorithm performance:
-- **Best C-index algorithm:** ×3 scaling factor
-- **Second best C-index algorithm:** ×2 scaling factor  
-- **Third algorithm:** ×1 (no scaling)
+**Note:** Feature importance values in the heatmap are normalized within each method-period combination and then scaled by algorithm performance using a relative weight computed from held-out C-index (see `importance_weights.R`). Specifically:
 
-The scaled bar chart aggregates scaled importance values across all periods and algorithms to show the top 20 most important features overall.
+- Per-model importances are forced non-negative and normalized to unit-sum so different importance metrics become comparable.
+- Each normalized vector is multiplied by the model's `rel_weight`, where `rel_weight = (model_mean_cindex / best_model_mean_cindex) * N_models` for that period (so the best model's relative weight is approximately `N_models`).
+- The scaled bar chart aggregates these scaled values across all periods and algorithms by summing the scaled normalized importances for each feature. The plotted bar therefore reflects the total weighted support a feature received across cohort × algorithm cells (an additive measure, not a max or simple average).
+
+If you prefer a different aggregation (mean, median, or max), update `create_visualizations.R`'s aggregation step (`summarise(...)`) accordingly.
 
 ---
 

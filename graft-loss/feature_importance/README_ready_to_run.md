@@ -100,6 +100,10 @@ graft-loss/feature_importance/outputs/
 └── summary_statistics_mc_cv.csv              ← Detailed stats with CI
 ```
 
+**Interpretation of the scaled feature chart:**
+
+- The `scaled_feature_importance_bar_chart.png` reports a per-feature score computed by summing each feature's per-model, per-period normalized importance after scaling by the model's relative performance (see `importance_weights.R`). In short: importances are made non-negative, normalized to unit-sum per model-period, multiplied by a relative weight based on mean held-out C-index, and then summed across cohort × algorithm cells. Higher bars indicate features with broad, weighted support from better-performing models.
+
 ---
 
 ## 👀 Monitor Progress
