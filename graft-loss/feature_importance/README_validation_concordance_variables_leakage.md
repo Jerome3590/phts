@@ -73,6 +73,18 @@ From `README_target_leakage.md`, the exclusion strategy in `prepare_modeling_dat
     - **Poor generalizability**: Models trained on specific time periods may not generalize to future transplants
     - **Confounding**: Year effects are better handled through proper cohort stratification (e.g., Original vs Full periods) rather than as a feature
     - **Non-clinical relevance**: Transplant year is not a modifiable clinical factor that would inform patient care decisions
+- Drops race/ethnicity variables (e.g., `rrace_b`, `rrace_a`, `rrace_ai`, `rrace_pi`, `rrace_o`, `rrace_un`, `race`):
+  - **Race is a social construct, not a biological predictor**: Race categories are social classifications that do not reflect biological or genetic differences relevant to clinical outcomes
+  - **Perpetuates health disparities**: Using race as a predictor can reinforce biased associations and contribute to health inequities
+  - **Lacks scientific validity**: Race does not capture meaningful biological variation; any observed associations are likely due to:
+    - Socioeconomic factors (access to care, environmental exposures)
+    - Structural racism (discrimination, bias in healthcare)
+    - Social determinants of health (housing, education, employment)
+  - **Genetic components should be used instead**: If genetic factors are relevant to transplant outcomes, use:
+    - **Genetic ancestry markers** (e.g., principal components from genetic data)
+    - **Pharmacogenetic variants** (e.g., CYP450 polymorphisms, HLA alleles)
+    - **Biologically relevant genetic markers** that have demonstrated clinical significance
+  - **Note for future work**: Replace race variables with validated genetic components when genetic data becomes available
 - Drops entire **prefix families**:
   - `dtx_` (donor/transplant post-event),
   - `cc_` (complication categories),

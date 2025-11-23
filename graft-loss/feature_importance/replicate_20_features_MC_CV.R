@@ -146,6 +146,7 @@ prepare_modeling_data <- function(data) {
   exclude_exact <- c(
     "ID", "ptid_e", "int_dead", "int_death", "graft_loss", "txgloss", "death", "event",
     "dpricaus", "deathspc", "concod", "age_death", "dlist", "txpl_year",
+    "rrace_b", "rrace_a", "rrace_ai", "rrace_pi", "rrace_o", "rrace_un", "race",
     "patsupp", "pmorexam", "papooth", "pacuref", "pishltgr",
     "pathero", "pcadrec", "pcadrem", "pdiffib", "cpathneg",
     "dcardiac", "dneuro", "dreject", "dsecaccs", "dpriaccs",
