@@ -66,7 +66,7 @@ To prevent inflated performance, we explicitly **exclude** variables that:
 
 From `README_target_leakage.md`, the exclusion strategy in `prepare_modeling_data()`:
 
-- Drops specific leakage variables (e.g., `graft_loss`, `txgloss`, `int_dead`, `dpricaus`, `age_death`, many post-mortem and donor complication fields).
+- Drops specific leakage variables (e.g., `graft_loss`, `txgloss`, `int_dead`, `dpricaus`, `age_death`, `dlist` (Death: Listed/relisted), many post-mortem and donor complication fields).
 - Drops entire **prefix families**:
   - `dtx_` (donor/transplant post-event),
   - `cc_` (complication categories),
