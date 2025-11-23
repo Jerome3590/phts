@@ -10,8 +10,29 @@ library(ggplot2)
 library(here)
 
 # Set output directory (matches notebook output directory)
-output_dir <- here("graft-loss", "feature_importance", "outputs")
+# Try multiple possible paths
+if (dir.exists("outputs")) {
+  output_dir <- "outputs"
+} else if (dir.exists(here("feature_importance", "outputs"))) {
+  output_dir <- here("feature_importance", "outputs")
+} else if (dir.exists(here("graft-loss", "feature_importance", "outputs"))) {
+  output_dir <- here("graft-loss", "feature_importance", "outputs")
+} else {
+  stop("Cannot find outputs directory")
+}
 plot_dir <- file.path(output_dir, "plots")
+
+# Clean existing plots directory to ensure fresh/clean visualizations
+if (dir.exists(plot_dir)) {
+  plot_files <- list.files(plot_dir, full.names = TRUE, recursive = TRUE, include.dirs = FALSE)
+  if (length(plot_files) > 0) {
+    cat(sprintf("Cleaning %d existing plot files...\n", length(plot_files)))
+    file.remove(plot_files)
+  }
+  cat("✓ Plots directory cleaned\n")
+}
+
+# Create fresh plots directory
 dir.create(plot_dir, showWarnings = FALSE, recursive = TRUE)
 
 cat("Reading MC-CV results...\n")
