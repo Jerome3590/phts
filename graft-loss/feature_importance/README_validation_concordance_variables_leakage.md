@@ -39,8 +39,8 @@ Key points from `README_wisotzkey_variable_mapping.md`:
 
 - Most variables map directly, e.g.:
   - `PRIM_DX` → `prim_dx` (primary etiology),
-  - `CHD_SV` → `chd_sv` (single ventricle CHD),
-  - `TXPL_YEAR` → `txpl_year` (transplant year).
+  - `CHD_SV` → `chd_sv` (single ventricle CHD).
+- Note: `TXPL_YEAR` → `txpl_year` is excluded from modeling (see exclusion rationale below).
 - Several variables are **derived or re-coded**:
   - `tx_mcsd` is created from `txnomcsd` or `txmcsd` (MCSD at transplant) with inverted logic.
   - `pra_listing` is derived from `lsfprat` / `lsfprab`.
@@ -67,6 +67,12 @@ To prevent inflated performance, we explicitly **exclude** variables that:
 From `README_target_leakage.md`, the exclusion strategy in `prepare_modeling_data()`:
 
 - Drops specific leakage variables (e.g., `graft_loss`, `txgloss`, `int_dead`, `dpricaus`, `age_death`, `dlist` (Death: Listed/relisted), many post-mortem and donor complication fields).
+- Drops non-predictive temporal/administrative variables:
+  - `txpl_year` (transplant year): This is an administrative/temporal variable that reflects when the transplant occurred, not a clinical predictor. Including it can lead to:
+    - **Overfitting to era effects**: Models may learn spurious associations with specific years rather than true clinical predictors
+    - **Poor generalizability**: Models trained on specific time periods may not generalize to future transplants
+    - **Confounding**: Year effects are better handled through proper cohort stratification (e.g., Original vs Full periods) rather than as a feature
+    - **Non-clinical relevance**: Transplant year is not a modifiable clinical factor that would inform patient care decisions
 - Drops entire **prefix families**:
   - `dtx_` (donor/transplant post-event),
   - `cc_` (complication categories),

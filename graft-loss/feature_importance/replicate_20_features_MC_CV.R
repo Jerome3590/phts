@@ -145,7 +145,7 @@ prepare_modeling_data <- function(data) {
   # Exclude leakage variables and identifier columns
   exclude_exact <- c(
     "ID", "ptid_e", "int_dead", "int_death", "graft_loss", "txgloss", "death", "event",
-    "dpricaus", "deathspc", "concod", "age_death", "dlist",
+    "dpricaus", "deathspc", "concod", "age_death", "dlist", "txpl_year",
     "patsupp", "pmorexam", "papooth", "pacuref", "pishltgr",
     "pathero", "pcadrec", "pcadrem", "pdiffib", "cpathneg",
     "dcardiac", "dneuro", "dreject", "dsecaccs", "dpriaccs",
