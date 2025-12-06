@@ -21,7 +21,7 @@ graph TB
     ROOT --> LMTP[lmtp-workshop]
     ROOT --> DL[survival_analysis_deep_learning_asa]
 
-    GL --> GL_feat[feature_importance (global MC-CV)]
+    GL --> GL_feat[feature_importance: Global by period]
     GL_feat --> GL_nb[graft_loss_feature_importance_20_MC_CV.ipynb]
     GL_feat --> GL_script[replicate_20_features_MC_CV.R]
     GL_feat --> GL_docs[MC-CV READMEs + outputs]
@@ -42,7 +42,7 @@ graph TB
 ```mermaid
 graph LR
     A[Data Preparation] --> B[Feature Selection]
-    B --> C_global[Global MC-CV (periods)]
+    B --> C_global[Global by period MC-CV ]
     B --> C_cohort[Clinical Cohort MC-CV]
 
     C_global --> Cg1[RSF]
@@ -55,11 +55,11 @@ graph LR
     C_cohort --> Cc4[XGBoost-Cox]
     C_cohort --> Cc5[XGBoost-Cox RF]
 
-    C_global --> D_global[Evaluation (C-index, feature importance)]
-    C_cohort --> D_cohort[Evaluation (C-index, clinical feature importance)]
+    C_global --> D_global[Evaluation: C-index, feature importance]
+    C_cohort --> D_cohort[Evaluation: C-index, clinical feature importance]
 
-    D_global --> E_global[Global outputs (periods)]
-    D_cohort --> E_cohort[Cohort clinical outputs]
+    D_global --> E_global[Global outputs: By period]
+    D_cohort --> E_cohort[Cohort clinical outputs: By cohort]
 ```
 
 ## Key Components
