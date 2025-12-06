@@ -21,10 +21,14 @@ graph TB
     ROOT --> LMTP[lmtp-workshop]
     ROOT --> DL[survival_analysis_deep_learning_asa]
 
-    GL --> GL_feat[feature_importance]
+    GL --> GL_feat[feature_importance (global MC-CV)]
     GL_feat --> GL_nb[graft_loss_feature_importance_20_MC_CV.ipynb]
     GL_feat --> GL_script[replicate_20_features_MC_CV.R]
     GL_feat --> GL_docs[MC-CV READMEs + outputs]
+
+    GL --> GL_clin[clinical_feature_importance_by_cohort]
+    GL_clin --> GL_clin_nb[graft_loss_clinical_feature_importance_by_cohort_MC_CV.ipynb]
+    GL_clin --> GL_clin_outputs[cohort outputs]
 
     GL --> GL_cohort[cohort_analysis]
     GL --> GL_surv[cohort_survival_analysis]
@@ -38,35 +42,29 @@ graph TB
 ```mermaid
 graph LR
     A[Data Preparation] --> B[Feature Selection]
-    B --> C[Model Fitting]
-    C --> D[Evaluation]
-    D --> E[Output Generation]
-    
-    A --> A1[Clean PHTS Data]
-    A --> A2[Create Features]
-    A --> A3[Handle Missing Values]
-    
-    B --> B1[RSF Permutation]
-    B --> B2[CatBoost Importance]
-    B --> B3[AORSF Importance]
-    
-    C --> C1[RSF]
-    C --> C2[CatBoost]
-    C --> C3[AORSF]
-    
-    D --> D1[Time-Dependent C-index]
-    D --> D2[Time-Independent C-index]
-    D --> D3[Feature Importance]
-    D --> D4[Calibration]
-    
-    E --> E1[Tables]
-    E --> E2[Figures]
-    E --> E3[Reports]
+    B --> C_global[Global MC-CV (periods)]
+    B --> C_cohort[Clinical Cohort MC-CV]
+
+    C_global --> Cg1[RSF]
+    C_global --> Cg2[CatBoost]
+    C_global --> Cg3[AORSF]
+
+    C_cohort --> Cc1[RSF]
+    C_cohort --> Cc2[AORSF]
+    C_cohort --> Cc3[CatBoost-Cox]
+    C_cohort --> Cc4[XGBoost-Cox]
+    C_cohort --> Cc5[XGBoost-Cox RF]
+
+    C_global --> D_global[Evaluation (C-index, feature importance)]
+    C_cohort --> D_cohort[Evaluation (C-index, clinical feature importance)]
+
+    D_global --> E_global[Global outputs (periods)]
+    D_cohort --> E_cohort[Cohort clinical outputs]
 ```
 
 ## Key Components
 
-### 1. Feature Importance Analysis (`graft-loss/feature_importance/`)
+### 1. Global Feature Importance Analysis (`graft-loss/feature_importance/`)
 
 Comprehensive Monte Carlo cross-validation feature-importance workflow replicating the original Wisotzkey study and extending it:
 
@@ -82,7 +80,28 @@ Comprehensive Monte Carlo cross-validation feature-importance workflow replicati
   - Top 20 features per method per period (`*_rsf_top20.csv`, `*_catboost_top20.csv`, `*_aorsf_top20.csv`).  
   - C-index comparison tables and summary statistics across methods and cohorts.
 
-### 2. Concordance Index Implementation (`concordance_index/`)
+### 2. Clinical Cohort Feature Importance (`graft-loss/clinical_feature_importance_by_cohort/`)
+
+Clinical, cohort-specific MC‑CV using **modifiable clinical features** and multiple survival models:
+
+- **Notebook:** `graft_loss_clinical_feature_importance_by_cohort_MC_CV.ipynb`  
+  - Defines **two etiologic cohorts**:
+    - CHD: `primary_etiology == "Congenital HD"`  
+    - MyoCardio: `primary_etiology %in% c("Cardiomyopathy", "Myocarditis")`  
+  - Restricts predictors to a curated set of **modifiable clinical features** (renal, liver, nutrition, respiratory, support devices, immunology).  
+  - Runs **within-cohort MC‑CV** (80/20 train/test splits, stratified by outcome) with:
+    - RSF (ranger)  
+    - AORSF  
+    - CatBoost‑Cox  
+    - XGBoost‑Cox (boosting)  
+    - XGBoost‑Cox RF mode (many trees via `num_parallel_tree`)  
+  - Selects the **best‑C‑index model per cohort** and reports its top clinical features, annotated with category and modifiability.
+
+- **Outputs (`graft-loss/clinical_feature_importance_by_cohort/outputs/`):**  
+  - `cohort_model_cindex_mc_cv_modifiable_clinical.csv` – C‑index summary per cohort × model.  
+  - `best_clinical_features_by_cohort_mc_cv.csv` – Top modifiable clinical features for the best model in each cohort.
+
+### 3. Concordance Index Implementation (`concordance_index/`)
 
 Robust C-index calculation with manual implementation:
 
@@ -91,14 +110,14 @@ Robust C-index calculation with manual implementation:
 - **Documentation**: Comprehensive README explaining methodology, issues, and validation
 - **Test Files**: Extensive testing of `riskRegression::Score()` format requirements
 
-### 3. Exploratory Data Analysis (`eda/`)
+### 4. Exploratory Data Analysis (`eda/`)
 
 Initial data exploration and feature importance analysis:
 
 - `phts_eda.qmd`: Exploratory data analysis
 - `phts_feature_importance.qmd`: Feature importance across methods
 
-### 4. LASSO Analysis (`lasso/`)
+### 5. LASSO Analysis (`lasso/`)
 
 LASSO-based survival analysis and scorecard models:
 
@@ -106,7 +125,7 @@ LASSO-based survival analysis and scorecard models:
 - `survival_analysis_lasso.qmd`: LASSO survival analysis
 - `methods_comparison_README.qmd`: Comparison of methods
 
-### 5. Parallel Processing Implementation (`graft-loss/graft-loss-parallel-processing/`)
+### 6. Parallel Processing Implementation (`graft-loss/graft-loss-parallel-processing/`)
 
 **Development Strategy**: The pipeline is currently running in **unparallelized mode** for verification. Once the unparallelized version is verified, parallel processing implementations will be integrated.
 
