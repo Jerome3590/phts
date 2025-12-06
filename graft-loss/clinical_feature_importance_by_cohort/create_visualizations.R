@@ -4,6 +4,7 @@
 
 library(tidyverse)
 library(ggplot2)
+library(plotly)
 library(here)
 
 # Helper: compute relative model weights from C-index
@@ -51,62 +52,30 @@ run_visualizations <- function(output_dir = NULL) {
   }
   dir.create(plot_dir, showWarnings = FALSE, recursive = TRUE)
 
-  cat("Reading MC-CV results...\n")
-  cindex_comparison <- readr::read_csv(file.path(output_dir, "cindex_comparison_mc_cv.csv"))
+  cat("Reading cohort MC-CV results...\n")
+  cindex_cohort_path <- file.path(output_dir, "cohort_model_cindex_mc_cv_modifiable_clinical.csv")
+  best_feat_path     <- file.path(output_dir, "best_clinical_features_by_cohort_mc_cv.csv")
 
-  periods <- c("original", "full", "full_no_covid")
-  methods <- c("rsf", "catboost", "aorsf")
-  method_map <- c("rsf" = "RSF", "catboost" = "CatBoost", "aorsf" = "AORSF")
-
-  load_features <- function(period, method) {
-    file_path <- file.path(output_dir, sprintf("%s_%s_top20.csv", period, method))
-    if (file.exists(file_path)) {
-      df <- readr::read_csv(file_path) %>%
-        dplyr::mutate(period = period, method = method_map[[method]])
-      cat(sprintf("✓ Loaded: %s\n", basename(file_path)))
-      return(df)
-    } else {
-      warning(sprintf("File not found: %s", file_path))
-      return(NULL)
-    }
+  if (!file.exists(cindex_cohort_path)) {
+    stop("Expected cohort C-index file 'cohort_model_cindex_mc_cv_modifiable_clinical.csv' not found in: ", output_dir)
+  }
+  if (!file.exists(best_feat_path)) {
+    stop("Expected best-features file 'best_clinical_features_by_cohort_mc_cv.csv' not found in: ", output_dir)
   }
 
-  cat("\nLoading feature importance files...\n")
-  all_features <- purrr::map_df(periods, function(p) {
-    purrr::map_df(methods, function(m) {
-      load_features(p, m)
-    })
-  }) %>%
-    dplyr::filter(!is.null(feature))
+  cindex_cohort <- readr::read_csv(cindex_cohort_path)
+  best_features <- readr::read_csv(best_feat_path)
 
-  expected_files <- length(periods) * length(methods)
-  loaded_count <- length(unique(paste(all_features$period, all_features$method)))
-  cat(sprintf("\nLoaded %d/%d expected feature files\n", loaded_count, expected_files))
-  cat(sprintf("Total features loaded: %d\n", nrow(all_features)))
-  cat(sprintf("Unique features: %d\n", length(unique(all_features$feature))))
-
-  # Build feature matrix
-  all_unique_features <- unique(all_features$feature)
-  feature_matrix <- purrr::map_df(all_unique_features, function(feat) {
-    purrr::map_df(periods, function(per) {
-      purrr::map_df(methods, function(meth) {
-        method_name <- method_map[[meth]]
-        feat_data <- all_features %>% dplyr::filter(feature == feat, period == per, method == method_name)
-        importance_val <- if (nrow(feat_data) > 0) feat_data$importance[1] else 0
-        tibble::tibble(feature = feat, period = per, method = method_name, importance = importance_val)
-      })
-    })
-  }) %>%
+  # Prepare feature matrix: Cohort × Model × Feature
+  feature_matrix <- best_features %>%
+    dplyr::select(Cohort, Model, feature, importance) %>%
     dplyr::mutate(
-      cohort_method = paste(period, method, sep = "_"),
-      period = factor(period, levels = c("original", "full", "full_no_covid")),
-      method = factor(method, levels = c("RSF", "CatBoost", "AORSF"))
-    )
-
-  # Normalize and force non-negative
-  feature_matrix <- feature_matrix %>%
+      Cohort = as.character(Cohort),
+      Model  = as.character(Model),
+      importance = as.numeric(importance)
+    ) %>%
     dplyr::mutate(importance = ifelse(is.na(importance), 0, importance)) %>%
-    dplyr::group_by(period, method) %>%
+    dplyr::group_by(Cohort, Model) %>%
     dplyr::mutate(
       importance = ifelse(importance < 0, 0, importance),
       total_imp = sum(importance),
@@ -115,14 +84,27 @@ run_visualizations <- function(output_dir = NULL) {
     dplyr::select(-total_imp) %>%
     dplyr::ungroup()
 
-  # Compute relative model weights
-  algorithm_ranking <- compute_rel_weights(cindex_comparison)
-  cat("Algorithm relative weights (by period):\n")
+  # Relative weights per cohort/model using cohort C-index file
+  algorithm_ranking <- cindex_cohort %>%
+    dplyr::select(Cohort, Model, C_Index_Mean) %>%
+    dplyr::group_by(Cohort) %>%
+    dplyr::mutate(
+      best_cindex = max(C_Index_Mean, na.rm = TRUE),
+      n_models = sum(!is.na(C_Index_Mean))
+    ) %>%
+    dplyr::ungroup() %>%
+    dplyr::mutate(
+      rel_weight = ifelse(best_cindex > 0,
+                          (C_Index_Mean / best_cindex) * n_models,
+                          1)
+    ) %>%
+    dplyr::select(Cohort, Model, rel_weight)
+
+  cat("Algorithm relative weights (by clinical cohort):\n")
   print(algorithm_ranking)
 
-  # Apply scaling
   feature_matrix <- feature_matrix %>%
-    dplyr::left_join(algorithm_ranking, by = c("period", "method")) %>%
+    dplyr::left_join(algorithm_ranking, by = c("Cohort", "Model")) %>%
     dplyr::mutate(
       rel_weight = ifelse(is.na(rel_weight), 1, rel_weight),
       importance_scaled = importance_normalized * rel_weight,
@@ -130,56 +112,178 @@ run_visualizations <- function(output_dir = NULL) {
     ) %>%
     dplyr::select(-importance_scaled)
 
-  # Heatmap
-  feature_order <- feature_matrix %>% dplyr::group_by(feature) %>% dplyr::summarise(total_importance = sum(importance), .groups = "drop") %>% dplyr::arrange(desc(total_importance)) %>% dplyr::pull(feature)
-  feature_matrix <- feature_matrix %>% dplyr::mutate(feature = factor(feature, levels = feature_order))
-  feature_matrix <- feature_matrix %>% dplyr::mutate(
-    cohort_label = dplyr::case_when(
-      period == "original" ~ "Original",
-      period == "full" ~ "Full",
-      period == "full_no_covid" ~ "Full No COVID"
-    ),
-    cohort_method_label = paste(cohort_label, method, sep = "\n")
-  )
+  # ------------------------
+  # Heatmap: feature vs Cohort×Model
+  # ------------------------
+  all_unique_features <- unique(feature_matrix$feature)
+  feature_order <- feature_matrix %>%
+    dplyr::group_by(feature) %>%
+    dplyr::summarise(total_importance = sum(importance), .groups = "drop") %>%
+    dplyr::arrange(desc(total_importance)) %>%
+    dplyr::pull(feature)
+
+  feature_matrix <- feature_matrix %>%
+    dplyr::mutate(
+      feature = factor(feature, levels = feature_order),
+      cohort_method_label = paste(Cohort, Model, sep = "\n")
+    )
 
   p1 <- ggplot(feature_matrix, aes(x = cohort_method_label, y = feature, fill = importance)) +
     geom_tile(color = "white", linewidth = 0.1) +
     scale_fill_gradient(low = "orange", high = "darkblue", name = "Importance") +
-    labs(title = "Feature Importance Heatmap by Cohort and Algorithm", x = "Cohort × Algorithm", y = "Feature") +
-    theme_minimal() + theme(axis.text.x = element_text(angle = 0, hjust = 0.5, size = 10), axis.text.y = element_text(size = 8))
+    labs(title = "Clinical Feature Importance by Cohort and Model (MC-CV)",
+         x = "Cohort × Model", y = "Feature") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 0, hjust = 0.5, size = 10),
+          axis.text.y = element_text(size = 8))
 
-  ggplot2::ggsave(file.path(plot_dir, "feature_importance_heatmap.png"), p1, width = 12, height = max(16, length(all_unique_features) * 0.3), dpi = 300, limitsize = FALSE)
+  ggplot2::ggsave(file.path(plot_dir, "feature_importance_heatmap.png"), p1,
+                  width = 12,
+                  height = max(16, length(all_unique_features) * 0.3),
+                  dpi = 300,
+                  limitsize = FALSE)
   cat("✓ Saved: feature_importance_heatmap.png\n")
 
-  # C-index heatmap
-  cindex_heatmap_data <- dplyr::bind_rows(
-    cindex_comparison %>% dplyr::select(period, method, cindex_td_mean) %>% dplyr::rename(cindex = cindex_td_mean) %>% dplyr::mutate(cindex_type = "Time-Dependent"),
-    cindex_comparison %>% dplyr::select(period, method, cindex_ti_mean) %>% dplyr::rename(cindex = cindex_ti_mean) %>% dplyr::mutate(cindex_type = "Time-Independent")
-  ) %>% dplyr::mutate(period = factor(period, levels = c("original", "full", "full_no_covid")), method = factor(method, levels = c("RSF", "CatBoost", "AORSF")), cohort_label = dplyr::case_when(period == "original" ~ "Original", period == "full" ~ "Full", period == "full_no_covid" ~ "Full No COVID"))
+  # ------------------------
+  # C-index heatmap (cohort × model)
+  # ------------------------
+  cindex_heatmap_data <- cindex_cohort %>%
+    dplyr::select(Cohort, Model, C_Index_Mean) %>%
+    dplyr::rename(cindex = C_Index_Mean)
 
-  p2 <- ggplot(cindex_heatmap_data, aes(x = method, y = cohort_label, fill = cindex)) +
+  p2 <- ggplot(cindex_heatmap_data, aes(x = Model, y = Cohort, fill = cindex)) +
     geom_tile(color = "white", linewidth = 0.5) +
-    geom_text(aes(label = sprintf("%.3f", cindex)), color = "black", size = 4, fontface = "bold") +
-    scale_fill_gradient2(low = "red", mid = "white", high = "green", midpoint = 0.5, name = "C-index") +
-    facet_wrap(~cindex_type, ncol = 2) + labs(title = "Concordance Index Heatmap by Cohort and Algorithm (MC-CV)", x = "Algorithm", y = "Cohort") + theme_minimal()
+    geom_text(aes(label = sprintf("%.3f", cindex)), color = "black",
+              size = 4, fontface = "bold") +
+    scale_fill_gradient2(low = "red", mid = "white", high = "green",
+                         midpoint = 0.5, name = "C-index") +
+    labs(title = "Concordance Index by Clinical Cohort and Model (MC-CV)",
+         x = "Model", y = "Cohort") +
+    theme_minimal()
 
-  ggplot2::ggsave(file.path(plot_dir, "cindex_heatmap.png"), p2, width = 12, height = 6, dpi = 300)
+  ggplot2::ggsave(file.path(plot_dir, "cindex_heatmap.png"), p2,
+                  width = 10, height = 4, dpi = 300)
   cat("✓ Saved: cindex_heatmap.png\n")
 
-  # Scaled bar chart (sum across scaled normalized importances)
-  scaled_feature_importance <- feature_matrix %>% dplyr::group_by(feature) %>% dplyr::summarise(total_scaled_importance = sum(importance_normalized * rel_weight, na.rm = TRUE), .groups = "drop") %>% dplyr::arrange(desc(total_scaled_importance)) %>% dplyr::slice_head(n = 20)
-  scaled_feature_importance <- scaled_feature_importance %>% dplyr::mutate(feature = factor(feature, levels = rev(scaled_feature_importance$feature)))
+  # ------------------------
+  # Scaled bar chart (Top 20 clinical features)
+  # ------------------------
+  scaled_feature_importance <- feature_matrix %>%
+    dplyr::group_by(feature) %>%
+    dplyr::summarise(
+      total_scaled_importance = sum(importance_normalized * rel_weight, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    dplyr::arrange(desc(total_scaled_importance)) %>%
+    dplyr::slice_head(n = 20)
 
-  p3 <- ggplot(scaled_feature_importance, aes(x = feature, y = total_scaled_importance)) + geom_bar(stat = "identity", fill = "steelblue", alpha = 0.8) + coord_flip() + labs(title = "Scaled Feature Importance (Top 20 Features)", subtitle = "Importance scaled by algorithm performance (relative weight = model C-index / best model C-index)", x = "Feature", y = "Scaled Normalized Importance") + theme_minimal()
+  scaled_feature_importance <- scaled_feature_importance %>%
+    dplyr::mutate(feature = factor(feature, levels = rev(scaled_feature_importance$feature)))
 
-  ggplot2::ggsave(file.path(plot_dir, "scaled_feature_importance_bar_chart.png"), p3, width = 12, height = 10, dpi = 300)
+  p3 <- ggplot(scaled_feature_importance, aes(x = feature, y = total_scaled_importance)) +
+    geom_bar(stat = "identity", fill = "steelblue", alpha = 0.8) +
+    coord_flip() +
+    labs(
+      title = "Scaled Clinical Feature Importance (Top 20 Features)",
+      subtitle = "Importance scaled by cohort/model performance (MC-CV C-index)",
+      x = "Feature",
+      y = "Scaled Normalized Importance"
+    ) +
+    theme_minimal()
+
+  ggplot2::ggsave(file.path(plot_dir, "scaled_feature_importance_bar_chart.png"), p3,
+                  width = 12, height = 10, dpi = 300)
   cat("✓ Saved: scaled_feature_importance_bar_chart.png\n")
 
-  # C-index table
-  cindex_table <- cindex_comparison %>% dplyr::mutate(period_label = dplyr::case_when(period == "original" ~ "Original", period == "full" ~ "Full", period == "full_no_covid" ~ "Full No COVID"), cindex_td_formatted = sprintf("%.3f (%.3f-%.3f)", cindex_td_mean, cindex_td_ci_lower, cindex_td_ci_upper), cindex_ti_formatted = sprintf("%.3f (%.3f-%.3f)", cindex_ti_mean, cindex_ti_ci_lower, cindex_ti_ci_upper)) %>% dplyr::select(period_label, method, cindex_td_formatted, cindex_ti_formatted, n_splits) %>% dplyr::arrange(period_label, method) %>% dplyr::rename(Cohort = period_label, Algorithm = method, `Time-Dependent C-index (95% CI)` = cindex_td_formatted, `Time-Independent C-index (95% CI)` = cindex_ti_formatted, `N Splits` = n_splits)
+  # ------------------------
+  # C-index summary table
+  # ------------------------
+  if (all(c("C_Index_CI_Lower", "C_Index_CI_Upper") %in% names(cindex_cohort))) {
+    cindex_table <- cindex_cohort %>%
+      dplyr::mutate(
+        C_Index_Formatted = sprintf("%.3f (%.3f-%.3f)",
+                                    C_Index_Mean,
+                                    C_Index_CI_Lower,
+                                    C_Index_CI_Upper)
+      ) %>%
+      dplyr::select(
+        Cohort,
+        Model,
+        C_Index_Formatted,
+        n_splits
+      ) %>%
+      dplyr::rename(
+        `C-index (95% CI)` = C_Index_Formatted,
+        `N Splits` = n_splits
+      )
+  } else {
+    # Fallback if CI columns are missing
+    cindex_table <- cindex_cohort %>%
+      dplyr::select(
+        Cohort,
+        Model,
+        C_Index_Mean,
+        n_splits
+      ) %>%
+      dplyr::rename(
+        `C-index` = C_Index_Mean,
+        `N Splits` = n_splits
+      )
+  }
 
   readr::write_csv(cindex_table, file.path(plot_dir, "cindex_table.csv"))
   cat("✓ Saved: cindex_table.csv\n")
+
+  # ------------------------
+  # Sankey diagram: combined cohorts → features
+  # ------------------------
+  sankey_data <- best_features %>%
+    dplyr::group_by(Cohort, feature) %>%
+    dplyr::summarise(
+      value = sum(importance, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    dplyr::filter(!is.na(value) & value > 0)
+
+  if (nrow(sankey_data) > 0) {
+    all_nodes <- unique(c(sankey_data$Cohort, sankey_data$feature))
+
+    links <- sankey_data %>%
+      dplyr::mutate(
+        source = match(Cohort, all_nodes) - 1,
+        target = match(feature, all_nodes) - 1
+      )
+
+    sankey_plot <- plot_ly(
+      type = "sankey",
+      orientation = "h",
+      node = list(
+        label = all_nodes,
+        pad = 15,
+        thickness = 20,
+        line = list(color = "black", width = 0.5)
+      ),
+      link = list(
+        source = links$source,
+        target = links$target,
+        value = links$value
+      )
+    ) %>%
+      layout(
+        title = "Cohorts → Modifiable Clinical Features (MC-CV best models)",
+        font = list(size = 10)
+      )
+
+    # Save HTML widget
+    htmlwidgets::saveWidget(
+      sankey_plot,
+      file = file.path(plot_dir, "cohort_clinical_feature_sankey.html"),
+      selfcontained = TRUE
+    )
+    cat("✓ Saved: cohort_clinical_feature_sankey.html\n")
+  } else {
+    cat("No data available to generate cohort Sankey diagram.\n")
+  }
 
   cat("\nVisualization summary:\n")
   cat(sprintf("Plots saved to: %s\n", normalizePath(plot_dir)))
