@@ -30,17 +30,9 @@ graph TB
     GL_feat --> GL_nb[graft_loss_feature_importance_20_MC_CV.ipynb]
     GL_feat --> GL_docs[MC-CV READMEs + outputs]
 
-    GL --> GL_clin[clinical_feature_importance_by_cohort]
-    GL_clin --> GL_clin_nb[graft_loss_clinical_feature_importance_by_cohort_MC_CV.ipynb]
-    GL_clin --> GL_clin_outputs[cohort outputs]
-
-    GL --> GL_cohort[cohort_analysis: Event classification]
-    GL_cohort --> GL_cohort_qmd[Multiple .qmd analyses]
-    GL_cohort --> GL_cohort_ffa[FFA analysis]
-
-    GL --> GL_surv[cohort_survival_analysis]
-    GL_surv --> GL_surv_qmd[Survival .qmd analyses]
-    GL_surv --> GL_surv_causal[Causal analysis LMTP/FFA]
+    GL --> GL_cohort[cohort_analysis: Clinical Cohort Analysis]
+    GL_cohort --> GL_cohort_nb[graft_loss_clinical_cohort_analysis.ipynb]
+    GL_cohort --> GL_cohort_outputs[cohort outputs (survival + classification)]
 
     GL --> GL_lasso[lasso: Regularized regression]
     GL --> GL_uni[univariate_analysis]
@@ -51,9 +43,7 @@ graph TB
 - **Scripts**: All executable scripts are in `scripts/` organized by language (`R/`, `py/`, `bash/`)
 - **Notebooks**: Remain in their respective analysis directories:
   - `graft-loss/feature_importance/` - Global feature importance analysis (MC-CV)
-  - `graft-loss/clinical_feature_importance_by_cohort/` - Clinical cohort-specific feature importance (MC-CV)
-  - `graft-loss/cohort_analysis/` - Cohort analysis and event classification (Quarto)
-  - `graft-loss/cohort_survival_analysis/` - Cohort survival analysis and causal inference (Quarto)
+  - `graft-loss/cohort_analysis/` - Clinical cohort analysis with dynamic survival/classification modes (MC-CV)
   - `graft-loss/univariate_analysis/` - Univariate feature importance
   - `graft-loss/unified_cohort_survival_analysis/` - Unified cohort survival analysis
   - `graft-loss/lasso/` - LASSO-based survival models
@@ -67,35 +57,27 @@ graph TB
 
     B --> C1[1. Global Feature Importance]
     B --> C2[2. Clinical Cohort Feature Importance]
-    B --> C3[3. Cohort Analysis]
-    B --> C4[4. Cohort Survival Analysis]
-    B --> C5[5. Univariate Analysis]
-    B --> C6[6. Unified Cohort Survival]
-    B --> C7[7. LASSO Analysis]
+    B --> C2[2. Clinical Cohort Analysis]
+    B --> C3[3. Univariate Analysis]
+    B --> C4[4. Unified Cohort Survival]
+    B --> C5[5. LASSO Analysis]
 
     C1 --> C1a[MC-CV: RSF/CatBoost/AORSF]
     C1 --> C1b[3 Time Periods]
     C1 --> C1c[Global Feature Rankings]
 
-    C2 --> C2a[MC-CV: 5 Methods]
+    C2 --> C2a[MC-CV: Survival/Classification]
     C2 --> C2b[CHD vs MyoCardio]
     C2 --> C2c[Modifiable Clinical Features]
+    C2 --> C2d[Dynamic Mode Selection]
 
-    C3 --> C3a[Event Classification]
-    C3 --> C3b[3 COAs: Observed/IPCW]
-    C3 --> C3c[FFA Analysis]
+    C3 --> C3a[Univariate Feature Importance]
 
-    C4 --> C4a[Survival Modeling]
-    C4 --> C4b[Causal Analysis LMTP/FFA]
-    C4 --> C4c[Method Comparisons]
+    C4 --> C4a[Unified Cohort Survival]
+    C4 --> C4b[Time-to-Event Features]
 
-    C5 --> C5a[Univariate Feature Importance]
-
-    C6 --> C6a[Unified Cohort Survival]
-    C6 --> C6b[Time-to-Event Features]
-
-    C7 --> C7a[LASSO Regularization]
-    C7 --> C7b[Scorecard Models]
+    C5 --> C5a[LASSO Regularization]
+    C5 --> C5b[Scorecard Models]
 ```
 
 ## Analysis Pipelines Summary
@@ -103,12 +85,10 @@ graph TB
 | Pipeline | Location | Type | Methods | Key Features |
 |----------|----------|------|---------|--------------|
 | **1. Global Feature Importance** | `graft-loss/feature_importance/` | MC-CV Notebook | RSF, CatBoost, AORSF | 3 time periods, 100-1000 splits, global feature rankings |
-| **2. Clinical Cohort Feature Importance** | `graft-loss/clinical_feature_importance_by_cohort/` | MC-CV Notebook | RSF, AORSF, CatBoost-Cox, XGBoost-Cox | CHD vs MyoCardio, modifiable clinical features |
-| **3. Cohort Analysis** | `graft-loss/cohort_analysis/` | Quarto Documents | Multiple | Event classification, 3 COAs, FFA analysis |
-| **4. Cohort Survival Analysis** | `graft-loss/cohort_survival_analysis/` | Quarto Documents | Survival models | Causal analysis (LMTP/FFA), method comparisons |
-| **5. Univariate Analysis** | `graft-loss/univariate_analysis/` | Analysis | Univariate | Top features univariate importance |
-| **6. Unified Cohort Survival** | `graft-loss/unified_cohort_survival_analysis/` | Analysis | Survival models | Unified cohort time-to-event analysis |
-| **7. LASSO Analysis** | `graft-loss/lasso/` | Quarto Documents | LASSO | Regularized regression, scorecard models |
+| **2. Clinical Cohort Analysis** | `graft-loss/cohort_analysis/` | MC-CV Notebook (Dynamic) | **Survival**: RSF, AORSF, CatBoost-Cox, XGBoost-Cox<br>**Classification**: LASSO, CatBoost, CatBoost RF, Traditional RF | CHD vs MyoCardio, modifiable clinical features |
+| **3. Univariate Analysis** | `graft-loss/univariate_analysis/` | Analysis | Univariate | Top features univariate importance |
+| **4. Unified Cohort Survival** | `graft-loss/unified_cohort_survival_analysis/` | Analysis | Survival models | Unified cohort time-to-event analysis |
+| **5. LASSO Analysis** | `graft-loss/lasso/` | Quarto Documents | LASSO | Regularized regression, scorecard models |
 
 ## Key Components
 
@@ -131,11 +111,11 @@ Comprehensive Monte Carlo cross-validation feature-importance workflow replicati
   - Top 20 features per method per period (`*_rsf_top20.csv`, `*_catboost_top20.csv`, `*_aorsf_top20.csv`).
   - C-index comparison tables and summary statistics across methods and cohorts.
 
-### 2. Clinical Cohort Feature Importance (`graft-loss/clinical_feature_importance_by_cohort/`)
+### 2. Clinical Cohort Analysis (`graft-loss/cohort_analysis/`)
 
 **Dynamic Analysis Pipeline** supporting both survival analysis and event classification with MC-CV:
 
-- **Notebook:** `graft_loss_clinical_feature_importance_by_cohort_MC_CV.ipynb`
+- **Notebook:** `graft_loss_clinical_cohort_analysis.ipynb`
   - **Mode Selection**: Set `ANALYSIS_MODE <- "survival"` or `"classification"` at top of notebook
   - Defines **two etiologic cohorts**:
     - CHD: `primary_etiology == "Congenital HD"`
@@ -167,22 +147,12 @@ Comprehensive Monte Carlo cross-validation feature-importance workflow replicati
   - `create_visualizations_cohort.R`: Creates cohort-specific visualizations including Sankey diagrams
   - `replicate_20_features_MC_CV.R`: Monte Carlo cross-validation script for clinical cohort analysis
 
-- **Outputs (`graft-loss/clinical_feature_importance_by_cohort/outputs/`):**
-  - **Survival Mode**: `cohort_model_cindex_mc_cv_modifiable_clinical.csv`, `best_clinical_features_by_cohort_mc_cv.csv`
-  - **Classification Mode**: `classification_mc_cv/cohort_classification_metrics_mc_cv.csv`
-  - `cohort_model_cindex_mc_cv_modifiable_clinical.csv` – C‑index summary per cohort × model.
-  - `best_clinical_features_by_cohort_mc_cv.csv` – Top modifiable clinical features for the best model in each cohort.
-
-### 3. Cohort Analysis (`graft-loss/cohort_analysis/`)
-
-Comprehensive cohort-based analysis with multiple outcome definitions and censoring strategies:
-
-- **Purpose**: Event classification and cohort workflows with explicit 1-year target outcomes
-- **Key Documents**:
-  - `phts_dataset.qmd`: Prepares three Cohort Analytic Options (COAs) with different censoring strategies
-  - `event_classification.qmd`: Event classification analysis
-  - `cohort_event_classification.qmd`: Cohort-specific event classification
-  - `cohort_event_model_ffa.qmd`: Fast and Frugal Analysis (FFA) for cohort models
+- **Outputs (`graft-loss/cohort_analysis/outputs/`):**
+  - **Survival Mode**: 
+    - `cohort_model_cindex_mc_cv_modifiable_clinical.csv` – C‑index summary per cohort × model
+    - `best_clinical_features_by_cohort_mc_cv.csv` – Top modifiable clinical features for the best model in each cohort
+  - **Classification Mode**: 
+    - `classification_mc_cv/cohort_classification_metrics_mc_cv.csv` – Classification metrics (AUC, Brier, Accuracy, Precision, Recall, F1) per cohort × model
   - `cohort_survival_analysis.qmd`: Survival analysis by cohort
   - `phts_feature_importance.qmd`: Feature importance analysis
   - `workflow_comparison_summary.qmd`: Comparison of different workflow approaches
@@ -203,43 +173,21 @@ Comprehensive cohort-based analysis with multiple outcome definitions and censor
   - `catboost_axp_explainer.py`: CatBoost explainer for FFA
   - `catboost_axp_explainer2.py`: Alternative CatBoost explainer
 
-### 4. Cohort Survival Analysis (`graft-loss/cohort_survival_analysis/`)
-
-Survival modeling with cohort-specific approaches and causal analysis:
-
-- **Purpose**: Survival analysis comparing `graft-loss` vs `cohort_analysis` methodologies
-- **Key Documents**:
-  - `survival_analysis.qmd`: Main survival analysis
-  - `cohort_survival_analysis.qmd`: Cohort-specific survival analysis
-  - `phts_dataset.qmd`: Dataset preparation
-  - `methods_comparison_README.qmd`: Detailed comparison of methodologies
-  - `causal_analysis/causal_analysis.qmd`: Causal analysis using LMTP and FFA
-
-- **Causal Analysis** (`causal_analysis/`):
-  - **LMTP (Longitudinal Modified Treatment Policies)**: Population-level causal effects of treatment policies
-  - **FFA (Formal Feature Attribution)**: Model-level explanations and rule patterns
-  - Combines predictive survival modeling with causal estimands
-
-- **Outputs**: Survival metrics, model comparisons, causal effect estimates, feature attribution
-
-- **Scripts** (in `scripts/R/`):
-  - `survival_helpers.R`: Helper functions for survival analysis
-
-### 5. Univariate Analysis (`graft-loss/univariate_analysis/`)
+### 3. Univariate Analysis (`graft-loss/univariate_analysis/`)
 
 Univariate feature importance analysis:
 
 - **Purpose**: Top features univariate analysis
 - **Outputs**: `phts_top_features_univariate_analysis.html` - Univariate feature importance results
 
-### 6. Unified Cohort Survival Analysis (`graft-loss/unified_cohort_survival_analysis/`)
+### 4. Unified Cohort Survival Analysis (`graft-loss/unified_cohort_survival_analysis/`)
 
 Unified cohort survival analysis with time-to-event feature importance:
 
 - **Purpose**: Survival analysis across unified cohorts
 - **Outputs**: `sankey_time_to_event_unified_cohort_feature_importance.html` - Sankey diagram of feature importance by cohort
 
-### 7. LASSO Analysis (`graft-loss/lasso/`)
+### 5. LASSO Analysis (`graft-loss/lasso/`)
 
 LASSO-based survival analysis and scorecard models:
 
@@ -516,22 +464,13 @@ This runs RSF, CatBoost, and AORSF feature selection across all three time perio
 - `plots/scaled_feature_importance_bar_chart.png`: Scaled feature importance bar chart
 - `plots/cindex_table.csv`: C-index table with confidence intervals
 
-**Clinical Cohort Feature Importance** (`graft-loss/clinical_feature_importance_by_cohort/outputs/`):
-- `cohort_model_cindex_mc_cv_modifiable_clinical.csv`: C-index summary per cohort × model
-- `best_clinical_features_by_cohort_mc_cv.csv`: Top modifiable clinical features per cohort
-- `plots/cohort_clinical_feature_sankey.html`: Sankey diagram of cohort → clinical features
-
-**Cohort Analysis** (`graft-loss/cohort_analysis/`):
-- `preprocessed_model_data_coa1.csv`: COA1 - Observed-only labels
-- `preprocessed_model_data_coa2.csv`: COA2 - Observed-only (txpl_year < 2023)
-- `preprocessed_model_data_coa3.csv`: COA3 - IPCW-weighted labels
-- `cohort_event_classification_summary.csv`: Event classification summary
-- `workflow_comparison_summary.csv`: Workflow comparison results
-- `sankey_cohort_classification_feature_importance.html`: Sankey diagram
-
-**Cohort Survival Analysis** (`graft-loss/cohort_survival_analysis/metrics/`):
-- Survival model metrics and comparisons
-- Causal analysis results (LMTP/FFA)
+**Clinical Cohort Analysis** (`graft-loss/cohort_analysis/outputs/`):
+- **Survival Mode**:
+  - `cohort_model_cindex_mc_cv_modifiable_clinical.csv`: C-index summary per cohort × model
+  - `best_clinical_features_by_cohort_mc_cv.csv`: Top modifiable clinical features per cohort
+  - `plots/cohort_clinical_feature_sankey.html`: Sankey diagram of cohort → clinical features
+- **Classification Mode**:
+  - `classification_mc_cv/cohort_classification_metrics_mc_cv.csv`: Classification metrics (AUC, Brier, Accuracy, Precision, Recall, F1) per cohort × model
 
 **Univariate Analysis** (`graft-loss/univariate_analysis/`):
 - `phts_top_features_univariate_analysis.html`: Univariate feature importance
