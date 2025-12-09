@@ -24,7 +24,7 @@ ANALYSIS_MODE <- "survival"  # or "classification"
 
 ### Event Classification Mode (`ANALYSIS_MODE = "classification"`)
 
-- **Models**: CatBoost (classification), CatBoost RF (classification), Traditional RF (classification)
+- **Models**: CatBoost (classification), CatBoost RF (classification), Traditional RF (classification), XGBoost (classification), XGBoost RF (classification)
 - **Target**: Binary classification at 1 year (event by 1 year vs no event with follow-up >= 1 year)
 - **Evaluation**: AUC, Brier Score, Accuracy, Precision, Recall, F1 with 95% CI across MC-CV splits
 

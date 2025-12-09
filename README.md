@@ -67,7 +67,7 @@ graph TB
 | Pipeline | Location | Type | Methods | Key Features |
 |----------|----------|------|---------|--------------|
 | **1. Global Feature Importance** | `graft-loss/feature_importance/` | MC-CV Notebook | RSF, CatBoost, AORSF | 3 time periods, 100-1000 splits, global feature rankings |
-| **2. Clinical Cohort Analysis** | `graft-loss/cohort_analysis/` | MC-CV Notebook (Dynamic) | **Survival**: RSF, AORSF, CatBoost-Cox, XGBoost-Cox<br>**Classification**: CatBoost, CatBoost RF, Traditional RF | CHD vs MyoCardio, modifiable clinical features |
+| **2. Clinical Cohort Analysis** | `graft-loss/cohort_analysis/` | MC-CV Notebook (Dynamic) | **Survival**: RSF, AORSF, CatBoost-Cox, XGBoost-Cox<br>**Classification**: CatBoost, CatBoost RF, Traditional RF, XGBoost, XGBoost RF | CHD vs MyoCardio, modifiable clinical features |
 
 ## Key Components
 
@@ -123,6 +123,8 @@ Comprehensive Monte Carlo cross-validation feature-importance workflow replicati
     - CatBoost (classification)
     - CatBoost RF (classification)
     - Traditional RF (classification)
+    - XGBoost (classification)
+    - XGBoost RF (classification)
   - Target: Binary classification at 1 year (event by 1 year vs no event with follow-up >= 1 year)
   - Evaluation: AUC, Brier Score, Accuracy, Precision, Recall, F1 with 95% CI across MC-CV splits
 
@@ -198,6 +200,8 @@ Robust C-index calculation with manual implementation:
 - **CatBoost**: Gradient boosting classification
 - **CatBoost RF**: CatBoost configured as Random Forest
 - **Traditional RF**: Classic Random Forest classification
+- **XGBoost**: Gradient boosting classification
+- **XGBoost RF**: XGBoost configured as Random Forest
 
 ### Stage 5: Model Evaluation
 
@@ -361,7 +365,7 @@ The pipeline supports analysis across multiple time periods:
 
 ### Comprehensive Model Comparison
 
-- **Multiple Algorithms**: RSF, AORSF, CatBoost, XGBoost, Cox PH (survival); CatBoost, CatBoost RF, Traditional RF (classification)
+- **Multiple Algorithms**: RSF, AORSF, CatBoost, XGBoost, Cox PH (survival); CatBoost, CatBoost RF, Traditional RF, XGBoost, XGBoost RF (classification)
 - **Multiple Time Periods**: Original study, full period, COVID-excluded
 - **Multiple Metrics**: Time-dependent and time-independent C-indexes; AUC, Brier, Accuracy, Precision, Recall, F1
 
