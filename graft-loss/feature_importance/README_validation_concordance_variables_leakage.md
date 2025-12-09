@@ -24,7 +24,7 @@ Conceptually:
   - C-index is computed on the **test** portion for each split.
   - We then aggregate mean, SD, and 95% CI across all successful splits.
 
-For detailed implementation notes, see the C-index calculation functions in the notebook and R script.
+For detailed implementation notes and test harnesses, see `README_concordance_index.md`.
 
 ---
 
@@ -35,7 +35,7 @@ The Wisotzkey et al. study defines a set of clinically important variables. Our 
 - Maps these study variables to **cleaned column names** after `janitor::clean_names()`.
 - Handles **multiple source names** and **derived variables**.
 
-Key points:
+Key points from `README_wisotzkey_variable_mapping.md`:
 
 - Most variables map directly, e.g.:
   - `PRIM_DX` → `prim_dx` (primary etiology),
@@ -52,7 +52,7 @@ This ensures:
 - Consistent feature naming across notebooks, scripts, and cohorts.
 - Direct comparability to the original Wisotzkey feature set.
 
-Variable mapping details are implemented in the `prepare_modeling_data()` function.
+For full tables and code snippets, see `README_wisotzkey_variable_mapping.md`.
 
 ---
 
@@ -64,7 +64,7 @@ To prevent inflated performance, we explicitly **exclude** variables that:
 - Depend on information that would not be available at prediction time,
 - Are clearly autopsy/pathology or complication descriptors.
 
-The exclusion strategy in `prepare_modeling_data()`:
+From `README_target_leakage.md`, the exclusion strategy in `prepare_modeling_data()`:
 
 - Drops specific leakage variables (e.g., `graft_loss`, `txgloss`, `int_dead`, `dpricaus`, `age_death`, `dlist` (Death: Listed/relisted), many post-mortem and donor complication fields).
 - Drops non-predictive temporal/administrative variables:
@@ -97,7 +97,7 @@ Effect on models:
 - Brings C-index values down from unrealistic ~0.99 to the realistic 0.70–0.85 range.
 - Aligns top features more closely with Wisotzkey’s clinically plausible variables.
 
-Exact exclusion lists and rationale are documented in the `prepare_modeling_data()` function and in this document.
+For exact exclusion lists and rationale, see `README_target_leakage.md`.
 
 ---
 

@@ -67,7 +67,7 @@ method_names <- c("RSF")  # Comment out others
 For a higher-level “how do I actually run this, today?” view, the notebook works together with:
 
 - `README_ready_to_run.md` – end-to-end commands for EC2 (script and notebook) with expected timelines.
-- Debug mode: Set `DEBUG_MODE <- TRUE` in Cell 3 to run small, fast test jobs before committing to large MC‑CV runs.
+- `README_debug_mode.md` – how to run **small, fast** test jobs before committing to large MC‑CV runs.
 
 ### Quick Start (from `README_ready_to_run.md`, adapted to current notebook)
 
@@ -84,7 +84,7 @@ n_workers   <- 30     # use 30 of 32 cores on EC2
 
 Use tmux/screen or Jupyter-on-EC2 as outlined in `README_ready_to_run.md` if you expect multi-hour runtimes.
 
-### Debug Mode
+### Debug Mode (from `README_debug_mode.md`, adapted)
 
 To smoke-test the full pipeline in 2–5 minutes:
 
@@ -179,13 +179,12 @@ scaled_feature_importance_bar_chart.png # Bar chart of scaled feature importance
 cindex_table.csv                        # Concordance index table with confidence intervals
 ```
 
-**Note:** Feature importance values in the heatmap are normalized within each method-period combination and then scaled by algorithm performance using a relative weight computed from held-out C-index (see `importance_weights.R`). Specifically:
+**Note:** Feature importance values in the heatmap are normalized within each method-period combination, then scaled by algorithm performance:
+- **Best C-index algorithm:** ×3 scaling factor
+- **Second best C-index algorithm:** ×2 scaling factor  
+- **Third algorithm:** ×1 (no scaling)
 
-- Per-model importances are forced non-negative and normalized to unit-sum so different importance metrics become comparable.
-- Each normalized vector is multiplied by the model's `rel_weight`, where `rel_weight = (model_mean_cindex / best_model_mean_cindex) * N_models` for that period (so the best model's relative weight is approximately `N_models`).
-- The scaled bar chart aggregates these scaled values across all periods and algorithms by summing the scaled normalized importances for each feature. The plotted bar therefore reflects the total weighted support a feature received across cohort × algorithm cells (an additive measure, not a max or simple average).
-
-If you prefer a different aggregation (mean, median, or max), update `create_visualizations.R`'s aggregation step (`summarise(...)`) accordingly.
+The scaled bar chart aggregates scaled importance values across all periods and algorithms to show the top 20 most important features overall.
 
 ---
 
@@ -330,8 +329,8 @@ sbatch --mem=32G --cpus-per-task=16 run_notebook.sh
 
 ### Related Files
 - **R Script version:** `replicate_20_features_MC_CV.R`
-- **Usage guide:** See `README_ready_to_run.md` and `README_mc_cv_parallel_ec2.md`
-- **Technical details:** See `README_original_vs_updated_study.md`
+- **Usage guide:** `README_mc_cv_update.md`
+- **Technical details:** `ORIGINAL_REPO_VALIDATION_METHODOLOGY.md`
 
 ### Key Concepts
 - **Monte Carlo Cross-Validation:** Randomly split data many times

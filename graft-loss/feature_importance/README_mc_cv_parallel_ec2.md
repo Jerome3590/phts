@@ -26,7 +26,7 @@ train_prop   <- 0.75    # 75% training, 25% testing
   - Evaluates C-index on the **held-out test** portion.
   - Aggregates mean, SD, and 95% CI across all successful splits.
 
-For full methodological details, see `README_original_vs_updated_study.md`.
+For full methodological details, see `README_mc_cv_update.md` and `README_original_vs_updated_study.md`.
 
 ---
 
@@ -64,20 +64,20 @@ with_progress({
 plan(sequential)
 ```
 
-- **Key fixes :**
+- **Key fixes (from `PARALLEL_PROCESSING_FIX.md`):**
   - `options(future.globals.maxSize = 20 * 1024^3)` to allow sending the large `mc_splits` object to workers (about 11 GB for 1000 splits).
   - Explicit `packages = c(...)` in `furrr_options()` so each worker loads the same modeling and scoring packages.
   - Single‑threaded CatBoost inside each worker (`thread_count = 1`, `logging_level = "Silent"`) to avoid logger thread-safety issues.
   - Streamed logging via `flush.console()` at key milestones so Jupyter and scripts show progress continuously.
 
-These fixes ensure stable parallel processing on EC2 instances with large memory requirements.
+For the full error analysis and memory sizing, see `PARALLEL_PROCESSING_FIX.md`.
 
 ---
 
 ### 3. EC2-Optimized Configuration (32 cores, 1 TB RAM)
 
 - **Goal:** Use a single, large EC2 instance instead of a Slurm cluster, but retain the original scale (1000 splits, 3 periods, 3 methods).
-- **Recommended EC2 settings :**
+- **Recommended EC2 settings (from `README_ec2_optimization.md`):**
 
 ```r
 n_mc_splits <- 1000   # extended / publication-level run
@@ -101,7 +101,7 @@ n_workers   <- 30     # use 30 of 32 cores
 
   - Confirm that the 9 `*_top20.csv` feature files plus the 2 summary CSVs appear in `outputs/`.
 
-See `README_ready_to_run.md` for full EC2 usage examples, including nohup and tmux patterns.
+See `README_ec2_optimization.md` and `README_ready_to_run.md` for full EC2 usage examples, including nohup and tmux patterns.
 
 ---
 
