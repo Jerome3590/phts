@@ -77,17 +77,18 @@ This structure matches the EC2 file structure:
 - Uses: `scripts/R/check_variables.R`
 - Uses: `scripts/R/check_cpbypass_iqr.R`
 
-### Clinical Cohort Feature Importance (`graft-loss/clinical_feature_importance_by_cohort/`)
+### Clinical Cohort Analysis (`graft-loss/cohort_analysis/`)
 - Uses: `scripts/R/create_visualizations_cohort.R`
-- Uses: `scripts/R/replicate_20_features_MC_CV.R`
-- Notebook: `graft_loss_clinical_feature_importance_by_cohort_MC_CV.ipynb`
-
-### Cohort Analysis (`graft-loss/cohort_analysis/`)
 - Uses: `scripts/R/classification_helpers.R`
 - Uses: `scripts/py/ffa_analysis.py`
 - Uses: `scripts/py/catboost_axp_explainer.py`
 - Uses: `scripts/py/catboost_axp_explainer2.py`
+- Notebook: `graft_loss_clinical_cohort_analysis.ipynb`
 
-### Cohort Survival Analysis (`graft-loss/cohort_survival_analysis/`)
-- Uses: `scripts/R/survival_helpers.R`
+## Documentation
+
+For detailed documentation on scripts and standards, see:
+- **[Logging Standards](docs/scripts/LOGGING_STANDARDS.md)** - Standardized logging patterns
+- **[Outputs & Plots Standardization](docs/scripts/OUTPUTS_PLOTS_STANDARDIZATION.md)** - Output directory standards
+- **[Consolidation Summary](docs/scripts/CONSOLIDATION_SUMMARY.md)** - Script consolidation details
 
