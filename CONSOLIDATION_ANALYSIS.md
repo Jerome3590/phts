@@ -124,10 +124,9 @@ Comparing functionality between `clinical_feature_importance_by_cohort` and `coh
 - Existing visualization and helper functions
 
 **Result:** `clinical_feature_importance_by_cohort` becomes comprehensive cohort analysis pipeline with:
+- **Dynamic mode selection** - Run either survival OR classification analysis
 - Survival models with MC-CV (existing - core)
 - Classification models (add from `cohort_analysis`)
-- FFA workflow (add from `cohort_analysis`)
-- 3 COAs (add from `cohort_analysis`)
 - Modifiable features focus (existing)
 - XGBoost-Cox models (existing)
 
@@ -147,27 +146,37 @@ Comparing functionality between `clinical_feature_importance_by_cohort` and `coh
 
 ## Recommendation
 
-**Consolidate INTO `clinical_feature_importance_by_cohort`** and add the missing functionality from `cohort_analysis`. This creates a unified, comprehensive cohort analysis pipeline that:
+**Consolidate INTO `clinical_feature_importance_by_cohort`** and add event classification functionality from `cohort_analysis`. This creates a unified, comprehensive cohort analysis pipeline that:
 
 1. ✅ **Keeps the sophisticated MC-CV survival workflow** (core methodology)
-2. ✅ **Adds classification models** (from `cohort_analysis`)
-3. ✅ **Adds FFA workflow** (from `cohort_analysis`)
-4. ✅ **Adds 3 COAs** (from `cohort_analysis`)
-5. ✅ **Maintains modifiable features focus** (existing)
-6. ✅ **Uses single notebook structure** (easier to maintain)
+2. ✅ **Adds event classification models** (from `cohort_analysis`)
+3. ✅ **Makes notebook dynamic** - Can run either survival OR classification analysis
+4. ✅ **Maintains modifiable features focus** (existing)
+5. ✅ **Uses single notebook structure** (easier to maintain)
+
+**Implementation Approach:**
+- Add configuration flag: `ANALYSIS_MODE <- "survival"` or `"classification"`
+- Conditional sections based on mode
+- Survival mode: Uses existing MC-CV workflow with survival models
+- Classification mode: Uses classification models with binary outcome at 1 year
 
 ## Next Steps
 
 1. ✅ Review this analysis
 2. ✅ Decide on consolidation approach: **Consolidate INTO `clinical_feature_importance_by_cohort`**
-3. Create migration plan:
-   - Add classification models section to notebook
-   - Add FFA workflow section to notebook
-   - Add 3 COAs data preparation
-   - Add IPCW weighting support
-   - Integrate event classification workflow
-4. Move functionality FROM `cohort_analysis` TO `clinical_feature_importance_by_cohort`
-5. Update documentation
-6. Archive or remove `cohort_analysis` directory (or keep as reference)
-7. Rename `clinical_feature_importance_by_cohort` to `cohort_analysis` (optional - for clarity)
+3. ✅ Scope confirmed:
+   - ✅ Add event classification models
+   - ✅ Make notebook dynamic (survival OR classification mode)
+   - ❌ Skip 3 COAs (not needed)
+   - ❌ Skip FFA (not complete)
+4. Create migration plan:
+   - Add `ANALYSIS_MODE` configuration flag
+   - Add classification models section (conditional on mode)
+   - Add classification metrics (AUC, Brier, Accuracy, Precision, Recall, F1)
+   - Add data preparation for classification (1-year binary outcome)
+   - Make existing survival sections conditional on `ANALYSIS_MODE == "survival"`
+   - Update helper functions to support both modes
+5. Move classification functionality FROM `cohort_analysis` TO `clinical_feature_importance_by_cohort`
+6. Update documentation
+7. Archive or remove `cohort_analysis` directory (or keep as reference)
 
