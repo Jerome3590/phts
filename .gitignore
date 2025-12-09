@@ -17,11 +17,33 @@ background/
 graft-loss/doc/
 
 */catboost_info/*
-data/*
+
+# Data files and artifacts - ignore all data files
+data/
+**/data/
+*.rds
+*.sas7bdat
+*.pkl
+*.npz
+*.RData
+*.Rhistory
+
+# But allow outputs and plots (must come after ignore patterns)
+!**/outputs/**/*.rds
+!**/outputs/**/*.csv
+!**/outputs/**/*.png
+!**/outputs/**/*.html
+!**/plots/**/*.rds
+!**/plots/**/*.csv
+!**/plots/**/*.png
+!**/plots/**/*.html
 
 papers/*
 
+# HTML files (but allow output HTML files)
 *.html
+!**/outputs/**/*.html
+!**/plots/**/*.html
 
 
 
