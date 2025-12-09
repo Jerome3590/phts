@@ -12,21 +12,14 @@ library(here)
 
 run_visualizations <- function(output_dir = NULL) {
   # Determine outputs directory if not provided
-  # Use current working directory and look for outputs/ relative to notebook location
+  # Each notebook runs from its own directory, so outputs/ should be relative to cwd
   if (is.null(output_dir)) {
-    # First check relative to current working directory (where notebook is typically run from)
+    current_dir <- getwd()
     if (dir.exists("outputs")) {
       output_dir <- "outputs"
     } else {
-      # Try to find outputs relative to common notebook locations
-      current_dir <- getwd()
-      if (basename(current_dir) == "feature_importance" && dir.exists("outputs")) {
-        output_dir <- "outputs"
-      } else if (dir.exists(file.path(current_dir, "outputs"))) {
-        output_dir <- file.path(current_dir, "outputs")
-      } else {
-        stop("Cannot find outputs directory. Expected 'outputs/' relative to current working directory: ", current_dir)
-      }
+      stop("Cannot find outputs directory. Expected 'outputs/' relative to current working directory: ", current_dir, 
+           "\nMake sure you're running the notebook from its directory (e.g., feature_importance/)")
     }
   }
   
