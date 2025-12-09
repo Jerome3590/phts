@@ -1,2 +1,0 @@
-"Workflow","Full_Cohort_Size","Full_Control_Size","Full_Target_Size","Full_Event_Rate","LASSO_AUC","LASSO_Precision","LASSO_Recall","CatBoost_AUC","CatBoost_Precision","CatBoost_Recall","CatBoost_RF_AUC","CatBoost_RF_Precision","CatBoost_RF_Recall","Traditional_RF_AUC","Traditional_RF_Precision","Traditional_RF_Recall"
-"Unified Event Classification",3761,3559,202,5.37,0.655,0.099,0.455,0.685,0.119,0.485,0.675,0.096,0.576,0.694,0.071,0.788
