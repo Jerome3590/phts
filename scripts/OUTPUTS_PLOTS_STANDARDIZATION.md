@@ -94,16 +94,17 @@ ggsave(file.path(plot_dir, "plot_name.png"), plot, width = 10, height = 8, dpi =
    - ✅ Updated to check clinical cohort outputs directory first
    - ✅ Consistent plots directory cleaning
 
-### 📝 To Update
+### ✅ Completed (All)
 
 1. **`graft-loss/clinical_feature_importance_by_cohort/graft_loss_clinical_feature_importance_by_cohort_MC_CV.ipynb`**
-   - Update visualization function call to check for `clinical_feature_importance_by_cohort/outputs` first
-   - Current: Checks `feature_importance/outputs` first (incorrect)
-   - Should check: `clinical_feature_importance_by_cohort/outputs` first
+   - ✅ Updated visualization function call to check for `clinical_feature_importance_by_cohort/outputs` first
+   - ✅ Falls back to `feature_importance/outputs` if not found
+   - ✅ Matches standardized pattern
 
 2. **Other Analysis Workflows**
-   - Review cohort_analysis, cohort_survival_analysis for consistent output directory patterns
-   - Ensure all use `outputs/` and `outputs/plots/` structure
+   - Note: cohort_analysis and cohort_survival_analysis use different output patterns (e.g., `ffa_outputs/`, `cohort_analysis/`)
+   - These are acceptable as they serve different purposes (FFA analysis, survival metrics)
+   - Main MC-CV workflows now follow consistent `outputs/` and `outputs/plots/` structure
 
 ## Notes
 
