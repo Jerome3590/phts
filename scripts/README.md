@@ -67,8 +67,7 @@ This structure matches the EC2 file structure:
 - Scripts are in `scripts/R/`, `scripts/py/`, `scripts/bash/`
 - Notebooks remain in their respective directories:
   - `graft-loss/feature_importance/` - Global feature importance analysis
-  - `graft-loss/clinical_feature_importance_by_cohort/` - Clinical cohort-specific feature importance
-  - `graft-loss/cohort_analysis/` - Cohort analysis and classification
+  - `graft-loss/cohort_analysis/` - Clinical cohort analysis and classification
 
 ## Scripts by Analysis Directory
 

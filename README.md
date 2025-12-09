@@ -35,8 +35,6 @@ graph TB
     GL_cohort --> GL_cohort_outputs[cohort outputs (survival + classification)]
 
     GL --> GL_lasso[lasso: Regularized regression]
-    GL --> GL_uni[univariate_analysis]
-    GL --> GL_unified[unified_cohort_survival_analysis]
 ```
 
 **File Organization:**
@@ -44,8 +42,6 @@ graph TB
 - **Notebooks**: Remain in their respective analysis directories:
   - `graft-loss/feature_importance/` - Global feature importance analysis (MC-CV)
   - `graft-loss/cohort_analysis/` - Clinical cohort analysis with dynamic survival/classification modes (MC-CV)
-  - `graft-loss/univariate_analysis/` - Univariate feature importance
-  - `graft-loss/unified_cohort_survival_analysis/` - Unified cohort survival analysis
   - `graft-loss/lasso/` - LASSO-based survival models
 - **Documentation**: Centralized in `docs/` folder, with root READMEs in each workflow directory
 - **EC2 Compatibility**: Structure matches EC2 file layout for seamless deployment
@@ -58,9 +54,7 @@ graph TB
 
     B --> C1[1. Global Feature Importance]
     B --> C2[2. Clinical Cohort Analysis]
-    B --> C3[3. Univariate Analysis]
-    B --> C4[4. Unified Cohort Survival]
-    B --> C5[5. LASSO Analysis]
+    B --> C5[3. LASSO Analysis]
 
     C1 --> C1a[MC-CV: RSF/CatBoost/AORSF]
     C1 --> C1b[3 Time Periods]
@@ -70,11 +64,6 @@ graph TB
     C2 --> C2b[CHD vs MyoCardio]
     C2 --> C2c[Modifiable Clinical Features]
     C2 --> C2d[Dynamic Mode Selection]
-
-    C3 --> C3a[Univariate Feature Importance]
-
-    C4 --> C4a[Unified Cohort Survival]
-    C4 --> C4b[Time-to-Event Features]
 
     C5 --> C5a[LASSO Regularization]
     C5 --> C5b[Scorecard Models]
@@ -86,9 +75,7 @@ graph TB
 |----------|----------|------|---------|--------------|
 | **1. Global Feature Importance** | `graft-loss/feature_importance/` | MC-CV Notebook | RSF, CatBoost, AORSF | 3 time periods, 100-1000 splits, global feature rankings |
 | **2. Clinical Cohort Analysis** | `graft-loss/cohort_analysis/` | MC-CV Notebook (Dynamic) | **Survival**: RSF, AORSF, CatBoost-Cox, XGBoost-Cox<br>**Classification**: LASSO, CatBoost, CatBoost RF, Traditional RF | CHD vs MyoCardio, modifiable clinical features |
-| **3. Univariate Analysis** | `graft-loss/univariate_analysis/` | Analysis | Univariate | Top features univariate importance |
-| **4. Unified Cohort Survival** | `graft-loss/unified_cohort_survival_analysis/` | Analysis | Survival models | Unified cohort time-to-event analysis |
-| **5. LASSO Analysis** | `graft-loss/lasso/` | Quarto Documents | LASSO | Regularized regression, scorecard models |
+| **3. LASSO Analysis** | `graft-loss/lasso/` | Quarto Documents | LASSO | Regularized regression, scorecard models |
 
 ## Key Components
 
@@ -166,21 +153,7 @@ Comprehensive Monte Carlo cross-validation feature-importance workflow replicati
   - See `graft-loss/cohort_analysis/README.md` for quick start
   - Detailed docs in `docs/cohort_analysis/`
 
-### 3. Univariate Analysis (`graft-loss/univariate_analysis/`)
-
-Univariate feature importance analysis:
-
-- **Purpose**: Top features univariate analysis
-- **Outputs**: `phts_top_features_univariate_analysis.html` - Univariate feature importance results
-
-### 4. Unified Cohort Survival Analysis (`graft-loss/unified_cohort_survival_analysis/`)
-
-Unified cohort survival analysis with time-to-event feature importance:
-
-- **Purpose**: Survival analysis across unified cohorts
-- **Outputs**: `sankey_time_to_event_unified_cohort_feature_importance.html` - Sankey diagram of feature importance by cohort
-
-### 5. LASSO Analysis (`graft-loss/lasso/`)
+### 3. LASSO Analysis (`graft-loss/lasso/`)
 
 LASSO-based survival analysis and scorecard models:
 

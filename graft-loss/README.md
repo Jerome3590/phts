@@ -32,21 +32,7 @@ The `graft-loss/` directory houses comprehensive analytical pipelines that repli
 
 **Quick Start**: See [`cohort_analysis/README.md`](cohort_analysis/README.md)
 
-### 3. Univariate Analysis (`univariate_analysis/`)
-
-**Purpose**: Univariate feature importance analysis
-
-- **Output**: `phts_top_features_univariate_analysis.html`
-- **Method**: Univariate statistical analysis
-
-### 4. Unified Cohort Survival Analysis (`unified_cohort_survival_analysis/`)
-
-**Purpose**: Unified cohort survival analysis with time-to-event feature importance
-
-- **Output**: `sankey_time_to_event_unified_cohort_feature_importance.html`
-- **Method**: Survival models across unified cohorts
-
-### 5. LASSO Analysis (`lasso/`)
+### 3. LASSO Analysis (`lasso/`)
 
 **Purpose**: LASSO-based survival analysis and scorecard models
 
@@ -103,8 +89,6 @@ graft-loss/
 │   ├── README.md                               # Workflow-specific README
 │   ├── graft_loss_clinical_cohort_analysis.ipynb
 │   └── outputs/                                # Analysis outputs
-├── univariate_analysis/                        # Univariate analysis
-├── unified_cohort_survival_analysis/           # Unified cohort survival
 └── lasso/                                      # LASSO analysis
 ```
 
