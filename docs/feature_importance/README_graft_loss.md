@@ -9,7 +9,6 @@ graph TB
     A[phts] --> B[graft-loss]
     A --> C[concordance_index]
     A --> D[eda]
-    A --> E[lasso]
     
     B --> B1[scripts]
     B1 --> B1a[00_setup.R]
@@ -45,9 +44,6 @@ graph TB
     
     D --> D1[phts_eda.qmd]
     D --> D2[phts_feature_importance.qmd]
-    
-    E --> E1[lasso_scorecard_model.qmd]
-    E --> E2[survival_analysis_lasso.qmd]
 ```
 
 ## Workflow Overview
@@ -117,14 +113,6 @@ Initial data exploration and feature importance analysis:
 
 - `phts_eda.qmd`: Exploratory data analysis
 - `phts_feature_importance.qmd`: Feature importance across methods
-
-### 4. LASSO Analysis (`lasso/`)
-
-LASSO-based survival analysis and scorecard models:
-
-- `lasso_scorecard_model.qmd`: Scorecard model development
-- `survival_analysis_lasso.qmd`: LASSO survival analysis
-- `methods_comparison_README.qmd`: Comparison of methods
 
 ## Pipeline Stages
 
@@ -389,8 +377,6 @@ This runs RSF, CatBoost, and AORSF feature selection across all three time perio
 - **Feature Importance**: Moved to `graft-loss/feature_importance/`
 - **Concordance Index**: New `concordance_index/` directory with documentation
 - **EDA**: Organized into `eda/` directory
-- **LASSO**: Organized into `lasso/` directory
-
 ### Enhanced Feature Selection
 
 - **Added AORSF**: Now includes AORSF alongside RSF and CatBoost

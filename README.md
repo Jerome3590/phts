@@ -32,9 +32,7 @@ graph TB
 
     GL --> GL_cohort[cohort_analysis: Clinical Cohort Analysis]
     GL_cohort --> GL_cohort_nb[graft_loss_clinical_cohort_analysis.ipynb]
-    GL_cohort --> GL_cohort_outputs[cohort outputs (survival + classification)]
-
-    GL --> GL_lasso[lasso: Regularized regression]
+    GL_cohort --> GL_cohort_outputs[cohort outputs: survival + classification]
 ```
 
 **File Organization:**
@@ -42,7 +40,6 @@ graph TB
 - **Notebooks**: Remain in their respective analysis directories:
   - `graft-loss/feature_importance/` - Global feature importance analysis (MC-CV)
   - `graft-loss/cohort_analysis/` - Clinical cohort analysis with dynamic survival/classification modes (MC-CV)
-  - `graft-loss/lasso/` - LASSO-based survival models
 - **Documentation**: Centralized in `docs/` folder, with root READMEs in each workflow directory
 - **EC2 Compatibility**: Structure matches EC2 file layout for seamless deployment
 
@@ -54,7 +51,6 @@ graph TB
 
     B --> C1[1. Global Feature Importance]
     B --> C2[2. Clinical Cohort Analysis]
-    B --> C5[3. LASSO Analysis]
 
     C1 --> C1a[MC-CV: RSF/CatBoost/AORSF]
     C1 --> C1b[3 Time Periods]
@@ -64,9 +60,6 @@ graph TB
     C2 --> C2b[CHD vs MyoCardio]
     C2 --> C2c[Modifiable Clinical Features]
     C2 --> C2d[Dynamic Mode Selection]
-
-    C5 --> C5a[LASSO Regularization]
-    C5 --> C5b[Scorecard Models]
 ```
 
 ## Analysis Pipelines Summary
@@ -75,7 +68,6 @@ graph TB
 |----------|----------|------|---------|--------------|
 | **1. Global Feature Importance** | `graft-loss/feature_importance/` | MC-CV Notebook | RSF, CatBoost, AORSF | 3 time periods, 100-1000 splits, global feature rankings |
 | **2. Clinical Cohort Analysis** | `graft-loss/cohort_analysis/` | MC-CV Notebook (Dynamic) | **Survival**: RSF, AORSF, CatBoost-Cox, XGBoost-Cox<br>**Classification**: LASSO, CatBoost, CatBoost RF, Traditional RF | CHD vs MyoCardio, modifiable clinical features |
-| **3. LASSO Analysis** | `graft-loss/lasso/` | Quarto Documents | LASSO | Regularized regression, scorecard models |
 
 ## Key Components
 
@@ -153,18 +145,7 @@ Comprehensive Monte Carlo cross-validation feature-importance workflow replicati
   - See `graft-loss/cohort_analysis/README.md` for quick start
   - Detailed docs in `docs/cohort_analysis/`
 
-### 3. LASSO Analysis (`graft-loss/lasso/`)
-
-LASSO-based survival analysis and scorecard models:
-
-- **Purpose**: Regularized regression approaches for survival modeling
-- **Key Documents**:
-  - `lasso_scorecard_model.html`: Scorecard model development
-  - `methods_comparison_README.html`: Comparison of LASSO vs other methods
-
-- **Outputs**: Scorecard models, LASSO survival models, method comparisons
-
-### 6. Concordance Index Implementation (`concordance_index/`)
+### 3. Concordance Index Implementation (`concordance_index/`)
 
 Robust C-index calculation with manual implementation:
 

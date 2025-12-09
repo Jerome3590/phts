@@ -32,15 +32,6 @@ The `graft-loss/` directory houses comprehensive analytical pipelines that repli
 
 **Quick Start**: See [`cohort_analysis/README.md`](cohort_analysis/README.md)
 
-### 3. LASSO Analysis (`lasso/`)
-
-**Purpose**: LASSO-based survival analysis and scorecard models
-
-- **Documents**: 
-  - `lasso_scorecard_model.html`
-  - `methods_comparison_README.html`
-- **Method**: Regularized regression approaches
-
 ## Common Methodology
 
 ### Monte Carlo Cross-Validation (MC-CV)
@@ -85,11 +76,10 @@ graft-loss/
 │   ├── README.md                               # Workflow-specific README
 │   ├── graft_loss_feature_importance_20_MC_CV.ipynb
 │   └── outputs/                                # Analysis outputs
-├── cohort_analysis/                            # Clinical cohort analysis
-│   ├── README.md                               # Workflow-specific README
-│   ├── graft_loss_clinical_cohort_analysis.ipynb
-│   └── outputs/                                # Analysis outputs
-└── lasso/                                      # LASSO analysis
+└── cohort_analysis/                            # Clinical cohort analysis
+    ├── README.md                               # Workflow-specific README
+    ├── graft_loss_clinical_cohort_analysis.ipynb
+    └── outputs/                                # Analysis outputs
 ```
 
 ## Scripts
