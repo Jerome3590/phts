@@ -25,9 +25,19 @@ run_visualizations <- function(output_dir = NULL) {
   }
   
   plot_dir <- file.path(output_dir, "plots")
+
+  # Clean existing plots directory to ensure fresh/clean visualizations
+  if (dir.exists(plot_dir)) {
+    plot_files <- list.files(plot_dir, full.names = TRUE, recursive = TRUE, include.dirs = FALSE)
+    if (length(plot_files) > 0) {
+      cat(sprintf("Cleaning %d existing plot files...\n", length(plot_files)))
+      file.remove(plot_files)
+    }
+    cat("✓ Plots directory cleaned\n")
+  }
   dir.create(plot_dir, showWarnings = FALSE, recursive = TRUE)
 
-cat("Reading MC-CV results...\n")
+  cat("Reading MC-CV results...\n")
 # Read MC-CV results
 cindex_comparison <- read_csv(file.path(output_dir, "cindex_comparison_mc_cv.csv"))
 
