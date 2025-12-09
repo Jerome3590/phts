@@ -29,16 +29,16 @@ run_visualizations <- function(output_dir = NULL) {
   if (dir.exists(plot_dir)) {
     plot_files <- list.files(plot_dir, full.names = TRUE, recursive = TRUE, include.dirs = FALSE)
     if (length(plot_files) > 0) {
-      cat(sprintf("Cleaning %d existing plot files...\n", length(plot_files)))
+      cat(sprintf("→ Cleaning %d existing plot files...\n", length(plot_files)))
       file.remove(plot_files)
     }
     cat("✓ Plots directory cleaned\n")
   }
   dir.create(plot_dir, showWarnings = FALSE, recursive = TRUE)
 
-  cat("Reading MC-CV results...\n")
-# Read MC-CV results
-cindex_comparison <- read_csv(file.path(output_dir, "cindex_comparison_mc_cv.csv"))
+  cat("→ Reading MC-CV results...\n")
+  # Read MC-CV results
+  cindex_comparison <- read_csv(file.path(output_dir, "cindex_comparison_mc_cv.csv"))
 
 # Read individual feature files for each method and period
 periods <- c("original", "full", "full_no_covid")
@@ -61,8 +61,8 @@ load_features <- function(period, method) {
   }
 }
 
-# Combine all feature files - read all 9 files (3 periods × 3 methods)
-cat("\nLoading feature importance files...\n")
+  # Combine all feature files - read all 9 files (3 periods × 3 methods)
+  cat("\n→ Loading feature importance files...\n")
 all_features <- map_df(periods, function(p) {
   map_df(methods, function(m) {
     load_features(p, m)
@@ -73,15 +73,15 @@ all_features <- map_df(periods, function(p) {
 # Verify we loaded all expected files
 expected_files <- length(periods) * length(methods)
 loaded_count <- length(unique(paste(all_features$period, all_features$method)))
-cat(sprintf("\nLoaded %d/%d expected feature files\n", loaded_count, expected_files))
-cat(sprintf("Total features loaded: %d\n", nrow(all_features)))
-cat(sprintf("Unique features: %d\n", length(unique(all_features$feature))))
+  cat(sprintf("✓ Loaded %d/%d expected feature files\n", loaded_count, expected_files))
+  cat(sprintf("  Total features loaded: %d\n", nrow(all_features)))
+  cat(sprintf("  Unique features: %d\n", length(unique(all_features$feature))))
 
 # ============================================================================
 # 1. FEATURE IMPORTANCE HEATMAP
 # ============================================================================
 
-cat("\nCreating feature importance heatmap...\n")
+  cat("\n→ Creating feature importance heatmap...\n")
 
 # Get all unique features across all methods and periods
 all_unique_features <- unique(all_features$feature)
@@ -238,7 +238,7 @@ cat("✓ Saved: feature_importance_heatmap.png\n")
 # 2. C-INDEX HEATMAP
 # ============================================================================
 
-cat("\nCreating C-index heatmap...\n")
+  cat("\n→ Creating C-index heatmap...\n")
 
 # Prepare data for C-index heatmap (both time-dependent and time-independent)
 cindex_heatmap_data <- bind_rows(
@@ -287,7 +287,7 @@ cat("✓ Saved: cindex_heatmap.png\n")
 # 3. SCALED FEATURE IMPORTANCE BAR CHART
 # ============================================================================
 
-cat("\nCreating scaled feature importance bar chart...\n")
+  cat("\n→ Creating scaled feature importance bar chart...\n")
 
 # Aggregate scaled importance by feature across all periods and methods
 # Sum the scaled importance values for each feature
@@ -332,7 +332,7 @@ cat("✓ Saved: scaled_feature_importance_bar_chart.png\n")
 # 4. C-INDEX TABLE
 # ============================================================================
 
-cat("\nCreating C-index table...\n")
+  cat("\n→ Creating C-index table...\n")
 
 # Create formatted table with both C-index types and confidence intervals
 cindex_table <- cindex_comparison %>%

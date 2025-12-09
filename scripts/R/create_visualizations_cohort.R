@@ -44,14 +44,14 @@ run_visualizations <- function(output_dir = NULL) {
   if (dir.exists(plot_dir)) {
     plot_files <- list.files(plot_dir, full.names = TRUE, recursive = TRUE, include.dirs = FALSE)
     if (length(plot_files) > 0) {
-      cat(sprintf("Cleaning %d existing plot files...\n", length(plot_files)))
+      cat(sprintf("→ Cleaning %d existing plot files...\n", length(plot_files)))
       file.remove(plot_files)
     }
     cat("✓ Plots directory cleaned\n")
   }
   dir.create(plot_dir, showWarnings = FALSE, recursive = TRUE)
 
-  cat("Reading cohort MC-CV results...\n")
+  cat("→ Reading cohort MC-CV results...\n")
   cindex_cohort_path <- file.path(output_dir, "cohort_model_cindex_mc_cv_modifiable_clinical.csv")
   best_feat_path     <- file.path(output_dir, "best_clinical_features_by_cohort_mc_cv.csv")
 
@@ -114,6 +114,7 @@ run_visualizations <- function(output_dir = NULL) {
   # ------------------------
   # Heatmap: feature vs Cohort×Model
   # ------------------------
+  cat("\n→ Creating feature importance heatmap...\n")
   all_unique_features <- unique(feature_matrix$feature)
   feature_order <- feature_matrix %>%
     dplyr::group_by(feature) %>%
@@ -146,6 +147,7 @@ run_visualizations <- function(output_dir = NULL) {
   # ------------------------
   # C-index heatmap (cohort × model)
   # ------------------------
+  cat("\n→ Creating C-index heatmap...\n")
   cindex_heatmap_data <- cindex_cohort %>%
     dplyr::select(Cohort, Model, C_Index_Mean) %>%
     dplyr::rename(cindex = C_Index_Mean)
@@ -167,6 +169,7 @@ run_visualizations <- function(output_dir = NULL) {
   # ------------------------
   # Scaled bar chart (Top 20 clinical features)
   # ------------------------
+  cat("\n→ Creating scaled feature importance bar chart...\n")
   scaled_feature_importance <- feature_matrix %>%
     dplyr::group_by(feature) %>%
     dplyr::summarise(
@@ -197,6 +200,7 @@ run_visualizations <- function(output_dir = NULL) {
   # ------------------------
   # C-index summary table
   # ------------------------
+  cat("\n→ Creating C-index table...\n")
   if (all(c("C_Index_CI_Lower", "C_Index_CI_Upper") %in% names(cindex_cohort))) {
     cindex_table <- cindex_cohort %>%
       dplyr::mutate(
@@ -245,6 +249,7 @@ run_visualizations <- function(output_dir = NULL) {
     dplyr::filter(!is.na(value) & value > 0)
 
   if (nrow(sankey_data) > 0) {
+    cat("\n→ Creating cohort clinical feature Sankey diagram...\n")
     all_nodes <- unique(c(sankey_data$Cohort, sankey_data$feature))
 
     links <- sankey_data %>%
@@ -281,10 +286,12 @@ run_visualizations <- function(output_dir = NULL) {
     )
     cat("✓ Saved: cohort_clinical_feature_sankey.html\n")
   } else {
-    cat("No data available to generate cohort Sankey diagram.\n")
+    cat("⚠ No data available to generate cohort Sankey diagram.\n")
   }
 
-  cat("\nVisualization summary:\n")
+  cat("\n========================================\n")
+  cat("Visualization Summary\n")
+  cat("========================================\n")
   cat(sprintf("Plots saved to: %s\n", normalizePath(plot_dir)))
 }
 
