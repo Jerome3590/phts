@@ -159,7 +159,7 @@ library(survAUC)
 
 set.seed(1997)
 
-source("survival_helpers.R")
+source("scripts/R/survival_helpers.R")
 
 ```
 

@@ -58,7 +58,7 @@ library(reticulate)
 
 set.seed(1997)
 
-source("classification_helpers.R")
+source("scripts/R/classification_helpers.R")
 
 ```
 
@@ -620,7 +620,9 @@ print('Myo/Cardio CatBoost RF (Python) saved to mc_rf_model.json and mc_rf_test.
 
 import os
 from catboost import CatBoostClassifier
-from ffa_analysis.catboost_axp_explainer import PathConfig, analyze_model, AnalysisConfig
+import sys
+sys.path.insert(0, 'scripts/py')
+from catboost_axp_explainer import PathConfig, analyze_model, AnalysisConfig
 
 base_dir = '.'
 test_model_json = os.path.join(base_dir, 'chd_catboost_model.json')
@@ -658,7 +660,9 @@ else:
 
 import os
 from catboost import CatBoostClassifier
-from ffa_analysis.catboost_axp_explainer import PathConfig, analyze_model, AnalysisConfig
+import sys
+sys.path.insert(0, 'scripts/py')
+from catboost_axp_explainer import PathConfig, analyze_model, AnalysisConfig
 
 base_dir = '.'
 cohorts = [

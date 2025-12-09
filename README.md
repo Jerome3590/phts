@@ -15,52 +15,100 @@ The PHTS Graft Loss Prediction Pipeline is a complete end-to-end analytical fram
 
 ```mermaid
 graph TB
-    ROOT[phts] --> GL[graft-loss]
+    ROOT[phts] --> SCRIPTS[scripts/]
+    ROOT --> GL[graft-loss]
     ROOT --> CI[concordance_index]
     ROOT --> EDA[eda]
     ROOT --> LMTP[lmtp-workshop]
     ROOT --> DL[survival_analysis_deep_learning_asa]
 
-    GL --> GL_feat[feature_importance: Global by period]
+    SCRIPTS --> SCRIPTS_R[R/ - R scripts]
+    SCRIPTS --> SCRIPTS_PY[py/ - Python scripts]
+    SCRIPTS --> SCRIPTS_BASH[bash/ - Bash scripts]
+
+    GL --> GL_feat[feature_importance: Global MC-CV]
     GL_feat --> GL_nb[graft_loss_feature_importance_20_MC_CV.ipynb]
-    GL_feat --> GL_script[replicate_20_features_MC_CV.R]
     GL_feat --> GL_docs[MC-CV READMEs + outputs]
 
     GL --> GL_clin[clinical_feature_importance_by_cohort]
     GL_clin --> GL_clin_nb[graft_loss_clinical_feature_importance_by_cohort_MC_CV.ipynb]
     GL_clin --> GL_clin_outputs[cohort outputs]
 
-    GL --> GL_cohort[cohort_analysis]
+    GL --> GL_cohort[cohort_analysis: Event classification]
+    GL_cohort --> GL_cohort_qmd[Multiple .qmd analyses]
+    GL_cohort --> GL_cohort_ffa[FFA analysis]
+
     GL --> GL_surv[cohort_survival_analysis]
-    GL --> GL_lasso[lasso]
+    GL_surv --> GL_surv_qmd[Survival .qmd analyses]
+    GL_surv --> GL_surv_causal[Causal analysis LMTP/FFA]
+
+    GL --> GL_lasso[lasso: Regularized regression]
     GL --> GL_uni[univariate_analysis]
     GL --> GL_unified[unified_cohort_survival_analysis]
 ```
 
+**File Organization:**
+- **Scripts**: All executable scripts are in `scripts/` organized by language (`R/`, `py/`, `bash/`)
+- **Notebooks**: Remain in their respective analysis directories:
+  - `graft-loss/feature_importance/` - Global feature importance analysis (MC-CV)
+  - `graft-loss/clinical_feature_importance_by_cohort/` - Clinical cohort-specific feature importance (MC-CV)
+  - `graft-loss/cohort_analysis/` - Cohort analysis and event classification (Quarto)
+  - `graft-loss/cohort_survival_analysis/` - Cohort survival analysis and causal inference (Quarto)
+  - `graft-loss/univariate_analysis/` - Univariate feature importance
+  - `graft-loss/unified_cohort_survival_analysis/` - Unified cohort survival analysis
+  - `graft-loss/lasso/` - LASSO-based survival models
+- **EC2 Compatibility**: Structure matches EC2 file layout for seamless deployment
+
 ## Workflow Overview
 
 ```mermaid
-graph LR
-    A[Data Preparation] --> B[Feature Selection]
-    B --> C_global[Global by period MC-CV ]
-    B --> C_cohort[Clinical Cohort MC-CV]
+graph TB
+    A[Data Preparation] --> B[Analysis Pipelines]
 
-    C_global --> Cg1[RSF]
-    C_global --> Cg2[CatBoost]
-    C_global --> Cg3[AORSF]
+    B --> C1[1. Global Feature Importance]
+    B --> C2[2. Clinical Cohort Feature Importance]
+    B --> C3[3. Cohort Analysis]
+    B --> C4[4. Cohort Survival Analysis]
+    B --> C5[5. Univariate Analysis]
+    B --> C6[6. Unified Cohort Survival]
+    B --> C7[7. LASSO Analysis]
 
-    C_cohort --> Cc1[RSF]
-    C_cohort --> Cc2[AORSF]
-    C_cohort --> Cc3[CatBoost-Cox]
-    C_cohort --> Cc4[XGBoost-Cox]
-    C_cohort --> Cc5[XGBoost-Cox RF]
+    C1 --> C1a[MC-CV: RSF/CatBoost/AORSF]
+    C1 --> C1b[3 Time Periods]
+    C1 --> C1c[Global Feature Rankings]
 
-    C_global --> D_global[Evaluation: C-index, feature importance]
-    C_cohort --> D_cohort[Evaluation: C-index, clinical feature importance]
+    C2 --> C2a[MC-CV: 5 Methods]
+    C2 --> C2b[CHD vs MyoCardio]
+    C2 --> C2c[Modifiable Clinical Features]
 
-    D_global --> E_global[Global outputs: By period]
-    D_cohort --> E_cohort[Cohort clinical outputs: By cohort]
+    C3 --> C3a[Event Classification]
+    C3 --> C3b[3 COAs: Observed/IPCW]
+    C3 --> C3c[FFA Analysis]
+
+    C4 --> C4a[Survival Modeling]
+    C4 --> C4b[Causal Analysis LMTP/FFA]
+    C4 --> C4c[Method Comparisons]
+
+    C5 --> C5a[Univariate Feature Importance]
+
+    C6 --> C6a[Unified Cohort Survival]
+    C6 --> C6b[Time-to-Event Features]
+
+    C7 --> C7a[LASSO Regularization]
+    C7 --> C7b[Scorecard Models]
 ```
+
+## Analysis Pipelines Summary
+
+| Pipeline | Location | Type | Methods | Key Features |
+|----------|----------|------|---------|--------------|
+| **1. Global Feature Importance** | `graft-loss/feature_importance/` | MC-CV Notebook | RSF, CatBoost, AORSF | 3 time periods, 100-1000 splits, global feature rankings |
+| **2. Clinical Cohort Feature Importance** | `graft-loss/clinical_feature_importance_by_cohort/` | MC-CV Notebook | RSF, AORSF, CatBoost-Cox, XGBoost-Cox | CHD vs MyoCardio, modifiable clinical features |
+| **3. Cohort Analysis** | `graft-loss/cohort_analysis/` | Quarto Documents | Multiple | Event classification, 3 COAs, FFA analysis |
+| **4. Cohort Survival Analysis** | `graft-loss/cohort_survival_analysis/` | Quarto Documents | Survival models | Causal analysis (LMTP/FFA), method comparisons |
+| **5. Univariate Analysis** | `graft-loss/univariate_analysis/` | Analysis | Univariate | Top features univariate importance |
+| **6. Unified Cohort Survival** | `graft-loss/unified_cohort_survival_analysis/` | Analysis | Survival models | Unified cohort time-to-event analysis |
+| **7. LASSO Analysis** | `graft-loss/lasso/` | Quarto Documents | LASSO | Regularized regression, scorecard models |
 
 ## Key Components
 
@@ -68,40 +116,126 @@ graph LR
 
 Comprehensive Monte Carlo cross-validation feature-importance workflow replicating the original Wisotzkey study and extending it:
 
-- **Notebook:** `graft_loss_feature_importance_20_MC_CV.ipynb`  
-  - Runs RSF, CatBoost, and AORSF with stratified 75/25 train/test MC-CV splits.  
-  - Supports 100-split development runs and 1000-split publication-grade runs.  
+- **Notebook:** `graft_loss_feature_importance_20_MC_CV.ipynb`
+  - Runs RSF, CatBoost, and AORSF with stratified 75/25 train/test MC-CV splits.
+  - Supports 100-split development runs and 1000-split publication-grade runs.
   - Evaluates time-dependent and Harrell C-index on held-out test data.
+  - Sources visualization scripts from `scripts/R/create_visualizations.R`
 
-- **Script:** `replicate_20_features_MC_CV.R`  
-  - Scripted version of the same MC-CV pipeline (for EC2 / batch runs).
+- **Scripts** (in `scripts/R/`):
+  - `create_visualizations.R`: Creates feature importance heatmaps and C-index visualizations
+  - `check_variables.R`: Validates DONISCH and CPBYPASS variables
+  - `check_cpbypass_iqr.R`: Calculates CPBYPASS statistics by period
 
-- **Outputs (`graft-loss/feature_importance/outputs/`):**  
-  - Top 20 features per method per period (`*_rsf_top20.csv`, `*_catboost_top20.csv`, `*_aorsf_top20.csv`).  
+- **Outputs (`graft-loss/feature_importance/outputs/`):**
+  - Top 20 features per method per period (`*_rsf_top20.csv`, `*_catboost_top20.csv`, `*_aorsf_top20.csv`).
   - C-index comparison tables and summary statistics across methods and cohorts.
 
 ### 2. Clinical Cohort Feature Importance (`graft-loss/clinical_feature_importance_by_cohort/`)
 
 Clinical, cohort-specific MC‑CV using **modifiable clinical features** and multiple survival models:
 
-- **Notebook:** `graft_loss_clinical_feature_importance_by_cohort_MC_CV.ipynb`  
+- **Notebook:** `graft_loss_clinical_feature_importance_by_cohort_MC_CV.ipynb`
   - Defines **two etiologic cohorts**:
-    - CHD: `primary_etiology == "Congenital HD"`  
-    - MyoCardio: `primary_etiology %in% c("Cardiomyopathy", "Myocarditis")`  
-  - Restricts predictors to a curated set of **modifiable clinical features** (renal, liver, nutrition, respiratory, support devices, immunology).  
+    - CHD: `primary_etiology == "Congenital HD"`
+    - MyoCardio: `primary_etiology %in% c("Cardiomyopathy", "Myocarditis")`
+  - Restricts predictors to a curated set of **modifiable clinical features** (renal, liver, nutrition, respiratory, support devices, immunology).
   - Runs **within-cohort MC‑CV** (80/20 train/test splits, stratified by outcome) with:
-    - RSF (ranger)  
-    - AORSF  
-    - CatBoost‑Cox  
-    - XGBoost‑Cox (boosting)  
-    - XGBoost‑Cox RF mode (many trees via `num_parallel_tree`)  
+    - RSF (ranger)
+    - AORSF
+    - CatBoost‑Cox
+    - XGBoost‑Cox (boosting)
+    - XGBoost‑Cox RF mode (many trees via `num_parallel_tree`)
   - Selects the **best‑C‑index model per cohort** and reports its top clinical features, annotated with category and modifiability.
+  - Sources visualization scripts from `scripts/R/create_visualizations_cohort.R`
 
-- **Outputs (`graft-loss/clinical_feature_importance_by_cohort/outputs/`):**  
-  - `cohort_model_cindex_mc_cv_modifiable_clinical.csv` – C‑index summary per cohort × model.  
+- **Scripts** (in `scripts/R/`):
+  - `create_visualizations_cohort.R`: Creates cohort-specific visualizations including Sankey diagrams
+  - `replicate_20_features_MC_CV.R`: Monte Carlo cross-validation script for clinical cohort analysis
+
+- **Outputs (`graft-loss/clinical_feature_importance_by_cohort/outputs/`):**
+  - `cohort_model_cindex_mc_cv_modifiable_clinical.csv` – C‑index summary per cohort × model.
   - `best_clinical_features_by_cohort_mc_cv.csv` – Top modifiable clinical features for the best model in each cohort.
 
-### 3. Concordance Index Implementation (`concordance_index/`)
+### 3. Cohort Analysis (`graft-loss/cohort_analysis/`)
+
+Comprehensive cohort-based analysis with multiple outcome definitions and censoring strategies:
+
+- **Purpose**: Event classification and cohort workflows with explicit 1-year target outcomes
+- **Key Documents**:
+  - `phts_dataset.qmd`: Prepares three Cohort Analytic Options (COAs) with different censoring strategies
+  - `event_classification.qmd`: Event classification analysis
+  - `cohort_event_classification.qmd`: Cohort-specific event classification
+  - `cohort_event_model_ffa.qmd`: Fast and Frugal Analysis (FFA) for cohort models
+  - `cohort_survival_analysis.qmd`: Survival analysis by cohort
+  - `phts_feature_importance.qmd`: Feature importance analysis
+  - `workflow_comparison_summary.qmd`: Comparison of different workflow approaches
+
+- **Cohort Analytic Options (COAs)**:
+  - **COA1**: Observed-only labels (drops patients censored before 1 year)
+  - **COA2**: Observed-only labels restricted to `txpl_year < 2023` (guaranteed 1-year follow-up)
+  - **COA3**: IPCW-weighted labels (inverse-probability-of-censoring weighting)
+
+- **Cohorts**: CHD (Congenital HD) vs Myocarditis/Cardiomyopathy
+- **Outputs**: Classification summaries, workflow comparisons, FFA rule metrics, Sankey diagrams
+
+- **Scripts** (in `scripts/R/`):
+  - `classification_helpers.R`: Helper functions for cohort classification
+
+- **Scripts** (in `scripts/py/`):
+  - `ffa_analysis.py`: Fast and Frugal Analysis pipeline
+  - `catboost_axp_explainer.py`: CatBoost explainer for FFA
+  - `catboost_axp_explainer2.py`: Alternative CatBoost explainer
+
+### 4. Cohort Survival Analysis (`graft-loss/cohort_survival_analysis/`)
+
+Survival modeling with cohort-specific approaches and causal analysis:
+
+- **Purpose**: Survival analysis comparing `graft-loss` vs `cohort_analysis` methodologies
+- **Key Documents**:
+  - `survival_analysis.qmd`: Main survival analysis
+  - `cohort_survival_analysis.qmd`: Cohort-specific survival analysis
+  - `phts_dataset.qmd`: Dataset preparation
+  - `methods_comparison_README.qmd`: Detailed comparison of methodologies
+  - `causal_analysis/causal_analysis.qmd`: Causal analysis using LMTP and FFA
+
+- **Causal Analysis** (`causal_analysis/`):
+  - **LMTP (Longitudinal Modified Treatment Policies)**: Population-level causal effects of treatment policies
+  - **FFA (Formal Feature Attribution)**: Model-level explanations and rule patterns
+  - Combines predictive survival modeling with causal estimands
+
+- **Outputs**: Survival metrics, model comparisons, causal effect estimates, feature attribution
+
+- **Scripts** (in `scripts/R/`):
+  - `survival_helpers.R`: Helper functions for survival analysis
+
+### 5. Univariate Analysis (`graft-loss/univariate_analysis/`)
+
+Univariate feature importance analysis:
+
+- **Purpose**: Top features univariate analysis
+- **Outputs**: `phts_top_features_univariate_analysis.html` - Univariate feature importance results
+
+### 6. Unified Cohort Survival Analysis (`graft-loss/unified_cohort_survival_analysis/`)
+
+Unified cohort survival analysis with time-to-event feature importance:
+
+- **Purpose**: Survival analysis across unified cohorts
+- **Outputs**: `sankey_time_to_event_unified_cohort_feature_importance.html` - Sankey diagram of feature importance by cohort
+
+### 7. LASSO Analysis (`graft-loss/lasso/`)
+
+LASSO-based survival analysis and scorecard models:
+
+- **Purpose**: Regularized regression approaches for survival modeling
+- **Key Documents**:
+  - `lasso_scorecard_model.qmd`: Scorecard model development
+  - `survival_analysis_lasso.qmd`: LASSO survival analysis
+  - `methods_comparison_README.qmd`: Comparison of LASSO vs other methods
+
+- **Outputs**: Scorecard models, LASSO survival models, method comparisons
+
+### 8. Concordance Index Implementation (`concordance_index/`)
 
 Robust C-index calculation with manual implementation:
 
@@ -110,20 +244,12 @@ Robust C-index calculation with manual implementation:
 - **Documentation**: Comprehensive README explaining methodology, issues, and validation
 - **Test Files**: Extensive testing of `riskRegression::Score()` format requirements
 
-### 4. Exploratory Data Analysis (`eda/`)
+### 9. Exploratory Data Analysis (`eda/`)
 
 Initial data exploration and feature importance analysis:
 
 - `phts_eda.qmd`: Exploratory data analysis
 - `phts_feature_importance.qmd`: Feature importance across methods
-
-### 5. LASSO Analysis (`lasso/`)
-
-LASSO-based survival analysis and scorecard models:
-
-- `lasso_scorecard_model.qmd`: Scorecard model development
-- `survival_analysis_lasso.qmd`: LASSO survival analysis
-- `methods_comparison_README.qmd`: Comparison of methods
 
 ### 6. Parallel Processing Implementation (`graft-loss/graft-loss-parallel-processing/`)
 
@@ -169,6 +295,16 @@ LASSO-based survival analysis and scorecard models:
 **Filtering Options**:
 - `EXCLUDE_COVID=1`: Excludes 2020-2023 (approximate COVID period)
 - `ORIGINAL_STUDY=1`: Restricts to 2010-2019 (original study period)
+
+**Variable Processing** (applied before modeling):
+- **CPBYPASS (Cardiopulmonary Bypass Time)**: Summary statistics are calculated (median, IQR, non-missing counts), then the variable is **removed from the dataset** and excluded from all modeling analyses
+- **DONISCH (Donor Ischemic Time)**: Converted from continuous variable (minutes) to **dichotomous variable**:
+  - `donisch = 1` if donor ischemic time > 4 hours (>240 minutes)
+  - `donisch = 0` if donor ischemic time ≤ 4 hours (≤240 minutes)
+  - Variable name remains `donisch` (now binary: 0/1 instead of continuous minutes)
+  - This transformation is applied before defining time periods and running all analyses
+
+**Note**: The dichotomous `donisch` variable (not CPBYPASS) will appear in feature importance results.
 
 ### Stage 3: Resampling and Cross-Validation
 
@@ -351,15 +487,41 @@ This runs RSF, CatBoost, and AORSF feature selection across all three time perio
 - `model_mc_importance_*.csv`: Feature importance across splits
 - `final_model_choice.csv`: Selected model with rationale
 
-### Feature Importance Outputs (`graft-loss/feature_importance/outputs/`)
+### Feature Importance Outputs
 
+**Global Feature Importance** (`graft-loss/feature_importance/outputs/`):
 - `*_rsf_top20.csv`: RSF top 20 features (with both C-index types)
 - `*_catboost_top20.csv`: CatBoost top 20 features (with both C-index types)
 - `*_aorsf_top20.csv`: AORSF top 20 features (with both C-index types)
-- `*_comparison_all_periods.csv`: Features ranked across periods
-- `*_comparison_wide.csv`: Wide format comparisons
-- `cindex_comparison_all_methods.csv`: Combined C-index comparison
-- `summary_statistics.csv`: Sample sizes, event rates, C-indexes
+- `cindex_comparison_mc_cv.csv`: Combined C-index comparison
+- `summary_statistics_mc_cv.csv`: Sample sizes, event rates, C-indexes
+- `plots/feature_importance_heatmap.png`: Feature importance heatmap
+- `plots/cindex_heatmap.png`: C-index heatmap
+- `plots/scaled_feature_importance_bar_chart.png`: Scaled feature importance bar chart
+- `plots/cindex_table.csv`: C-index table with confidence intervals
+
+**Clinical Cohort Feature Importance** (`graft-loss/clinical_feature_importance_by_cohort/outputs/`):
+- `cohort_model_cindex_mc_cv_modifiable_clinical.csv`: C-index summary per cohort × model
+- `best_clinical_features_by_cohort_mc_cv.csv`: Top modifiable clinical features per cohort
+- `plots/cohort_clinical_feature_sankey.html`: Sankey diagram of cohort → clinical features
+
+**Cohort Analysis** (`graft-loss/cohort_analysis/`):
+- `preprocessed_model_data_coa1.csv`: COA1 - Observed-only labels
+- `preprocessed_model_data_coa2.csv`: COA2 - Observed-only (txpl_year < 2023)
+- `preprocessed_model_data_coa3.csv`: COA3 - IPCW-weighted labels
+- `cohort_event_classification_summary.csv`: Event classification summary
+- `workflow_comparison_summary.csv`: Workflow comparison results
+- `sankey_cohort_classification_feature_importance.html`: Sankey diagram
+
+**Cohort Survival Analysis** (`graft-loss/cohort_survival_analysis/metrics/`):
+- Survival model metrics and comparisons
+- Causal analysis results (LMTP/FFA)
+
+**Univariate Analysis** (`graft-loss/univariate_analysis/`):
+- `phts_top_features_univariate_analysis.html`: Univariate feature importance
+
+**Unified Cohort Survival** (`graft-loss/unified_cohort_survival_analysis/`):
+- `sankey_time_to_event_unified_cohort_feature_importance.html`: Time-to-event feature importance Sankey
 
 ### Documentation (`graft-loss/doc/`)
 
@@ -437,6 +599,11 @@ This runs RSF, CatBoost, and AORSF feature selection across all three time perio
 
 ### Project Reorganization
 
+- **Scripts Directory**: All executable scripts now organized in `scripts/` by language:
+  - `scripts/R/`: R scripts (visualizations, helpers, analysis)
+  - `scripts/py/`: Python scripts (FFA analysis, explainers)
+  - `scripts/bash/`: Bash scripts (automation)
+- **EC2 Compatibility**: File structure matches EC2 layout for seamless deployment
 - **Feature Importance**: Moved to `graft-loss/feature_importance/`
 - **Concordance Index**: New `concordance_index/` directory with documentation
 - **EDA**: Organized into `eda/` directory

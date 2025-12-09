@@ -18,12 +18,34 @@ A complete, runnable Jupyter notebook (R kernel) that implements Monte Carlo Cro
 | **2. Helper Functions** | 2 | Data preparation and C-index calculation |
 | **3. MC-CV Function** | 2 | Main cross-validation implementation |
 | **4. Load Data** | 3 | Load PHTS data and define time periods |
-| **5. Run Analysis** | 2 | Execute MC-CV for all methods/periods |
-| **6. Save Results** | 3 | Create and save summary tables |
-| **7. Sync to S3** | 1 | Upload results and code to S3 |
+| **5. Remove CPBYPASS and Add Dichotomous DONISCH** | 1 | Remove CPBYPASS variable; convert DONISCH to dichotomous (>4 hours = 1, ≤4 hours = 0) |
+| **6. Run Analysis** | 2 | Execute MC-CV for all methods/periods |
+| **7. Save Summary Results** | 1 | Create and save summary tables |
 | **8. Visualize Results** | 1 | Create feature importance heatmaps, C-index heatmaps, and scaled bar charts |
+| **9. Sync to S3** | 1 | Upload results and code to S3 |
 
-**Total:** 15 code cells + 5 markdown cells = 20 cells
+**Total:** 16 code cells + 9 markdown cells = 25 cells
+
+---
+
+## 📊 Variable Processing
+
+**Important:** Before running analyses, the notebook processes two key variables:
+
+1. **CPBYPASS (Cardiopulmonary Bypass Time):**
+   - Summary statistics are calculated (median, IQR, non-missing counts)
+   - **Removed from dataset** - CPBYPASS is excluded from all modeling analyses
+   - This variable is not included in feature importance calculations
+
+2. **DONISCH (Donor Ischemic Time):**
+   - Converted from continuous variable (minutes) to **dichotomous variable**
+   - **New dichotomous DONISCH:**
+     - `donisch = 1` if donor ischemic time > 4 hours (>240 minutes)
+     - `donisch = 0` if donor ischemic time ≤ 4 hours (≤240 minutes)
+   - Variable name remains `donisch` (now binary: 0/1 instead of continuous minutes)
+   - This transformation is applied before defining time periods and running all analyses
+
+**Note:** The dichotomous `donisch` variable (not CPBYPASS) will appear in feature importance results.
 
 ---
 
@@ -147,7 +169,7 @@ Successful splits: 485 / 500
 --- Results for RSF (original) ---
 Time-Dependent C-Index: 0.7456 ± 0.0234 (95% CI: 0.7010 - 0.7902)
 Time-Independent C-Index: 0.7589 ± 0.0198 (95% CI: 0.7201 - 0.7977)
-Top 5 features: cpbypass, dlist, prim_dx, txecmo, sec_dx
+Top 5 features: donisch, dlist, prim_dx, txecmo, sec_dx
 ```
 
 ### Output Files

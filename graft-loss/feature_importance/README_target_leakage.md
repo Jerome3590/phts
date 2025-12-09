@@ -105,7 +105,7 @@ We exclude post-event and post-transplant variables that contain information abo
 
 ## Implementation
 
-The exclusion logic is implemented in `prepare_modeling_data()` function in `replicate_20_features.R`:
+The exclusion logic is implemented in `prepare_modeling_data()` function in `scripts/R/replicate_20_features_MC_CV.R`:
 
 ```r
 # Exact variable names to exclude
@@ -238,8 +238,8 @@ After running the updated script, verify:
 
 ## Related Files
 
-- **Implementation**: `graft-loss/feature_importance/replicate_20_features.R` (function `prepare_modeling_data()`)
-- **Reference**: `graft-loss/cohort_survival_analysis/survival_helpers.R` (function `get_survival_leakage_keywords()`)
+- **Implementation**: `scripts/R/replicate_20_features_MC_CV.R` (function `prepare_modeling_data()`)
+- **Reference**: `scripts/R/survival_helpers.R` (function `get_survival_leakage_keywords()`)
 - **Notebook**: `graft-loss/feature_importance/graft_loss_feature_importance_20.ipynb` (Cell 7 - needs manual update)
 
 ## Notes

@@ -20,7 +20,7 @@ tmux new -s replication
 # Run analysis
 export N_WORKERS=30
 cd /path/to/phts
-time Rscript graft-loss/feature_importance/replicate_20_features_MC_CV.R 2>&1 | tee replication_1000.log
+time Rscript scripts/R/replicate_20_features_MC_CV.R 2>&1 | tee replication_1000.log
 
 # Detach: Ctrl+B then D
 # Reattach: tmux attach -t replication
@@ -39,6 +39,26 @@ ssh -i your-key.pem -L 8888:localhost:8888 ec2-user@your-ec2-ip
 # Navigate to: graft_loss_feature_importance_20_MC_CV.ipynb
 # Click: Run All
 ```
+
+---
+
+## 📊 Variable Processing
+
+**Important preprocessing steps applied before modeling:**
+
+1. **CPBYPASS (Cardiopulmonary Bypass Time):**
+   - Summary statistics calculated (median, IQR, non-missing counts)
+   - **Removed from dataset** - CPBYPASS is excluded from all modeling analyses
+
+2. **DONISCH (Donor Ischemic Time):**
+   - Converted from continuous variable (minutes) to **dichotomous variable**
+   - **New dichotomous DONISCH:**
+     - `donisch = 1` if donor ischemic time > 4 hours (>240 minutes)
+     - `donisch = 0` if donor ischemic time ≤ 4 hours (≤240 minutes)
+   - Variable name remains `donisch` (now binary: 0/1 instead of continuous minutes)
+   - This transformation is applied before defining time periods and running all analyses
+
+**Note:** The dichotomous `donisch` variable (not CPBYPASS) will appear in feature importance results.
 
 ---
 
@@ -158,7 +178,7 @@ AORSF    | 0.76     | 0.80     | 0.77
 Common across all models:
 1. Recipient age at transplant
 2. Donor age
-3. Cold ischemia time
+3. Donor ischemic time (dichotomous: >4 hours vs ≤4 hours)
 4. PRA (Panel Reactive Antibody)
 5. Previous transplants
 6. Diagnosis group
@@ -166,6 +186,8 @@ Common across all models:
 8. ECMO support
 9. Waiting time
 10. Blood type mismatch
+
+**Note:** CPBYPASS (cardiopulmonary bypass time) is excluded from all analyses. DONISCH (donor ischemic time) is converted to a dichotomous variable (>4 hours = 1, ≤4 hours = 0) before modeling.
 
 ---
 
@@ -212,7 +234,7 @@ export N_WORKERS=30
 # Time first period
 time Rscript -e "
 n_mc_splits <- 25
-source('graft-loss/feature_importance/replicate_20_features_MC_CV.R')
+source('scripts/R/replicate_20_features_MC_CV.R')
 "
 # Should complete in 2-3 minutes
 # If slower, check CPU/memory/disk

@@ -65,7 +65,7 @@ library(pROC)
 library(survival)
 
 # Load helper functions from helpers.R
-source("classification_helpers.R")
+source("scripts/R/classification_helpers.R")
 ```
 
 

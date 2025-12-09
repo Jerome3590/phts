@@ -186,7 +186,7 @@ library(here)
 
 set.seed(1997)
 
-source("classification_helpers.R")
+source("scripts/R/classification_helpers.R")
 
 ```
 

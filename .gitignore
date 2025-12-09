@@ -3,8 +3,9 @@
 .Rhistory
 *.Rproj
 .secret
-.vs/*
-.vscode/*
+.vs/
+.vscode/
+**/.vscode/
 
 *.txt
 *.zip
