@@ -154,6 +154,8 @@ Clinical, cohort-specific MC‑CV using **modifiable clinical features** and mul
   - `replicate_20_features_MC_CV.R`: Monte Carlo cross-validation script for clinical cohort analysis
 
 - **Outputs (`graft-loss/clinical_feature_importance_by_cohort/outputs/`):**
+  - **Survival Mode**: `cohort_model_cindex_mc_cv_modifiable_clinical.csv`, `best_clinical_features_by_cohort_mc_cv.csv`
+  - **Classification Mode**: `classification_mc_cv/cohort_classification_metrics_mc_cv.csv`
   - `cohort_model_cindex_mc_cv_modifiable_clinical.csv` – C‑index summary per cohort × model.
   - `best_clinical_features_by_cohort_mc_cv.csv` – Top modifiable clinical features for the best model in each cohort.
 
