@@ -92,47 +92,82 @@ Comparing functionality between `clinical_feature_importance_by_cohort` and `coh
 
 ## Consolidation Strategy
 
-### Option 1: Merge into cohort_analysis (Recommended)
+### Option 1: Merge into clinical_feature_importance_by_cohort (RECOMMENDED)
 
-**Add to cohort_analysis:**
-1. MC-CV workflow for survival models (from `clinical_feature_importance_by_cohort`)
-2. XGBoost-Cox models (boosting and RF mode)
-3. Modifiable clinical features-only workflow option
-4. C-index aggregation with confidence intervals across MC-CV splits
+**Why this makes more sense:**
+1. ✅ **Better structure** - Single, well-organized Jupyter notebook vs multiple Quarto documents
+2. ✅ **More sophisticated methodology** - Already has MC-CV workflow (the critical missing piece)
+3. ✅ **Survival focus** - Aligns with original study methodology (survival analysis)
+4. ✅ **Modifiable features focus** - Clinical, actionable focus is the primary goal
+5. ✅ **Easier to extend** - Notebook format is more flexible for adding workflows
+6. ✅ **Existing infrastructure** - Helper functions, visualization scripts already in place
 
-**Keep from cohort_analysis:**
-- All existing functionality (FFA, COAs, classification models, etc.)
+**Add to clinical_feature_importance_by_cohort:**
+1. Classification models (from `cohort_analysis`):
+   - LASSO (logistic)
+   - CatBoost classification
+   - CatBoost RF classification
+   - Traditional RF classification
+2. FFA workflow (from `cohort_analysis`)
+3. 3 COAs (from `cohort_analysis`):
+   - COA1: Observed-only labels
+   - COA2: Observed-only (txpl_year < 2023)
+   - COA3: IPCW-weighted labels
+4. IPCW weighting support (from `cohort_analysis`)
+5. Event classification workflow (1-year binary outcome)
 
-**Result:** `cohort_analysis` becomes comprehensive workflow with both:
-- Classification models (existing)
-- Survival models with MC-CV (from `clinical_feature_importance_by_cohort`)
-- FFA workflow (existing)
-- 3 COAs (existing)
-- Modifiable features option (enhanced)
+**Keep from clinical_feature_importance_by_cohort:**
+- MC-CV workflow for survival models (core methodology)
+- Survival models (RSF, AORSF, CatBoost-Cox, XGBoost-Cox, XGBoost-Cox RF)
+- Modifiable clinical features focus
+- C-index aggregation with confidence intervals
+- Existing visualization and helper functions
 
-### Option 2: Keep Separate (Not Recommended)
+**Result:** `clinical_feature_importance_by_cohort` becomes comprehensive cohort analysis pipeline with:
+- Survival models with MC-CV (existing - core)
+- Classification models (add from `cohort_analysis`)
+- FFA workflow (add from `cohort_analysis`)
+- 3 COAs (add from `cohort_analysis`)
+- Modifiable features focus (existing)
+- XGBoost-Cox models (existing)
+
+### Option 2: Merge into cohort_analysis (Not Recommended)
+
+**Why this is less ideal:**
+1. ❌ **Fragmented structure** - Multiple Quarto documents vs single notebook
+2. ❌ **Less sophisticated** - Would need to add MC-CV workflow (major addition)
+3. ❌ **Different focus** - Classification vs survival (survival is more aligned with study)
+4. ❌ **More complex** - Multiple files to maintain and coordinate
+
+### Option 3: Keep Separate (Not Recommended)
 
 **Rationale:** Different focuses (survival MC-CV vs classification/FFA)
 
-**Downside:** Duplication, maintenance burden, confusion
+**Downside:** Duplication, maintenance burden, confusion, two places to look for cohort analysis
 
 ## Recommendation
 
-**Consolidate into `cohort_analysis`** and add the missing MC-CV survival workflow. This creates a unified, comprehensive cohort analysis pipeline that includes:
+**Consolidate INTO `clinical_feature_importance_by_cohort`** and add the missing functionality from `cohort_analysis`. This creates a unified, comprehensive cohort analysis pipeline that:
 
-1. ✅ Classification models (existing)
-2. ✅ Survival models with MC-CV (add from `clinical_feature_importance_by_cohort`)
-3. ✅ FFA workflow (existing)
-4. ✅ 3 COAs (existing)
-5. ✅ Modifiable features option (enhance existing)
-6. ✅ XGBoost-Cox models (add from `clinical_feature_importance_by_cohort`)
+1. ✅ **Keeps the sophisticated MC-CV survival workflow** (core methodology)
+2. ✅ **Adds classification models** (from `cohort_analysis`)
+3. ✅ **Adds FFA workflow** (from `cohort_analysis`)
+4. ✅ **Adds 3 COAs** (from `cohort_analysis`)
+5. ✅ **Maintains modifiable features focus** (existing)
+6. ✅ **Uses single notebook structure** (easier to maintain)
 
 ## Next Steps
 
-1. Review this analysis
-2. Decide on consolidation approach
-3. Create migration plan
-4. Move MC-CV survival workflow to `cohort_analysis`
+1. ✅ Review this analysis
+2. ✅ Decide on consolidation approach: **Consolidate INTO `clinical_feature_importance_by_cohort`**
+3. Create migration plan:
+   - Add classification models section to notebook
+   - Add FFA workflow section to notebook
+   - Add 3 COAs data preparation
+   - Add IPCW weighting support
+   - Integrate event classification workflow
+4. Move functionality FROM `cohort_analysis` TO `clinical_feature_importance_by_cohort`
 5. Update documentation
-6. Archive or remove `clinical_feature_importance_by_cohort` directory
+6. Archive or remove `cohort_analysis` directory (or keep as reference)
+7. Rename `clinical_feature_importance_by_cohort` to `cohort_analysis` (optional - for clarity)
 
