@@ -28,20 +28,21 @@ compute_rel_weights <- function(cindex_df) {
 
 run_visualizations <- function(output_dir = NULL) {
   # Determine outputs directory if not provided
+  # Use current working directory and look for outputs/ relative to notebook location
   if (is.null(output_dir)) {
-    # Check for clinical cohort outputs first (most specific)
+    # First check relative to current working directory (where notebook is typically run from)
     if (dir.exists("outputs")) {
       output_dir <- "outputs"
-    } else if (dir.exists(here("clinical_feature_importance_by_cohort", "outputs"))) {
-      output_dir <- here("clinical_feature_importance_by_cohort", "outputs")
-    } else if (dir.exists(here("graft-loss", "clinical_feature_importance_by_cohort", "outputs"))) {
-      output_dir <- here("graft-loss", "clinical_feature_importance_by_cohort", "outputs")
-    } else if (dir.exists(here("feature_importance", "outputs"))) {
-      output_dir <- here("feature_importance", "outputs")
-    } else if (dir.exists(here("graft-loss", "feature_importance", "outputs"))) {
-      output_dir <- here("graft-loss", "feature_importance", "outputs")
     } else {
-      stop("Cannot find outputs directory")
+      # Try to find outputs relative to common notebook locations
+      current_dir <- getwd()
+      if (basename(current_dir) == "clinical_feature_importance_by_cohort" && dir.exists("outputs")) {
+        output_dir <- "outputs"
+      } else if (dir.exists(file.path(current_dir, "outputs"))) {
+        output_dir <- file.path(current_dir, "outputs")
+      } else {
+        stop("Cannot find outputs directory. Expected 'outputs/' relative to current working directory: ", current_dir)
+      }
     }
   }
   plot_dir <- file.path(output_dir, "plots")
