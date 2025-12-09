@@ -133,20 +133,34 @@ Comprehensive Monte Carlo cross-validation feature-importance workflow replicati
 
 ### 2. Clinical Cohort Feature Importance (`graft-loss/clinical_feature_importance_by_cohort/`)
 
-Clinical, cohort-specific MC‑CV using **modifiable clinical features** and multiple survival models:
+**Dynamic Analysis Pipeline** supporting both survival analysis and event classification with MC-CV:
 
 - **Notebook:** `graft_loss_clinical_feature_importance_by_cohort_MC_CV.ipynb`
+  - **Mode Selection**: Set `ANALYSIS_MODE <- "survival"` or `"classification"` at top of notebook
   - Defines **two etiologic cohorts**:
     - CHD: `primary_etiology == "Congenital HD"`
     - MyoCardio: `primary_etiology %in% c("Cardiomyopathy", "Myocarditis")`
   - Restricts predictors to a curated set of **modifiable clinical features** (renal, liver, nutrition, respiratory, support devices, immunology).
-  - Runs **within-cohort MC‑CV** (80/20 train/test splits, stratified by outcome) with:
+
+  **Survival Analysis Mode** (`ANALYSIS_MODE = "survival"`):
+  - Runs **within-cohort MC‑CV** (75/25 train/test splits, stratified by outcome) with:
     - RSF (ranger)
     - AORSF
     - CatBoost‑Cox
     - XGBoost‑Cox (boosting)
     - XGBoost‑Cox RF mode (many trees via `num_parallel_tree`)
-  - Selects the **best‑C‑index model per cohort** and reports its top clinical features, annotated with category and modifiability.
+  - Selects the **best‑C‑index model per cohort** and reports its top clinical features
+  - Evaluation: C-index with 95% CI across MC-CV splits
+
+  **Event Classification Mode** (`ANALYSIS_MODE = "classification"`):
+  - Runs **within-cohort MC‑CV** (75/25 train/test splits, stratified by outcome) with:
+    - LASSO (logistic regression)
+    - CatBoost (classification)
+    - CatBoost RF (classification)
+    - Traditional RF (classification)
+  - Target: Binary classification at 1 year (event by 1 year vs no event with follow-up >= 1 year)
+  - Evaluation: AUC, Brier Score, Accuracy, Precision, Recall, F1 with 95% CI across MC-CV splits
+
   - Sources visualization scripts from `scripts/R/create_visualizations_cohort.R`
 
 - **Scripts** (in `scripts/R/`):
