@@ -44,7 +44,7 @@ For detailed documentation, see:
 - **[MC-CV Parallel EC2](docs/feature_importance/README_mc_cv_parallel_ec2.md)** - EC2 deployment guide
 - **[Original vs Updated Study](docs/feature_importance/README_original_vs_updated_study.md)** - Methodology comparison
 - **[Target Leakage](docs/feature_importance/README_target_leakage.md)** - Leakage prevention
-- **[Validation & Leakage](docs/feature_importance/README_validation_concordance_variables_leakage.md)** - Validation procedures
+- **[Validation & Leakage](docs/shared/README_validation_concordance_variables_leakage.md)** - Validation procedures (shared)
 
 ## Scripts
 

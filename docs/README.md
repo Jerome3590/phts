@@ -19,7 +19,7 @@ docs/
 - **[Ready to Run](cohort_analysis/README_ready_to_run.md)** - Step-by-step execution instructions
 - **[MC-CV Parallel EC2](cohort_analysis/README_mc_cv_parallel_ec2.md)** - EC2 deployment and parallel processing guide
 - **[Original vs Updated Study](cohort_analysis/README_original_vs_updated_study.md)** - Methodology comparison with original study
-- **[Validation & Leakage](cohort_analysis/README_validation_concordance_variables_leakage.md)** - Validation procedures and leakage prevention
+- **[Validation & Leakage](shared/README_validation_concordance_variables_leakage.md)** - Validation procedures and leakage prevention (shared)
 
 ### Global Feature Importance (`docs/feature_importance/`)
 
@@ -29,13 +29,15 @@ docs/
 - **[MC-CV Parallel EC2](feature_importance/README_mc_cv_parallel_ec2.md)** - EC2 deployment and parallel processing guide
 - **[Original vs Updated Study](feature_importance/README_original_vs_updated_study.md)** - Methodology comparison with original study
 - **[Target Leakage](feature_importance/README_target_leakage.md)** - Target leakage prevention strategies
-- **[Validation & Leakage](feature_importance/README_validation_concordance_variables_leakage.md)** - Validation procedures and leakage prevention
+- **[Validation & Leakage](shared/README_validation_concordance_variables_leakage.md)** - Validation procedures and leakage prevention (shared)
+
+### Shared Documentation (`docs/shared/`)
+
+- **[Validation & Leakage](shared/README_validation_concordance_variables_leakage.md)** - Validation procedures, C-index implementation, variable mapping, and target leakage prevention (applies to all workflows)
 
 ### Scripts & Standards (`docs/scripts/`)
 
-- **[Logging Standards](scripts/LOGGING_STANDARDS.md)** - Standardized logging patterns and conventions
-- **[Outputs & Plots Standardization](scripts/OUTPUTS_PLOTS_STANDARDIZATION.md)** - Output directory structure and naming conventions
-- **[Consolidation Summary](scripts/CONSOLIDATION_SUMMARY.md)** - Script consolidation and organization details
+- **[Standards & Conventions](scripts/README_standards.md)** - Consolidated standards document covering logging, outputs structure, and script organization
 
 ## Quick Links
 

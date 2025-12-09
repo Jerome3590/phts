@@ -88,7 +88,5 @@ This structure matches the EC2 file structure:
 ## Documentation
 
 For detailed documentation on scripts and standards, see:
-- **[Logging Standards](docs/scripts/LOGGING_STANDARDS.md)** - Standardized logging patterns
-- **[Outputs & Plots Standardization](docs/scripts/OUTPUTS_PLOTS_STANDARDIZATION.md)** - Output directory standards
-- **[Consolidation Summary](docs/scripts/CONSOLIDATION_SUMMARY.md)** - Script consolidation details
+- **[Standards & Conventions](docs/scripts/README_standards.md)** - Consolidated standards document covering logging, outputs structure, and script organization
 

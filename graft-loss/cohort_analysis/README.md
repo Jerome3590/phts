@@ -52,7 +52,7 @@ For detailed documentation, see:
 - **[Ready to Run](docs/cohort_analysis/README_ready_to_run.md)** - Execution instructions
 - **[MC-CV Parallel EC2](docs/cohort_analysis/README_mc_cv_parallel_ec2.md)** - EC2 deployment guide
 - **[Original vs Updated Study](docs/cohort_analysis/README_original_vs_updated_study.md)** - Methodology comparison
-- **[Validation & Leakage](docs/cohort_analysis/README_validation_concordance_variables_leakage.md)** - Validation procedures
+- **[Validation & Leakage](docs/shared/README_validation_concordance_variables_leakage.md)** - Validation procedures (shared)
 
 ## Scripts
 
