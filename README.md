@@ -47,6 +47,7 @@ graph TB
   - `graft-loss/univariate_analysis/` - Univariate feature importance
   - `graft-loss/unified_cohort_survival_analysis/` - Unified cohort survival analysis
   - `graft-loss/lasso/` - LASSO-based survival models
+- **Documentation**: Centralized in `docs/` folder, with root READMEs in each workflow directory
 - **EC2 Compatibility**: Structure matches EC2 file layout for seamless deployment
 
 ## Workflow Overview
@@ -56,7 +57,6 @@ graph TB
     A[Data Preparation] --> B[Analysis Pipelines]
 
     B --> C1[1. Global Feature Importance]
-    B --> C2[2. Clinical Cohort Feature Importance]
     B --> C2[2. Clinical Cohort Analysis]
     B --> C3[3. Univariate Analysis]
     B --> C4[4. Unified Cohort Survival]
@@ -99,17 +99,24 @@ Comprehensive Monte Carlo cross-validation feature-importance workflow replicati
 - **Notebook:** `graft_loss_feature_importance_20_MC_CV.ipynb`
   - Runs RSF, CatBoost, and AORSF with stratified 75/25 train/test MC-CV splits.
   - Supports 100-split development runs and 1000-split publication-grade runs.
-  - Evaluates time-dependent and Harrell C-index on held-out test data.
-  - Sources visualization scripts from `scripts/R/create_visualizations.R`
+  - Analyzes three time periods: Original (2010-2019), Full (2010-2024), Full No COVID (2010-2024 excluding 2020-2023).
+  - Extracts top 20 features per method per period.
+  - Calculates C-index with 95% CI across MC-CV splits.
 
 - **Scripts** (in `scripts/R/`):
-  - `create_visualizations.R`: Creates feature importance heatmaps and C-index visualizations
-  - `check_variables.R`: Validates DONISCH and CPBYPASS variables
-  - `check_cpbypass_iqr.R`: Calculates CPBYPASS statistics by period
+  - `create_visualizations.R`: Creates feature importance heatmaps, C-index heatmaps, and bar charts
+  - `replicate_20_features_MC_CV.R`: Monte Carlo cross-validation script
+  - `check_variables.R`: Variable validation
+  - `check_cpbypass_iqr.R`: CPBYPASS statistics
 
 - **Outputs (`graft-loss/feature_importance/outputs/`):**
-  - Top 20 features per method per period (`*_rsf_top20.csv`, `*_catboost_top20.csv`, `*_aorsf_top20.csv`).
-  - C-index comparison tables and summary statistics across methods and cohorts.
+  - `plots/` - Feature importance visualizations
+  - `cindex_table.csv` - C-index table with confidence intervals
+  - `top_20_features_*.csv` - Top 20 features per method and period
+
+- **Documentation:**
+  - See `graft-loss/feature_importance/README.md` for quick start
+  - Detailed docs in `docs/feature_importance/`
 
 ### 2. Clinical Cohort Analysis (`graft-loss/cohort_analysis/`)
 
@@ -145,33 +152,19 @@ Comprehensive Monte Carlo cross-validation feature-importance workflow replicati
 
 - **Scripts** (in `scripts/R/`):
   - `create_visualizations_cohort.R`: Creates cohort-specific visualizations including Sankey diagrams
-  - `replicate_20_features_MC_CV.R`: Monte Carlo cross-validation script for clinical cohort analysis
+  - `classification_helpers.R`: Helper functions for classification analysis
 
 - **Outputs (`graft-loss/cohort_analysis/outputs/`):**
   - **Survival Mode**: 
     - `cohort_model_cindex_mc_cv_modifiable_clinical.csv` – C‑index summary per cohort × model
     - `best_clinical_features_by_cohort_mc_cv.csv` – Top modifiable clinical features for the best model in each cohort
+    - `plots/` - Visualizations (heatmaps, bar charts, Sankey diagrams)
   - **Classification Mode**: 
     - `classification_mc_cv/cohort_classification_metrics_mc_cv.csv` – Classification metrics (AUC, Brier, Accuracy, Precision, Recall, F1) per cohort × model
-  - `cohort_survival_analysis.qmd`: Survival analysis by cohort
-  - `phts_feature_importance.qmd`: Feature importance analysis
-  - `workflow_comparison_summary.qmd`: Comparison of different workflow approaches
 
-- **Cohort Analytic Options (COAs)**:
-  - **COA1**: Observed-only labels (drops patients censored before 1 year)
-  - **COA2**: Observed-only labels restricted to `txpl_year < 2023` (guaranteed 1-year follow-up)
-  - **COA3**: IPCW-weighted labels (inverse-probability-of-censoring weighting)
-
-- **Cohorts**: CHD (Congenital HD) vs Myocarditis/Cardiomyopathy
-- **Outputs**: Classification summaries, workflow comparisons, FFA rule metrics, Sankey diagrams
-
-- **Scripts** (in `scripts/R/`):
-  - `classification_helpers.R`: Helper functions for cohort classification
-
-- **Scripts** (in `scripts/py/`):
-  - `ffa_analysis.py`: Fast and Frugal Analysis pipeline
-  - `catboost_axp_explainer.py`: CatBoost explainer for FFA
-  - `catboost_axp_explainer2.py`: Alternative CatBoost explainer
+- **Documentation:**
+  - See `graft-loss/cohort_analysis/README.md` for quick start
+  - Detailed docs in `docs/cohort_analysis/`
 
 ### 3. Univariate Analysis (`graft-loss/univariate_analysis/`)
 
@@ -193,13 +186,12 @@ LASSO-based survival analysis and scorecard models:
 
 - **Purpose**: Regularized regression approaches for survival modeling
 - **Key Documents**:
-  - `lasso_scorecard_model.qmd`: Scorecard model development
-  - `survival_analysis_lasso.qmd`: LASSO survival analysis
-  - `methods_comparison_README.qmd`: Comparison of LASSO vs other methods
+  - `lasso_scorecard_model.html`: Scorecard model development
+  - `methods_comparison_README.html`: Comparison of LASSO vs other methods
 
 - **Outputs**: Scorecard models, LASSO survival models, method comparisons
 
-### 8. Concordance Index Implementation (`concordance_index/`)
+### 6. Concordance Index Implementation (`concordance_index/`)
 
 Robust C-index calculation with manual implementation:
 
@@ -208,51 +200,21 @@ Robust C-index calculation with manual implementation:
 - **Documentation**: Comprehensive README explaining methodology, issues, and validation
 - **Test Files**: Extensive testing of `riskRegression::Score()` format requirements
 
-### 9. Exploratory Data Analysis (`eda/`)
-
-Initial data exploration and feature importance analysis:
-
-- `phts_eda.qmd`: Exploratory data analysis
-- `phts_feature_importance.qmd`: Feature importance across methods
-
-### 6. Parallel Processing Implementation (`graft-loss/graft-loss-parallel-processing/`)
-
-**Development Strategy**: The pipeline is currently running in **unparallelized mode** for verification. Once the unparallelized version is verified, parallel processing implementations will be integrated.
-
-**Current Status**:
-- **Active Pipeline** (`graft-loss/scripts/`): Unparallelized mode (for verification)
-- **Parallel Processing Code** (`graft-loss/graft-loss-parallel-processing/`): Ready for integration after verification
-
-**Parallelization Strategies** (to be integrated):
-- **furrr/future parallelization**: Parallel Monte Carlo CV splits
-- **Orchestration-level parallelism**: Multiple dataset cohorts run as separate processes
-- **Threading control**: Environment variables prevent CPU oversubscription
-- **Parallel utilities**: Centralized configuration (`R/utils/parallel_utils.R`)
-
-**See `PARALLEL_PROCESSING.md` for comprehensive documentation.**
-
 ## Pipeline Stages
 
 ### Stage 1: Environment Setup
 
-- **`scripts/00_setup.R`**: Initializes project, loads libraries, sets global options
-- **`scripts/packages.R`**: Package management and installation
-- **`R/config.R`**: Centralized configuration system
+- **`scripts/R/`**: Helper functions and utilities
+- **`scripts/py/`**: Python scripts for specialized analyses (e.g., FFA)
+- **`scripts/bash/`**: Bash scripts for automation
 
 ### Stage 2: Data Preparation
 
-- **`scripts/01_prepare_data.R`**: Cleans and preprocesses raw PHTS data
-- **`R/clean_phts.R`**: Data cleaning functions
-- **`R/make_final_features.R`**: Feature engineering
-- **`R/make_labels.R`**: Survival outcome labeling
-
-**Data Source**: `phts_txpl_ml.sas7bdat`
-- **File**: `data/phts_txpl_ml.sas7bdat` (matches original study)
-- **Censoring Implementation**: The original study's `clean_phts()` function includes proper censoring handling:
+- **Data Source**: `graft-loss/data/phts_txpl_ml.sas7bdat` (matches original study)
+- **Censoring Implementation**: The original study's censoring handling:
   - Sets event times of 0 to 1/365 (prevents invalid zero times for survival analysis)
   - Properly maintains censored observations (status = 0) throughout the analysis
   - Ensures consistent survival structure matching the original Wisotzkey study
-- **Why this file**: The original study used `phts_txpl_ml.sas7bdat` specifically because it includes the censoring implementation needed for accurate survival modeling
 
 **Data Coverage**: 2010-2024 (TXPL_YEAR)
 
@@ -261,60 +223,37 @@ Initial data exploration and feature importance analysis:
 - `ORIGINAL_STUDY=1`: Restricts to 2010-2019 (original study period)
 
 **Variable Processing** (applied before modeling):
-- **CPBYPASS (Cardiopulmonary Bypass Time)**: Summary statistics are calculated (median, IQR, non-missing counts), then the variable is **removed from the dataset** and excluded from all modeling analyses
-- **DONISCH (Donor Ischemic Time)**: Converted from continuous variable (minutes) to **dichotomous variable**:
-  - `donisch = 1` if donor ischemic time > 4 hours (>240 minutes)
-  - `donisch = 0` if donor ischemic time ≤ 4 hours (≤240 minutes)
-  - Variable name remains `donisch` (now binary: 0/1 instead of continuous minutes)
-  - This transformation is applied before defining time periods and running all analyses
+- **CPBYPASS**: Removed (not available in all time periods, high missingness)
+- **DONISCH**: Dichotomized (>4 hours = 1, ≤4 hours = 0) for consistency
 
-**Note**: The dichotomous `donisch` variable (not CPBYPASS) will appear in feature importance results.
+### Stage 3: Feature Selection
 
-### Stage 3: Resampling and Cross-Validation
+- **RSF Permutation Importance**: Matches original Wisotzkey study methodology
+- **CatBoost Feature Importance**: Captures non-linear relationships
+- **AORSF Feature Importance**: Matches original study's final model approach
+- **Top 20 Selection**: Selects top 20 features per method per period
 
-- **`scripts/02_resampling.R`**: Sets up Monte Carlo cross-validation splits
-- **`R/mc_cv_light.R`**: Multi-core CV implementation
-- **`R/reuse_resamples.R`**: Split reuse across scenarios
+### Stage 4: Model Fitting
 
-**Monte Carlo CV**:
-- Enable with `MC_CV=1`
-- Control splits: `MC_MAX_SPLITS=1000`, `MC_START_AT=1`
-- Split reuse: `REUSE_BASE_SPLITS=1` for paired comparisons
-
-### Stage 4: Model Data Preparation
-
-- **`scripts/03_prep_model_data.R`**: Prepares data for modeling
-- **`R/make_recipe.R`**: Creates preprocessing recipes
-- **`R/make_recipe_interpretable.R`**: Interpretable recipe variants
-
-**Dual Data Paths**:
-- **Native categoricals**: `final_data_catboost.rds` (for CatBoost, AORSF)
-- **Encoded**: `final_data_encoded.rds` (encoded/dummy-coded variant; used by historical pipelines)
-
-### Stage 5: Model Fitting
-
-- **`scripts/04_fit_model.R`**: Fits multiple survival models (legacy pipeline)
-- **`R/fit_rsf.R`**: Random Survival Forest (ranger)
-- **`R/fit_orsf.R`**: Oblique Random Survival Forest (aorsf)
-
-**Models Available (current MC-CV workflow):**
+**Survival Models:**
 - **RSF**: Random Survival Forest with permutation importance
 - **AORSF**: Accelerated Oblique Random Survival Forest (matches original study)
-- **CatBoost**: Gradient boosting with native categorical handling
+- **CatBoost-Cox**: Gradient boosting with Cox loss
+- **XGBoost-Cox**: Gradient boosting with Cox loss (boosting and RF modes)
 
-**Model Selection**: Standardized heuristic based on C-index, stability, and interpretability
+**Classification Models:**
+- **LASSO**: Logistic regression with L1 penalty
+- **CatBoost**: Gradient boosting classification
+- **CatBoost RF**: CatBoost configured as Random Forest
+- **Traditional RF**: Classic Random Forest classification
 
-### Stage 6: Model Evaluation
-
-- **`scripts/05_generate_outputs.R`**: Generates performance metrics and visualizations
-- **`R/fit_evaluation.R`**: Model evaluation functions
-- **`R/GND_calibration.R`**: Calibration assessment
-- **`R/visualize_*.R`**: Visualization functions
+### Stage 5: Model Evaluation
 
 **Evaluation Metrics**:
 - **Time-Dependent C-index**: At 1-year horizon (matches original study)
 - **Time-Independent C-index**: Harrell's C-index (general discrimination)
-- **Calibration**: Gronnesby-Borgan test
+- **Classification Metrics**: AUC, Brier Score, Accuracy, Precision, Recall, F1
+- **Calibration**: Gronnesby-Borgan test (survival)
 - **Feature Importance**: Multiple methods (permutation, negate, gain-based)
 
 ## Feature Selection Methods
@@ -412,76 +351,47 @@ The pipeline supports analysis across multiple time periods:
 
 ## Quick Start
 
-### Basic Pipeline Run
+### Global Feature Importance
 
-```bash
-"/c/Program Files/R/R-4.5.1/bin/Rscript.exe" graft-loss/scripts/run_pipeline.R
-```
+1. Navigate to `graft-loss/feature_importance/`
+2. Open `graft_loss_feature_importance_20_MC_CV.ipynb`
+3. Set `DEBUG_MODE <- FALSE` for full analysis
+4. Set `n_mc_splits <- 100` for development or `1000` for publication
+5. Run notebook from top to bottom
+6. Results saved to `outputs/` directory
 
-### Original Study Period
+### Clinical Cohort Analysis
 
-```bash
-ORIGINAL_STUDY=1 "/c/Program Files/R/R-4.5.1/bin/Rscript.exe" graft-loss/scripts/run_pipeline.R
-```
-
-### Monte Carlo Cross-Validation
-
-```bash
-MC_CV=1 MC_MAX_SPLITS=1000 USE_CATBOOST=1 \
-"/c/Program Files/R/R-4.5.1/bin/Rscript.exe" graft-loss/scripts/run_pipeline.R
-```
-
-### Feature Importance Replication
-
-```r
-# From R console or RStudio
-source("graft-loss/feature_importance/replicate_20_features.R")
-```
-
-This runs RSF, CatBoost, and AORSF feature selection across all three time periods and generates comprehensive comparison tables.
+1. Navigate to `graft-loss/cohort_analysis/`
+2. Open `graft_loss_clinical_cohort_analysis.ipynb`
+3. Set `ANALYSIS_MODE <- "survival"` or `"classification"`
+4. Set `DEBUG_MODE <- FALSE` for full analysis
+5. Run notebook from top to bottom
+6. Results saved to `outputs/` directory
 
 ## Output Structure
 
-### Model Artifacts (`graft-loss/data/models/`)
+### Global Feature Importance (`graft-loss/feature_importance/outputs/`)
 
-- `model_orsf.rds`, `model_rsf.rds`, `model_xgb.rds`: Fitted models
-- `model_comparison_index.csv`: Model metadata and data variants
-- `model_mc_metrics_*.csv`: Monte Carlo CV metrics per split
-- `model_mc_summary_*.csv`: Aggregated MC CV summaries
-- `model_mc_importance_*.csv`: Feature importance across splits
-- `final_model_choice.csv`: Selected model with rationale
+- `plots/` - Feature importance visualizations
+- `cindex_table.csv` - C-index table with confidence intervals
+- `top_20_features_*.csv` - Top 20 features per method and period
 
-### Feature Importance Outputs
+### Clinical Cohort Analysis (`graft-loss/cohort_analysis/outputs/`)
 
-**Global Feature Importance** (`graft-loss/feature_importance/outputs/`):
-- `*_rsf_top20.csv`: RSF top 20 features (with both C-index types)
-- `*_catboost_top20.csv`: CatBoost top 20 features (with both C-index types)
-- `*_aorsf_top20.csv`: AORSF top 20 features (with both C-index types)
-- `cindex_comparison_mc_cv.csv`: Combined C-index comparison
-- `summary_statistics_mc_cv.csv`: Sample sizes, event rates, C-indexes
-- `plots/feature_importance_heatmap.png`: Feature importance heatmap
-- `plots/cindex_heatmap.png`: C-index heatmap
-- `plots/scaled_feature_importance_bar_chart.png`: Scaled feature importance bar chart
-- `plots/cindex_table.csv`: C-index table with confidence intervals
-
-**Clinical Cohort Analysis** (`graft-loss/cohort_analysis/outputs/`):
 - **Survival Mode**:
-  - `cohort_model_cindex_mc_cv_modifiable_clinical.csv`: C-index summary per cohort × model
-  - `best_clinical_features_by_cohort_mc_cv.csv`: Top modifiable clinical features per cohort
-  - `plots/cohort_clinical_feature_sankey.html`: Sankey diagram of cohort → clinical features
+  - `cohort_model_cindex_mc_cv_modifiable_clinical.csv` - C-index summary per cohort × model
+  - `best_clinical_features_by_cohort_mc_cv.csv` - Top modifiable clinical features per cohort
+  - `plots/cohort_clinical_feature_sankey.html` - Sankey diagram of cohort → clinical features
 - **Classification Mode**:
-  - `classification_mc_cv/cohort_classification_metrics_mc_cv.csv`: Classification metrics (AUC, Brier, Accuracy, Precision, Recall, F1) per cohort × model
+  - `classification_mc_cv/cohort_classification_metrics_mc_cv.csv` - Classification metrics (AUC, Brier, Accuracy, Precision, Recall, F1) per cohort × model
 
-**Univariate Analysis** (`graft-loss/univariate_analysis/`):
-- `phts_top_features_univariate_analysis.html`: Univariate feature importance
+### Documentation (`docs/`)
 
-**Unified Cohort Survival** (`graft-loss/unified_cohort_survival_analysis/`):
-- `sankey_time_to_event_unified_cohort_feature_importance.html`: Time-to-event feature importance Sankey
-
-### Documentation (`graft-loss/doc/`)
-
-- `predicting_graft_loss.Rmd`: Main manuscript/report
-- `jacc.csl`, `refs.bib`: Citation style and bibliography
+- **Centralized Documentation**: All detailed documentation in `docs/` folder
+- **Workflow-Specific**: Root READMEs in each workflow directory
+- **Shared Documentation**: Common topics in `docs/shared/`
+- **Standards**: Scripts standards in `docs/scripts/`
 
 ## Key Features
 
@@ -499,94 +409,37 @@ This runs RSF, CatBoost, and AORSF feature selection across all three time perio
 
 ### Comprehensive Model Comparison
 
-- **Multiple Algorithms**: RSF, AORSF, CatBoost
+- **Multiple Algorithms**: RSF, AORSF, CatBoost, XGBoost, Cox PH (survival); LASSO, CatBoost, CatBoost RF, Traditional RF (classification)
 - **Multiple Time Periods**: Original study, full period, COVID-excluded
-- **Multiple Metrics**: Time-dependent and time-independent C-indexes
+- **Multiple Metrics**: Time-dependent and time-independent C-indexes; AUC, Brier, Accuracy, Precision, Recall, F1
 
 ### Reproducible Workflow
 
-- **Environment Variables**: Control all aspects via flags
-- **Logging**: Comprehensive pipeline logs with timestamps
-- **Progress Tracking**: JSON progress file for monitoring
-- **Split Reuse**: Paired comparisons across scenarios
+- **Monte Carlo Cross-Validation**: Robust evaluation with many train/test splits
+- **Stratified Sampling**: Maintains event distribution across splits
+- **Parallel Processing**: Fast execution with furrr/future
+- **95% Confidence Intervals**: Narrow, precise estimates
 
-### Parallel Processing
+### Dynamic Analysis Modes
 
-- **Multiple Strategies**: furrr/future, orchestration-level, and threading control
-- **Auto-Configuration**: Automatic worker detection and backend selection
-- **Resource Management**: Prevents CPU oversubscription via environment variables
-- **EC2-Compatible**: Robust core detection and backend fallbacks for cloud environments
+- **Survival Analysis**: Time-to-event analysis with survival models
+- **Event Classification**: Binary classification at 1 year
+- **Easy Mode Switching**: Single configuration flag
 
-**See `PARALLEL_PROCESSING.md` for detailed documentation.**
+## Documentation
 
-## Environment Variables
-
-### Data Filtering
-
-- `EXCLUDE_COVID=1`: Exclude 2020-2023
-- `ORIGINAL_STUDY=1`: Restrict to 2010-2019
-
-### Model Selection
-
-- `USE_CATBOOST=1`: Include CatBoost in analysis
-- `USE_ENCODED=1`: Use encoded (dummy-coded) data variant
-- `CATBOOST_USE_FULL=1`: CatBoost uses all features (default)
-- `ORSF_FULL=1`: ORSF uses all features
-
-### Monte Carlo CV
-
-- `MC_CV=1`: Enable Monte Carlo cross-validation
-- `MC_MAX_SPLITS=1000`: Maximum number of splits
-- `MC_START_AT=1`: Starting split index (for resuming)
-- `REUSE_BASE_SPLITS=1`: Reuse splits across scenarios
-- `MC_SPLIT_WORKERS`: Number of workers for parallel CV splits (auto-detected if not set)
-- `MC_WORKER_THREADS`: Threads per worker for BLAS/OpenMP (default: 1)
-
-**See `PARALLEL_PROCESSING.md` for detailed parallel processing documentation.**
-
-### Scenarios
-
-- `SCENARIO=original_study_fullcats`: Original period + full CatBoost features
-- `SCENARIO=covid_exclusion_full`: Exclude COVID + full CatBoost
-- `SCENARIO=full_all_full`: Full dataset + all models full features
-
-## Recent Updates
-
-### Project Reorganization
-
-- **Scripts Directory**: All executable scripts now organized in `scripts/` by language:
-  - `scripts/R/`: R scripts (visualizations, helpers, analysis)
-  - `scripts/py/`: Python scripts (FFA analysis, explainers)
-  - `scripts/bash/`: Bash scripts (automation)
-- **EC2 Compatibility**: File structure matches EC2 layout for seamless deployment
-- **Feature Importance**: Moved to `graft-loss/feature_importance/`
-- **Concordance Index**: New `concordance_index/` directory with documentation
-- **EDA**: Organized into `eda/` directory
-- **LASSO**: Organized into `lasso/` directory
-
-### Enhanced Feature Selection
-
-- **Added AORSF**: Now includes AORSF alongside RSF and CatBoost
-- **Dual C-index**: Both time-dependent and time-independent calculations
-- **Comprehensive Comparison**: Across three methods and three time periods
-
-### Improved Documentation
-
-- **Feature Importance README**: Comprehensive guide for `replicate_20_features.R`
-- **Concordance Index README**: Detailed explanation of C-index implementation
-- **Parallel Processing Documentation**: Complete guide to parallelization strategies (`PARALLEL_PROCESSING.md`)
-- **Updated Pipeline README**: Reflects latest structure and capabilities
-
-## Requirements
-
-- **R**: Version 4.5.1 or higher
-- **R Packages**: See `graft-loss/scripts/packages.R` for complete list
-- **Python** (optional): For CatBoost integration (`python`, `catboost`, `pandas`, `numpy`)
-- **Data**: PHTS registry data files (contact repository maintainer for access)
+- **Main Documentation Index**: `docs/README.md`
+- **Workflow READMEs**: 
+  - `graft-loss/feature_importance/README.md`
+  - `graft-loss/cohort_analysis/README.md`
+- **Scripts Documentation**: `scripts/README.md`
+- **Shared Documentation**: `docs/shared/` (validation, leakage, variable mapping)
+- **Standards**: `docs/scripts/README_standards.md` (logging, outputs, script organization)
 
 ## References
 
 - Wisotzkey et al. (2023). Risk factors for 1-year allograft loss in pediatric heart transplant. *Pediatric Transplantation*.
+- Original Repository: [bcjaeger/graft-loss](https://github.com/bcjaeger/graft-loss)
 
 ## Contact
 
@@ -594,5 +447,4 @@ For questions or issues, please refer to the documentation in each component dir
 
 ---
 
-**Note**: The pipeline is modular; each script can be run independently or as part of the full workflow. For detailed usage, refer to the README files in each component directory and the inline comments within scripts.
-
+**Note**: The pipeline is modular; each notebook can be run independently. For detailed usage, refer to the README files in each workflow directory and the detailed documentation in `docs/`.
