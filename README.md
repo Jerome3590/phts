@@ -67,7 +67,7 @@ graph TB
 | Pipeline | Location | Type | Methods | Key Features |
 |----------|----------|------|---------|--------------|
 | **1. Global Feature Importance** | `graft-loss/feature_importance/` | MC-CV Notebook | RSF, CatBoost, AORSF | 3 time periods, 100-1000 splits, global feature rankings |
-| **2. Clinical Cohort Analysis** | `graft-loss/cohort_analysis/` | MC-CV Notebook (Dynamic) | **Survival**: RSF, AORSF, CatBoost-Cox, XGBoost-Cox<br>**Classification**: LASSO, CatBoost, CatBoost RF, Traditional RF | CHD vs MyoCardio, modifiable clinical features |
+| **2. Clinical Cohort Analysis** | `graft-loss/cohort_analysis/` | MC-CV Notebook (Dynamic) | **Survival**: RSF, AORSF, CatBoost-Cox, XGBoost-Cox<br>**Classification**: CatBoost, CatBoost RF, Traditional RF | CHD vs MyoCardio, modifiable clinical features |
 
 ## Key Components
 
@@ -120,7 +120,6 @@ Comprehensive Monte Carlo cross-validation feature-importance workflow replicati
 
   **Event Classification Mode** (`ANALYSIS_MODE = "classification"`):
   - Runs **within-cohort MC‑CV** (75/25 train/test splits, stratified by outcome) with:
-    - LASSO (logistic regression)
     - CatBoost (classification)
     - CatBoost RF (classification)
     - Traditional RF (classification)
@@ -196,7 +195,6 @@ Robust C-index calculation with manual implementation:
 - **XGBoost-Cox**: Gradient boosting with Cox loss (boosting and RF modes)
 
 **Classification Models:**
-- **LASSO**: Logistic regression with L1 penalty
 - **CatBoost**: Gradient boosting classification
 - **CatBoost RF**: CatBoost configured as Random Forest
 - **Traditional RF**: Classic Random Forest classification
@@ -363,7 +361,7 @@ The pipeline supports analysis across multiple time periods:
 
 ### Comprehensive Model Comparison
 
-- **Multiple Algorithms**: RSF, AORSF, CatBoost, XGBoost, Cox PH (survival); LASSO, CatBoost, CatBoost RF, Traditional RF (classification)
+- **Multiple Algorithms**: RSF, AORSF, CatBoost, XGBoost, Cox PH (survival); CatBoost, CatBoost RF, Traditional RF (classification)
 - **Multiple Time Periods**: Original study, full period, COVID-excluded
 - **Multiple Metrics**: Time-dependent and time-independent C-indexes; AUC, Brier, Accuracy, Precision, Recall, F1
 

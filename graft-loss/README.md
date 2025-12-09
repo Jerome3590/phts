@@ -27,7 +27,7 @@ The `graft-loss/` directory houses comprehensive analytical pipelines that repli
 - **Cohorts**: CHD (Congenital Heart Disease) vs MyoCardio (Myocarditis/Cardiomyopathy)
 - **Modes**: 
   - **Survival**: RSF, AORSF, CatBoost-Cox, XGBoost-Cox
-  - **Classification**: LASSO, CatBoost, CatBoost RF, Traditional RF
+  - **Classification**: CatBoost, CatBoost RF, Traditional RF
 - **Features**: Modifiable clinical features only (renal, liver, nutrition, respiratory, support devices, immunology)
 
 **Quick Start**: See [`cohort_analysis/README.md`](cohort_analysis/README.md)
