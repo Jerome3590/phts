@@ -137,8 +137,10 @@ watch -n 10 'ls -1 graft-loss/clinical_feature_importance_by_cohort/outputs/*.cs
 If you log output from R (e.g., running chunks via `Rscript` or using `sink()`), you can monitor:
 
 ```bash
-tail -f cohort_mc_cv.log
-grep -i "Best model for" cohort_mc_cv.log
+mkdir -p logs
+# When running notebook, redirect output: ... | tee logs/cohort_mc_cv.log
+tail -f logs/cohort_mc_cv.log
+grep -i "Best model for" logs/cohort_mc_cv.log
 ```
 
 You should see lines like:

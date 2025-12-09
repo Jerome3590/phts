@@ -28,7 +28,7 @@ data/
 *.RData
 *.Rhistory
 
-# But allow outputs and plots (must come after ignore patterns)
+# But allow outputs, plots, and logs (must come after ignore patterns)
 !**/outputs/**/*.rds
 !**/outputs/**/*.csv
 !**/outputs/**/*.png
@@ -37,6 +37,8 @@ data/
 !**/plots/**/*.csv
 !**/plots/**/*.png
 !**/plots/**/*.html
+!**/logs/**/*.log
+!**/logs/**/*.txt
 
 papers/*
 

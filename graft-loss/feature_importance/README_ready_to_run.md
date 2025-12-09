@@ -20,7 +20,8 @@ tmux new -s replication
 # Run analysis
 export N_WORKERS=30
 cd /path/to/phts
-time Rscript scripts/R/replicate_20_features_MC_CV.R 2>&1 | tee replication_1000.log
+mkdir -p logs
+time Rscript scripts/R/replicate_20_features_MC_CV.R 2>&1 | tee logs/replication_1000.log
 
 # Detach: Ctrl+B then D
 # Reattach: tmux attach -t replication
@@ -144,13 +145,13 @@ free -h
 
 ```bash
 # Watch live output
-tail -f replication_1000.log
+tail -f logs/replication_1000.log
 
 # Search for completed periods
-grep "Period complete" replication_1000.log
+grep "Period complete" logs/replication_1000.log
 
 # Check for errors
-grep -i "error\|warning" replication_1000.log
+grep -i "error\|warning" logs/replication_1000.log
 ```
 
 ---
@@ -313,7 +314,7 @@ You'll know it's working correctly when you see:
 
 1. **Use tmux/screen** - So analysis continues if SSH disconnects
 2. **Monitor in separate session** - Keep an eye on progress
-3. **Save the log** - Use `tee` to save output: `... | tee replication.log`
+3. **Save the log** - Use `tee` to save output to `logs/` directory: `mkdir -p logs && ... | tee logs/replication.log`
 4. **Benchmark first** - Run with 25 splits to verify setup (2-3 min)
 5. **Check outputs early** - After first period completes, spot-check results
 

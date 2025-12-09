@@ -2,6 +2,34 @@
 
 Consistent logging patterns across all analysis workflows and scripts.
 
+## Log File Location
+
+Logs should follow the same pattern as `outputs/` and `plots/` - they should be relative to the notebook's current working directory.
+
+**Standard Structure:**
+```
+<analysis_directory>/
+├── outputs/              # CSV result files
+│   └── plots/           # PNG, HTML, CSV plot files
+└── logs/                # Log files (if created programmatically)
+    └── *.log
+```
+
+**Pattern:**
+- Each notebook runs from its own directory (e.g., `feature_importance/`, `clinical_feature_importance_by_cohort/`)
+- Logs should be created relative to that directory: `logs/analysis.log`
+- When using `tee` from command line, logs should be saved to `logs/` directory:
+
+```bash
+# From feature_importance/ directory
+mkdir -p logs
+Rscript scripts/R/replicate_20_features_MC_CV.R 2>&1 | tee logs/replication_1000.log
+
+# From clinical_feature_importance_by_cohort/ directory  
+mkdir -p logs
+# Run notebook with output redirected to logs/
+```
+
 ## Standard Prefixes
 
 - **`→`** - Action/process in progress (e.g., "→ Reading MC-CV results...")
