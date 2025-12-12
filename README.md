@@ -97,9 +97,11 @@ Comprehensive Monte Carlo cross-validation feature-importance workflow replicati
   - See `graft-loss/feature_importance/README.md` for quick start
   - Detailed docs in `docs/feature_importance/`
 
-### 2. Clinical Cohort Analysis (`graft-loss/cohort_analysis/`)
+### 2. Clinical Cohort Analysis (`graft-loss/cohort_analysis/`) ⭐ **KEY FEATURE**
 
 **Dynamic Analysis Pipeline** supporting both survival analysis and event classification with MC-CV:
+
+**Key Innovation:** Cohort-specific analysis using modifiable clinical features for two distinct etiologic cohorts (CHD vs MyoCardio), enabling targeted clinical interventions.
 
 - **Notebook:** `graft_loss_clinical_cohort_analysis.ipynb`
   - **Mode Selection**: Set `ANALYSIS_MODE <- "survival"` or `"classification"` at top of notebook

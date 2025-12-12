@@ -1,5 +1,7 @@
 # Clinical Cohort Analysis
 
+**Key Feature:** Cohort-specific analysis with modifiable clinical features for CHD vs MyoCardio cohorts.
+
 Dynamic analysis pipeline supporting both survival analysis and event classification with Monte Carlo Cross-Validation (MC-CV).
 
 ## Overview
@@ -36,6 +38,8 @@ ANALYSIS_MODE <- "survival"  # or "classification"
 4. Results saved to `outputs/` directory
 
 ## Outputs
+
+All outputs are saved to `graft-loss/cohort_analysis/outputs/` and synced to `s3://uva-private-data-lake/graft-loss/cohort_analysis/`.
 
 - **Survival Mode**: 
   - `outputs/cohort_model_cindex_mc_cv_modifiable_clinical.csv`
