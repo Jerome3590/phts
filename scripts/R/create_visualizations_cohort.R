@@ -38,28 +38,30 @@ run_visualizations <- function(output_dir = NULL) {
            "\nMake sure you're running the notebook from its directory (e.g., clinical_feature_importance_by_cohort/)")
     }
   }
-  plot_dir <- file.path(output_dir, "plots")
+  # Summary directory for combined cohort comparisons
+  summary_dir <- file.path(output_dir, "summary")
+  plot_dir_summary <- file.path(summary_dir, "plots")
+  dir.create(plot_dir_summary, showWarnings = FALSE, recursive = TRUE)
 
-  # Clean existing plots directory to ensure fresh/clean visualizations
-  if (dir.exists(plot_dir)) {
-    plot_files <- list.files(plot_dir, full.names = TRUE, recursive = TRUE, include.dirs = FALSE)
+  # Clean existing plots directories to ensure fresh/clean visualizations
+  if (dir.exists(plot_dir_summary)) {
+    plot_files <- list.files(plot_dir_summary, full.names = TRUE, recursive = TRUE, include.dirs = FALSE)
     if (length(plot_files) > 0) {
       cat(sprintf("→ Cleaning %d existing plot files...\n", length(plot_files)))
       file.remove(plot_files)
     }
-    cat("✓ Plots directory cleaned\n")
+    cat("✓ Summary plots directory cleaned\n")
   }
-  dir.create(plot_dir, showWarnings = FALSE, recursive = TRUE)
 
   cat("→ Reading cohort MC-CV results...\n")
-  cindex_cohort_path <- file.path(output_dir, "cohort_model_cindex_mc_cv_modifiable_clinical.csv")
-  best_feat_path     <- file.path(output_dir, "best_clinical_features_by_cohort_mc_cv.csv")
+  cindex_cohort_path <- file.path(summary_dir, "cohort_model_cindex_mc_cv_modifiable_clinical.csv")
+  best_feat_path     <- file.path(summary_dir, "best_clinical_features_by_cohort_mc_cv.csv")
 
   if (!file.exists(cindex_cohort_path)) {
-    stop("Expected cohort C-index file 'cohort_model_cindex_mc_cv_modifiable_clinical.csv' not found in: ", output_dir)
+    stop("Expected cohort C-index file 'cohort_model_cindex_mc_cv_modifiable_clinical.csv' not found in: ", summary_dir)
   }
   if (!file.exists(best_feat_path)) {
-    stop("Expected best-features file 'best_clinical_features_by_cohort_mc_cv.csv' not found in: ", output_dir)
+    stop("Expected best-features file 'best_clinical_features_by_cohort_mc_cv.csv' not found in: ", summary_dir)
   }
 
   cindex_cohort <- readr::read_csv(cindex_cohort_path)
@@ -137,7 +139,7 @@ run_visualizations <- function(output_dir = NULL) {
     theme(axis.text.x = element_text(angle = 0, hjust = 0.5, size = 10),
           axis.text.y = element_text(size = 8))
 
-  ggplot2::ggsave(file.path(plot_dir, "feature_importance_heatmap.png"), p1,
+  ggplot2::ggsave(file.path(plot_dir_summary, "feature_importance_heatmap.png"), p1,
                   width = 12,
                   height = max(16, length(all_unique_features) * 0.3),
                   dpi = 300,
@@ -162,7 +164,7 @@ run_visualizations <- function(output_dir = NULL) {
          x = "Model", y = "Cohort") +
     theme_minimal()
 
-  ggplot2::ggsave(file.path(plot_dir, "cindex_heatmap.png"), p2,
+  ggplot2::ggsave(file.path(plot_dir_summary, "cindex_heatmap.png"), p2,
                   width = 10, height = 4, dpi = 300)
   cat("✓ Saved: cindex_heatmap.png\n")
 
@@ -193,7 +195,7 @@ run_visualizations <- function(output_dir = NULL) {
     ) +
     theme_minimal()
 
-  ggplot2::ggsave(file.path(plot_dir, "scaled_feature_importance_bar_chart.png"), p3,
+  ggplot2::ggsave(file.path(plot_dir_summary, "scaled_feature_importance_bar_chart.png"), p3,
                   width = 12, height = 10, dpi = 300)
   cat("✓ Saved: scaled_feature_importance_bar_chart.png\n")
 
@@ -234,11 +236,11 @@ run_visualizations <- function(output_dir = NULL) {
       )
   }
 
-  readr::write_csv(cindex_table, file.path(plot_dir, "cindex_table.csv"))
+  readr::write_csv(cindex_table, file.path(plot_dir_summary, "cindex_table.csv"))
   cat("✓ Saved: cindex_table.csv\n")
 
   # ------------------------
-  # Sankey diagram: combined cohorts → features
+  # Sankey diagram 1: combined cohorts → features (raw importance)
   # ------------------------
   sankey_data <- best_features %>%
     dplyr::group_by(Cohort, feature) %>%
@@ -249,7 +251,7 @@ run_visualizations <- function(output_dir = NULL) {
     dplyr::filter(!is.na(value) & value > 0)
 
   if (nrow(sankey_data) > 0) {
-    cat("\n→ Creating cohort clinical feature Sankey diagram...\n")
+    cat("\n→ Creating cohort clinical feature Sankey diagram (raw importance)...\n")
     all_nodes <- unique(c(sankey_data$Cohort, sankey_data$feature))
 
     links <- sankey_data %>%
@@ -274,14 +276,14 @@ run_visualizations <- function(output_dir = NULL) {
       )
     ) %>%
       layout(
-        title = "Cohorts → Modifiable Clinical Features (MC-CV best models)",
+        title = "Cohorts → Modifiable Clinical Features (MC-CV best models, raw importance)",
         font = list(size = 10)
       )
 
     # Save HTML widget
     htmlwidgets::saveWidget(
       sankey_plot,
-      file = file.path(plot_dir, "cohort_clinical_feature_sankey.html"),
+      file = file.path(plot_dir_summary, "cohort_clinical_feature_sankey.html"),
       selfcontained = TRUE
     )
     cat("✓ Saved: cohort_clinical_feature_sankey.html\n")
@@ -289,10 +291,101 @@ run_visualizations <- function(output_dir = NULL) {
     cat("⚠ No data available to generate cohort Sankey diagram.\n")
   }
 
+  # ------------------------
+  # Sankey diagram 2: scaled normalized feature importance by cohort
+  # Shows how each cohort contributes to overall scaled normalized importance
+  # ------------------------
+  cat("\n→ Creating scaled normalized feature importance Sankey diagram...\n")
+  
+  # Use the feature_matrix which already has scaled normalized importance
+  sankey_scaled_data <- feature_matrix %>%
+    dplyr::group_by(Cohort, feature) %>%
+    dplyr::summarise(
+      scaled_importance = sum(importance_normalized * rel_weight, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    dplyr::filter(!is.na(scaled_importance) & scaled_importance > 0) %>%
+    dplyr::arrange(desc(scaled_importance))
+
+  if (nrow(sankey_scaled_data) > 0) {
+    # Get top features for clarity (top 30 features)
+    top_features_scaled <- sankey_scaled_data %>%
+      dplyr::group_by(feature) %>%
+      dplyr::summarise(total_scaled = sum(scaled_importance), .groups = "drop") %>%
+      dplyr::arrange(desc(total_scaled)) %>%
+      dplyr::slice_head(n = 30) %>%
+      dplyr::pull(feature)
+    
+    sankey_scaled_data <- sankey_scaled_data %>%
+      dplyr::filter(feature %in% top_features_scaled)
+    
+    all_nodes_scaled <- unique(c(sankey_scaled_data$Cohort, sankey_scaled_data$feature))
+    
+    links_scaled <- sankey_scaled_data %>%
+      dplyr::mutate(
+        source = match(Cohort, all_nodes_scaled) - 1,
+        target = match(feature, all_nodes_scaled) - 1
+      )
+    
+    # Color nodes by type (cohort vs feature)
+    node_colors <- ifelse(all_nodes_scaled %in% unique(sankey_scaled_data$Cohort), 
+                         "#1f77b4", "#ff7f0e")  # Blue for cohorts, Orange for features
+    
+    sankey_scaled_plot <- plot_ly(
+      type = "sankey",
+      orientation = "h",
+      node = list(
+        label = all_nodes_scaled,
+        pad = 15,
+        thickness = 20,
+        line = list(color = "black", width = 0.5),
+        color = node_colors
+      ),
+      link = list(
+        source = links_scaled$source,
+        target = links_scaled$target,
+        value = links_scaled$scaled_importance,
+        color = "rgba(128, 128, 128, 0.3)"  # Semi-transparent gray links
+      )
+    ) %>%
+      layout(
+        title = "Scaled Normalized Feature Importance Contribution by Cohort (Top 30 Features)",
+        subtitle = "Flow width represents scaled normalized importance (importance × model performance weight)",
+        font = list(size = 10)
+      )
+    
+    # Save HTML widget
+    htmlwidgets::saveWidget(
+      sankey_scaled_plot,
+      file = file.path(plot_dir_summary, "cohort_scaled_feature_importance_sankey.html"),
+      selfcontained = TRUE
+    )
+    cat("✓ Saved: cohort_scaled_feature_importance_sankey.html\n")
+    
+    # Also create a summary table of scaled contributions
+    scaled_contribution_summary <- sankey_scaled_data %>%
+      dplyr::group_by(Cohort) %>%
+      dplyr::summarise(
+        total_contribution = sum(scaled_importance, na.rm = TRUE),
+        n_features = dplyr::n_distinct(feature),
+        .groups = "drop"
+      ) %>%
+      dplyr::mutate(
+        contribution_pct = 100 * total_contribution / sum(total_contribution, na.rm = TRUE)
+      ) %>%
+      dplyr::arrange(desc(total_contribution))
+    
+    readr::write_csv(scaled_contribution_summary, 
+                     file.path(plot_dir_summary, "cohort_scaled_contribution_summary.csv"))
+    cat("✓ Saved: cohort_scaled_contribution_summary.csv\n")
+  } else {
+    cat("⚠ No data available to generate scaled normalized Sankey diagram.\n")
+  }
+
   cat("\n========================================\n")
   cat("Visualization Summary\n")
   cat("========================================\n")
-  cat(sprintf("Plots saved to: %s\n", normalizePath(plot_dir)))
+  cat(sprintf("Combined cohort comparison plots saved to: %s\n", normalizePath(plot_dir_summary)))
 }
 
 # Run when executed non-interactively (e.g., via `Rscript`).
