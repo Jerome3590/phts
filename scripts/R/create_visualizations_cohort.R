@@ -134,6 +134,8 @@ run_visualizations <- function(output_dir = NULL) {
   # Prepare feature matrix: Cohort × Model × Feature
   feature_matrix <- best_features %>%
     dplyr::select(Cohort, Model, feature, importance) %>%
+    # Remove NA features (both actual NA and string "NA")
+    dplyr::filter(!is.na(feature) & feature != "NA" & feature != "" & !is.na(Cohort) & !is.na(Model)) %>%
     dplyr::mutate(
       Cohort = as.character(Cohort),
       Model  = as.character(Model),
@@ -338,6 +340,8 @@ run_visualizations <- function(output_dir = NULL) {
   # Sankey diagram 1: combined cohorts → features (raw importance)
   # ------------------------
   sankey_data <- best_features %>%
+    # Remove NA features (both actual NA and string "NA")
+    dplyr::filter(!is.na(feature) & feature != "NA" & feature != "" & !is.na(Cohort)) %>%
     dplyr::group_by(Cohort, feature) %>%
     dplyr::summarise(
       value = sum(importance, na.rm = TRUE),
