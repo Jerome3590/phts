@@ -350,8 +350,18 @@ log_survival_cindex <- function(
   time,
   status,
   risk_scores,
-  file = file.path("cohort_analysis", "survival_metrics.csv")
+  file = NULL
 ) {
+  # Use consistent output path if not specified
+  if (is.null(file)) {
+    # Try to use here() if available, otherwise use relative path
+    if (requireNamespace("here", quietly = TRUE)) {
+      file <- here::here("cohort_analysis", "outputs", "survival", "survival_metrics.csv")
+    } else {
+      file <- file.path("cohort_analysis", "outputs", "survival", "survival_metrics.csv")
+    }
+  }
+  
   res <- compute_c_index(time, status, risk_scores)
   n_events <- sum(as.integer(status) == 1, na.rm = TRUE)
   row <- data.frame(

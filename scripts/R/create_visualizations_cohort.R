@@ -28,14 +28,24 @@ compute_rel_weights <- function(cindex_df) {
 
 run_visualizations <- function(output_dir = NULL) {
   # Determine outputs directory if not provided
-  # Each notebook runs from its own directory, so outputs/ should be relative to cwd
+  # Check for survival-specific path first, then fall back to generic outputs
   if (is.null(output_dir)) {
     current_dir <- getwd()
-    if (dir.exists("outputs")) {
+    # Try survival-specific path first (for cohort analysis notebooks)
+    if (dir.exists("outputs/survival/summary")) {
+      output_dir <- "outputs/survival"
+    } else if (dir.exists("outputs/summary")) {
       output_dir <- "outputs"
+    } else if (dir.exists("outputs")) {
+      # Check if there's a survival subdirectory
+      if (dir.exists("outputs/survival")) {
+        output_dir <- "outputs/survival"
+      } else {
+        output_dir <- "outputs"
+      }
     } else {
-      stop("Cannot find outputs directory. Expected 'outputs/' relative to current working directory: ", current_dir,
-           "\nMake sure you're running the notebook from its directory (e.g., clinical_feature_importance_by_cohort/)")
+      stop("Cannot find outputs directory. Expected 'outputs/survival/' or 'outputs/' relative to current working directory: ", current_dir,
+           "\nMake sure you're running the notebook from its directory and have run Sections 6.3-6.4 first.")
     }
   }
   # Summary directory for combined cohort comparisons
@@ -349,8 +359,10 @@ run_visualizations <- function(output_dir = NULL) {
       )
     ) %>%
       layout(
-        title = "Scaled Normalized Feature Importance Contribution by Cohort (Top 30 Features)",
-        subtitle = "Flow width represents scaled normalized importance (importance × model performance weight)",
+        title = list(
+          text = "Scaled Normalized Feature Importance Contribution by Cohort (Top 30 Features)<br><sub>Flow width represents scaled normalized importance (importance × model performance weight)</sub>",
+          font = list(size = 12)
+        ),
         font = list(size = 10)
       )
     
