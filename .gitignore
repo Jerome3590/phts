@@ -16,6 +16,7 @@ background/
 
 graft-loss/doc/
 
+catboost_info/
 */catboost_info/*
 
 # Data files and artifacts - ignore all data files
