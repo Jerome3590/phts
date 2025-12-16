@@ -233,34 +233,52 @@ run_visualizations <- function(output_dir = NULL) {
   cat("✓ Saved: cindex_heatmap.png\n")
 
   # ------------------------
-  # Scaled bar chart (Top 20 clinical features)
+  # Scaled bar chart (Top 20 clinical features) - grouped by cohort
   # ------------------------
-  cat("\n→ Creating scaled feature importance bar chart...\n")
-  scaled_feature_importance <- feature_matrix %>%
+  cat("\n→ Creating scaled feature importance bar chart (by cohort)...\n")
+  
+  # Calculate scaled importance by cohort and feature
+  scaled_feature_importance_by_cohort <- feature_matrix %>%
+    dplyr::group_by(Cohort, feature) %>%
+    dplyr::summarise(
+      scaled_importance = sum(importance, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    dplyr::filter(!is.na(scaled_importance) & scaled_importance > 0)
+  
+  # Get top 20 features across all cohorts (by total importance)
+  top_features <- scaled_feature_importance_by_cohort %>%
     dplyr::group_by(feature) %>%
     dplyr::summarise(
-      total_scaled_importance = sum(importance_normalized * rel_weight, na.rm = TRUE),
+      total_scaled_importance = sum(scaled_importance, na.rm = TRUE),
       .groups = "drop"
     ) %>%
     dplyr::arrange(desc(total_scaled_importance)) %>%
-    dplyr::slice_head(n = 20)
+    dplyr::slice_head(n = 20) %>%
+    dplyr::pull(feature)
+  
+  # Filter to top features and order by total importance
+  scaled_feature_importance <- scaled_feature_importance_by_cohort %>%
+    dplyr::filter(feature %in% top_features) %>%
+    dplyr::mutate(
+      feature = factor(feature, levels = rev(top_features))
+    )
 
-  scaled_feature_importance <- scaled_feature_importance %>%
-    dplyr::mutate(feature = factor(feature, levels = rev(scaled_feature_importance$feature)))
-
-  p3 <- ggplot(scaled_feature_importance, aes(x = feature, y = total_scaled_importance)) +
-    geom_bar(stat = "identity", fill = "steelblue", alpha = 0.8) +
+  p3 <- ggplot(scaled_feature_importance, aes(x = feature, y = scaled_importance, fill = Cohort)) +
+    geom_bar(stat = "identity", position = "dodge", alpha = 0.8) +
     coord_flip() +
+    scale_fill_brewer(palette = "Set1", name = "Cohort") +
     labs(
-      title = "Scaled Clinical Feature Importance (Top 20 Features)",
+      title = "Scaled Clinical Feature Importance by Cohort (Top 20 Features)",
       subtitle = "Importance scaled by cohort/model performance (MC-CV C-index)",
       x = "Feature",
       y = "Scaled Normalized Importance"
     ) +
-    theme_minimal()
+    theme_minimal() +
+    theme(legend.position = "right")
 
   ggplot2::ggsave(file.path(plot_dir_summary, "scaled_feature_importance_bar_chart.png"), p3,
-                  width = 12, height = 10, dpi = 300)
+                  width = 14, height = 10, dpi = 300)
   cat("✓ Saved: scaled_feature_importance_bar_chart.png\n")
 
   # ------------------------
