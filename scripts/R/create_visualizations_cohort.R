@@ -243,8 +243,7 @@ run_visualizations <- function(output_dir = NULL) {
     dplyr::summarise(
       scaled_importance = sum(importance, na.rm = TRUE),
       .groups = "drop"
-    ) %>%
-    dplyr::filter(!is.na(scaled_importance) & scaled_importance > 0)
+    )
   
   # Get top 20 features across all cohorts (by total importance)
   top_features <- scaled_feature_importance_by_cohort %>%
@@ -257,17 +256,28 @@ run_visualizations <- function(output_dir = NULL) {
     dplyr::slice_head(n = 20) %>%
     dplyr::pull(feature)
   
-  # Filter to top features and order by total importance
+  # Get all unique cohorts
+  all_cohorts <- unique(scaled_feature_importance_by_cohort$Cohort)
+  
+  # Filter to top features and ensure all cohort-feature combinations exist
   scaled_feature_importance <- scaled_feature_importance_by_cohort %>%
     dplyr::filter(feature %in% top_features) %>%
+    # Complete the data to ensure all cohort-feature combinations exist
+    tidyr::complete(Cohort = all_cohorts, feature = top_features, fill = list(scaled_importance = 0)) %>%
     dplyr::mutate(
-      feature = factor(feature, levels = rev(top_features))
+      feature = factor(feature, levels = rev(top_features)),
+      Cohort = factor(Cohort)
     )
 
+  # Ensure Cohort is a factor for proper grouping
+  scaled_feature_importance <- scaled_feature_importance %>%
+    dplyr::mutate(Cohort = factor(Cohort))
+  
+  # Create a grouped bar chart with proper dodge positioning
   p3 <- ggplot(scaled_feature_importance, aes(x = feature, y = scaled_importance, fill = Cohort)) +
-    geom_bar(stat = "identity", position = "dodge", alpha = 0.8) +
+    geom_col(position = position_dodge2(preserve = "single", width = 0.7), alpha = 0.8) +
     coord_flip() +
-    scale_fill_brewer(palette = "Set1", name = "Cohort") +
+    scale_fill_brewer(palette = "Set1", name = "Cohort", guide = guide_legend(reverse = TRUE)) +
     labs(
       title = "Scaled Clinical Feature Importance by Cohort (Top 20 Features)",
       subtitle = "Importance scaled by cohort/model performance (MC-CV C-index)",
@@ -275,7 +285,10 @@ run_visualizations <- function(output_dir = NULL) {
       y = "Scaled Normalized Importance"
     ) +
     theme_minimal() +
-    theme(legend.position = "right")
+    theme(
+      legend.position = "right",
+      axis.text.y = element_text(size = 9)
+    )
 
   ggplot2::ggsave(file.path(plot_dir_summary, "scaled_feature_importance_bar_chart.png"), p3,
                   width = 14, height = 10, dpi = 300)
