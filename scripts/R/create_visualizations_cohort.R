@@ -7,6 +7,60 @@ library(ggplot2)
 library(plotly)
 library(here)
 
+# Helper: safely save HTML widget (handles Windows file locking issues)
+# This prevents temporary files with random suffixes from being left behind
+save_widget_safely <- function(widget, file, selfcontained = TRUE) {
+  # Remove any existing temp files with random suffixes
+  file_dir <- dirname(file)
+  file_base <- basename(file)
+  file_pattern <- paste0("^", gsub("\\.", "\\\\.", file_base), "\\.[A-F0-9]{8}$")
+  temp_files <- list.files(file_dir, pattern = file_pattern, full.names = TRUE)
+  if (length(temp_files) > 0) {
+    tryCatch({
+      file.remove(temp_files)
+      cat("  Cleaned up", length(temp_files), "temporary file(s)\n")
+    }, error = function(e) {
+      # Ignore errors when cleaning up
+    })
+  }
+  
+  # Save to a temporary file first, then rename (avoids file locking issues)
+  temp_file <- tempfile(fileext = ".html", tmpdir = file_dir)
+  
+  # Try selfcontained first, fall back to FALSE if pandoc is not available
+  save_result <- tryCatch({
+    htmlwidgets::saveWidget(
+      widget,
+      file = temp_file,
+      selfcontained = selfcontained
+    )
+    TRUE
+  }, error = function(e) {
+    if (grepl("pandoc", e$message, ignore.case = TRUE) && selfcontained) {
+      cat("  Warning: pandoc not available, using selfcontained = FALSE\n")
+      htmlwidgets::saveWidget(
+        widget,
+        file = temp_file,
+        selfcontained = FALSE
+      )
+      TRUE
+    } else {
+      stop(e)
+    }
+  })
+  
+  # Rename temp file to final name
+  if (file.exists(temp_file)) {
+    # Remove target file if it exists
+    if (file.exists(file)) {
+      file.remove(file)
+    }
+    file.rename(temp_file, file)
+  } else {
+    stop("Failed to create HTML widget file")
+  }
+}
+
 # Helper: compute relative model weights from C-index
 # Returns a tibble with columns: period, method, rel_weight
 compute_rel_weights <- function(cindex_df) {
@@ -290,8 +344,8 @@ run_visualizations <- function(output_dir = NULL) {
         font = list(size = 10)
       )
 
-    # Save HTML widget
-    htmlwidgets::saveWidget(
+    # Save HTML widget (using safe save to avoid Windows temp file issues)
+    save_widget_safely(
       sankey_plot,
       file = file.path(plot_dir_summary, "cohort_clinical_feature_sankey.html"),
       selfcontained = TRUE
@@ -308,10 +362,11 @@ run_visualizations <- function(output_dir = NULL) {
   cat("\n→ Creating scaled normalized feature importance Sankey diagram...\n")
   
   # Use the feature_matrix which already has scaled normalized importance
+  # The 'importance' column already contains importance_normalized * rel_weight
   sankey_scaled_data <- feature_matrix %>%
     dplyr::group_by(Cohort, feature) %>%
     dplyr::summarise(
-      scaled_importance = sum(importance_normalized * rel_weight, na.rm = TRUE),
+      scaled_importance = sum(importance, na.rm = TRUE),
       .groups = "drop"
     ) %>%
     dplyr::filter(!is.na(scaled_importance) & scaled_importance > 0) %>%
@@ -366,8 +421,8 @@ run_visualizations <- function(output_dir = NULL) {
         font = list(size = 10)
       )
     
-    # Save HTML widget
-    htmlwidgets::saveWidget(
+    # Save HTML widget (using safe save to avoid Windows temp file issues)
+    save_widget_safely(
       sankey_scaled_plot,
       file = file.path(plot_dir_summary, "cohort_scaled_feature_importance_sankey.html"),
       selfcontained = TRUE
