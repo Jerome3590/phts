@@ -6,7 +6,7 @@ Dynamic analysis pipeline supporting both survival analysis and event classifica
 
 ## Overview
 
-This notebook (`graft_loss_clinical_cohort_analysis.ipynb`) implements cohort-specific analysis using **modifiable clinical features** for two etiologic cohorts:
+This analysis implements cohort-specific models using **modifiable clinical features** for two etiologic cohorts:
 - **CHD**: Congenital Heart Disease (`primary_etiology == "Congenital HD"`)
 - **MyoCardio**: Myocarditis/Cardiomyopathy (`primary_etiology %in% c("Cardiomyopathy", "Myocarditis")`)
 
@@ -37,89 +37,117 @@ ANALYSIS_MODE <- "survival"  # or "classification"
 3. Run the notebook from top to bottom
 4. Results saved to `outputs/` directory
 
+## Notebooks
+
+- **`graft_loss_clinical_cohort_survival.ipynb`**: Survival analysis mode (default)
+- **`graft_loss_clinical_cohort_event_classification.ipynb`**: Classification mode
+- **`graft_loss_clinical_cohort_analysis.ipynb`**: Unified notebook supporting both modes
+
 ## Outputs
 
 All outputs are saved to `graft-loss/cohort_analysis/outputs/` and synced to `s3://uva-private-data-lake/graft-loss/cohort_analysis/`.
 
-- **Survival Mode**: 
-  - `outputs/survival/cohort_model_cindex_mc_cv_modifiable_clinical.csv`
-  - `outputs/survival/best_clinical_features_by_cohort_mc_cv.csv`
-  - `outputs/survival/summary/plots/` - Visualizations (heatmaps, Sankey diagrams, bar charts)
-  - `outputs/survival/CHD/` and `outputs/survival/MyoCardio/` - Cohort-specific results
+### Survival Mode Outputs
 
-- **Classification Mode**: 
-  - `outputs/classification_mc_cv/cohort_classification_metrics_mc_cv.csv`
+- `outputs/survival/cohort_model_cindex_mc_cv_modifiable_clinical.csv` - Model performance metrics
+- `outputs/survival/best_clinical_features_by_cohort_mc_cv.csv` - Feature importance by cohort
+- `outputs/survival/summary/plots/` - Visualizations:
+  - `cindex_heatmap.png` - Model performance comparison
+  - `feature_importance_heatmap.png` - Feature importance heatmap
+  - `scaled_feature_importance_bar_chart.png` - Scaled importance by cohort
+  - `cohort_clinical_feature_sankey.html` - Sankey diagram of feature importance
+  - `cohort_scaled_feature_importance_sankey.html` - Scaled Sankey diagram
+- `outputs/survival/CHD/` and `outputs/survival/MyoCardio/` - Cohort-specific results
 
-## Results Summary
+### Classification Mode Outputs
 
-### Survival Analysis Results (50 MC-CV Splits)
+- `outputs/classification/cohort_model_metrics_mc_cv_modifiable_clinical.csv` - Classification metrics
+- `outputs/classification/best_clinical_features_by_cohort_mc_cv.csv` - Feature importance
+- `outputs/classification/summary/plots/` - Visualizations
 
-**Best Performing Model: CatBoost** consistently outperformed all other models across both cohorts.
+## Feature Documentation
 
-#### CHD Cohort (Congenital Heart Disease)
-- **CatBoost**: C-index = **0.558** (95% CI: 0.507 - 0.606)
-- **XGBoost**: C-index = 0.466 (95% CI: 0.396 - 0.517)
-- **RSF**: C-index = 0.443 (95% CI: 0.401 - 0.500)
-- **XGBoost RF**: C-index = 0.445 (95% CI: 0.386 - 0.499)
-- **AORSF**: C-index = 0.421 (95% CI: 0.381 - 0.473)
+📋 **[Complete Feature Documentation](model_features/README.md)**
 
-**Top Modifiable Clinical Features (CHD):**
-1. Liver function (ALT, AST) - Liver function monitoring
-2. ECMO support - Cardiac support device
-3. Nutrition markers (total protein, serum albumin) - Nutritional support
-4. Kidney function (creatinine) - Renal monitoring
-5. Growth parameters (height, weight) - Growth monitoring
+The detailed feature documentation includes:
+- **Variables Kept**: 41 modifiable clinical features organized by category (Kidney Function, Liver Function, Nutrition, Respiratory, Cardiac Support, Immunology)
+- **Variables Dropped**: Complete list of excluded variables with reasons
+- **Top Features from Feature Importance Analysis**: Results from RSF, CatBoost, and AORSF models
+- **Important Features Excluded**: Features identified as important but excluded due to non-modifiability
+- **IQR for Numerical Variables**: Interquartile ranges for all continuous variables
+- **Binary Features**: Distribution of binary (0/1) features
+- **Mapping to Data Dictionary**: Links to PHTS variable definitions
+- **Calculated Variables**: Documentation for eGFR, BMI, and WHO growth curve calculations
 
-#### MyoCardio Cohort (Myocarditis/Cardiomyopathy)
-- **CatBoost**: C-index = **0.539** (95% CI: 0.479 - 0.596)
-- **XGBoost**: C-index = 0.443 (95% CI: 0.384 - 0.509)
-- **RSF**: C-index = 0.442 (95% CI: 0.372 - 0.494)
-- **XGBoost RF**: C-index = 0.437 (95% CI: 0.383 - 0.500)
-- **AORSF**: C-index = 0.415 (95% CI: 0.355 - 0.472)
+### Quick Feature Summary
 
-**Top Modifiable Clinical Features (MyoCardio):**
-1. Liver function markers - Liver function monitoring
-2. Nutrition and growth parameters - Nutritional support
-3. Kidney function - Renal monitoring
-4. Respiratory support (ventilation) - Ventilation management
-5. Cardiac support devices (VAD, ECMO) - Hemodynamic support
+- **Total Variables in PHTS Dataset**: 476
+- **Modifiable Clinical Features Kept**: 41
+- **Variables Excluded**: 43 exact matches + variables with prefixes (dtx_, cc_, dcon, dpri, dsec, dmaj, sd)
 
-### Key Findings
+**Feature Categories:**
+- Kidney Function (5 features)
+- Liver Function (9 features)
+- Nutrition (12 features)
+- Respiratory (4 features)
+- Cardiac Support (7 features)
+- Immunology (4 features)
 
-1. **Model Performance**: CatBoost achieved the highest C-index for both cohorts, demonstrating superior predictive performance for graft loss risk using modifiable clinical features.
+## Key Features
 
-2. **Cohort Differences**: While CatBoost performed best in both cohorts, the CHD cohort showed slightly higher discriminative ability (C-index 0.558 vs 0.539).
+### Modifiable Clinical Features Only
 
-3. **Feature Categories**: Liver function, nutrition markers, and kidney function consistently ranked among the top modifiable features across both cohorts, highlighting their importance for post-transplant risk assessment.
+The analysis focuses exclusively on **modifiable clinical features** that can be influenced through clinical intervention:
 
-4. **Clinical Relevance**: The identified modifiable features represent actionable targets for clinical intervention, including:
-   - **Kidney Function**: Creatinine monitoring, eGFR-based intervention, dialysis management
-   - **Liver Function**: ALT/AST monitoring, bilirubin assessment
-   - **Nutrition**: Albumin, protein intake optimization, growth support
-   - **Cardiac Support**: VAD, ECMO management
-   - **Respiratory**: Ventilation weaning plans
+- **Kidney Function**: Creatinine monitoring, eGFR-based intervention, dialysis management
+- **Liver Function**: AST/ALT monitoring, bilirubin assessment, Fontan liver disease management
+- **Nutrition**: Albumin, pre-albumin, total protein, BMI, growth parameters
+- **Respiratory**: Ventilation support, tracheostomy care
+- **Cardiac Support**: VAD, ECMO, MCSD consideration, CPR risk mitigation
+- **Immunology**: HLA desensitization, crossmatch-based donor selection, PRA monitoring
 
-5. **Robustness**: All models were evaluated using 50 Monte Carlo Cross-Validation splits (80/20 train/test), providing robust, publication-quality estimates with 95% confidence intervals.
+## Monte Carlo Cross-Validation
 
-### Visualizations
+- **Splits**: 50 (or 5 in DEBUG_MODE)
+- **Train/Test Split**: 80/20
+- **Evaluation**: Performance metrics with 95% confidence intervals across splits
 
-Comprehensive visualizations are available in `outputs/survival/summary/plots/`:
-- **C-index Heatmap**: Model performance comparison across cohorts
-- **Feature Importance Heatmap**: Top features by cohort and model
-- **Scaled Feature Importance Bar Chart**: Normalized importance weighted by model performance
-- **Sankey Diagrams**: Interactive flow diagrams showing feature contributions by cohort
+## Model Performance
 
-## Documentation
+### CHD Cohort
+- **Sample Size**: ~2,845 patients
+- **Event Rate**: ~20.11%
+- **Best Model**: Varies by analysis mode (see outputs for details)
 
-For detailed documentation, see:
-- **[Notebook Guide](docs/cohort_analysis/README_notebook_guide.md)** - Detailed notebook walkthrough
-- **[Ready to Run](docs/cohort_analysis/README_ready_to_run.md)** - Execution instructions
-- **[MC-CV Parallel EC2](docs/cohort_analysis/README_mc_cv_parallel_ec2.md)** - EC2 deployment guide
-- **[Original vs Updated Study](docs/cohort_analysis/README_original_vs_updated_study.md)** - Methodology comparison
-- **[Validation & Leakage](docs/shared/README_validation_concordance_variables_leakage.md)** - Validation procedures (shared)
+### MyoCardio Cohort
+- **Sample Size**: ~2,914 patients
+- **Event Rate**: ~12.01%
+- **Best Model**: Varies by analysis mode (see outputs for details)
+
+## Related Documentation
+
+- **[Risk Dashboard README](README_risk_dashboard.md)** - Interactive risk prediction dashboard
+- **[Final Model README](final_model/README_final_model.md)** - Production model documentation
+- **[Integration Instructions](scripts/INTEGRATION_INSTRUCTIONS.md)** - How to integrate eGFR and WHO calculations
+
+## Data Requirements
+
+- **Input Data**: `graft-loss/data/phts_txpl_ml.sas7bdat`
+- **Time Period**: 2010-2024 (configurable)
+- **Cohorts**: CHD and MyoCardio (filtered by `primary_etiology`)
+
+## Dependencies
+
+- R packages: `survival`, `catboost`, `ranger`, `xgboost`, `aorsf`, `dplyr`, `tidyr`, `ggplot2`, `plotly`
+- Optional: `zscorer` package for WHO growth curve calculations
 
 ## Scripts
 
-Visualization scripts are in `scripts/R/`:
-- `create_visualizations_cohort.R` - Creates cohort-specific visualizations
+- **`scripts/calculate_derived_features.R`**: Calculates eGFR, BMI, and WHO z-scores
+- **`scripts/calculate_who_zscore.R`**: Helper functions for WHO growth curve calculations
+- **`scripts/generate_feature_documentation.R`**: Generates feature documentation with IQR values
+
+## Citation
+
+If using this analysis, please cite the original PHTS registry and reference the feature documentation for complete variable definitions.
 
