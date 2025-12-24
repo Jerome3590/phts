@@ -82,24 +82,35 @@ compute_rel_weights <- function(cindex_df) {
 
 run_visualizations <- function(output_dir = NULL) {
   # Determine outputs directory if not provided
-  # Check for survival-specific path first, then fall back to generic outputs
+  # Prefer here::here-based paths so it works on both Windows and Linux
+  # when the project is opened from either the repo root or the
+  # cohort_analysis subdirectory.
   if (is.null(output_dir)) {
-    current_dir <- getwd()
-    # Try survival-specific path first (for cohort analysis notebooks)
-    if (dir.exists("outputs/survival/summary")) {
+    # Here root for this project is typically '.../graft-loss/cohort_analysis'
+    # so here(\"outputs\", \"survival\") is the canonical survival outputs dir.
+    survival_dir_here <- here::here("outputs", "survival")
+    generic_dir_here  <- here::here("outputs")
+
+    if (dir.exists(file.path(survival_dir_here, "summary"))) {
+      output_dir <- survival_dir_here
+    } else if (dir.exists(survival_dir_here)) {
+      output_dir <- survival_dir_here
+    } else if (dir.exists(generic_dir_here)) {
+      output_dir <- generic_dir_here
+    } else if (dir.exists("outputs/survival/summary")) {
+      # Fallback to working-directory-relative paths if here() is not aligned
       output_dir <- "outputs/survival"
     } else if (dir.exists("outputs/summary")) {
       output_dir <- "outputs"
-    } else if (dir.exists("outputs")) {
-      # Check if there's a survival subdirectory
-      if (dir.exists("outputs/survival")) {
-        output_dir <- "outputs/survival"
-      } else {
-        output_dir <- "outputs"
-      }
     } else {
-      stop("Cannot find outputs directory. Expected 'outputs/survival/' or 'outputs/' relative to current working directory: ", current_dir,
-           "\nMake sure you're running the notebook from its directory and have run Sections 6.3-6.4 first.")
+      current_dir <- getwd()
+      stop(
+        "Cannot find outputs directory. Tried:\n  - ",
+        survival_dir_here, "\n  - ", generic_dir_here,
+        "\n  - outputs/survival (relative to ", current_dir, ")",
+        "\nMake sure you're running from the cohort_analysis project (here() root) ",
+        "and have run Sections 6.3-6.4 first."
+      )
     }
   }
   # Summary directory for combined cohort comparisons
@@ -132,6 +143,9 @@ run_visualizations <- function(output_dir = NULL) {
   best_features <- readr::read_csv(best_feat_path)
 
   # Prepare feature matrix: Cohort × Model × Feature
+  # NOTE: We intentionally do NOT normalize importance within each Cohort×Model here.
+  #       This preserves real differences in total feature contribution between cohorts
+  #       and avoids forcing total contribution to be ~equal across cohorts.
   feature_matrix <- best_features %>%
     dplyr::select(Cohort, Model, feature, importance) %>%
     # Remove NA features (both actual NA and string "NA")
@@ -141,15 +155,9 @@ run_visualizations <- function(output_dir = NULL) {
       Model  = as.character(Model),
       importance = as.numeric(importance)
     ) %>%
-    dplyr::mutate(importance = ifelse(is.na(importance), 0, importance)) %>%
-    dplyr::group_by(Cohort, Model) %>%
     dplyr::mutate(
-      importance = ifelse(importance < 0, 0, importance),
-      total_imp = sum(importance),
-      importance_normalized = ifelse(total_imp > 0, importance / total_imp, 1 / dplyr::n())
-    ) %>%
-    dplyr::select(-total_imp) %>%
-    dplyr::ungroup()
+      importance = ifelse(is.na(importance) | importance < 0, 0, importance)
+    )
 
   # Relative weights per cohort/model using cohort C-index file
   algorithm_ranking <- cindex_cohort %>%
@@ -174,7 +182,10 @@ run_visualizations <- function(output_dir = NULL) {
     dplyr::left_join(algorithm_ranking, by = c("Cohort", "Model")) %>%
     dplyr::mutate(
       rel_weight = ifelse(is.na(rel_weight), 1, rel_weight),
-      importance_scaled = importance_normalized * rel_weight,
+      # Scale raw importance by relative model weight (based on C-index),
+      # without per-model normalization. This lets cohorts with stronger
+      # overall signal (or more dominant models) contribute more total mass.
+      importance_scaled = importance * rel_weight,
       importance = importance_scaled
     ) %>%
     dplyr::select(-importance_scaled)
@@ -245,6 +256,13 @@ run_visualizations <- function(output_dir = NULL) {
     dplyr::summarise(
       scaled_importance = sum(importance, na.rm = TRUE),
       .groups = "drop"
+    ) %>%
+    # Drop missing / placeholder feature or cohort values so they don't appear in plots
+    dplyr::filter(
+      !is.na(feature),
+      feature != "NA",
+      feature != "",
+      !is.na(Cohort)
     )
   
   # Get top 20 features across all cohorts (by total importance)
@@ -269,17 +287,36 @@ run_visualizations <- function(output_dir = NULL) {
     dplyr::mutate(
       feature = factor(feature, levels = rev(top_features)),
       Cohort = factor(Cohort)
-    )
+    ) %>%
+    # Final safety filter to drop any NA / placeholder feature labels before plotting
+    dplyr::filter(!is.na(feature) & feature != "NA" & feature != "")
 
   # Ensure Cohort is a factor for proper grouping
   scaled_feature_importance <- scaled_feature_importance %>%
     dplyr::mutate(Cohort = factor(Cohort))
   
-  # Create a grouped bar chart with proper dodge positioning
-  p3 <- ggplot(scaled_feature_importance, aes(x = feature, y = scaled_importance, fill = Cohort)) +
-    geom_col(position = position_dodge2(preserve = "single", width = 0.7), alpha = 0.8) +
+  # Create a side-by-side grouped bar chart: features on the y-axis,
+  # cohorts staggered alongside each other (wider bars for visibility).
+  # Colors are aligned with the heatmap palette:
+  # - CHD: orange
+  # - MyoCardio: royal blue
+  p3 <- ggplot(
+    scaled_feature_importance,
+    aes(x = feature, y = scaled_importance, fill = Cohort)
+  ) +
+    geom_col(
+      position = position_dodge(width = 0.9),
+      width = 0.8,
+      alpha = 0.9
+    ) +
     coord_flip() +
-    scale_fill_brewer(palette = "Set1", name = "Cohort", guide = guide_legend(reverse = TRUE)) +
+    scale_fill_manual(
+      values = c(
+        "CHD" = "orange",
+        "MyoCardio" = "royalblue3"
+      ),
+      name = "Cohort"
+    ) +
     labs(
       title = "Scaled Clinical Feature Importance by Cohort (Top 20 Features)",
       subtitle = "Importance scaled by cohort/model performance (MC-CV C-index)",
@@ -289,7 +326,7 @@ run_visualizations <- function(output_dir = NULL) {
     theme_minimal() +
     theme(
       legend.position = "right",
-      axis.text.y = element_text(size = 9)
+      axis.text.y = element_text(size = 8)
     )
 
   ggplot2::ggsave(file.path(plot_dir_summary, "scaled_feature_importance_bar_chart.png"), p3,
@@ -391,19 +428,31 @@ run_visualizations <- function(output_dir = NULL) {
   }
 
   # ------------------------
-  # Sankey diagram 2: scaled normalized feature importance by cohort
-  # Shows how each cohort contributes to overall scaled normalized importance
+  # Sankey diagram 2: normalized feature importance by cohort
+  # For this workflow we normalize raw best-model importance to [0, 1]
+  # within each cohort (no C-index scaling), so flows show relative
+  # contribution of features for each cohort.
   # ------------------------
-  cat("\n→ Creating scaled normalized feature importance Sankey diagram...\n")
+  cat("\n→ Creating normalized feature importance Sankey diagram (no C-index scaling)...\n")
   
-  # Use the feature_matrix which already has scaled normalized importance
-  # The 'importance' column already contains importance_normalized * rel_weight
-  sankey_scaled_data <- feature_matrix %>%
+  sankey_scaled_data <- best_features %>%
+    # Keep only valid features/cohorts
+    dplyr::filter(!is.na(feature) & feature != "NA" & feature != "" & !is.na(Cohort)) %>%
+    # Aggregate raw (non-negative) importance across the best model's MC-CV splits
+    dplyr::mutate(importance = as.numeric(importance)) %>%
+    dplyr::mutate(importance = ifelse(is.na(importance) | importance < 0, 0, importance)) %>%
     dplyr::group_by(Cohort, feature) %>%
     dplyr::summarise(
-      scaled_importance = sum(importance, na.rm = TRUE),
+      raw_importance = sum(importance, na.rm = TRUE),
       .groups = "drop"
     ) %>%
+    # Normalize within each cohort so that sum(feature) = 1
+    dplyr::group_by(Cohort) %>%
+    dplyr::mutate(
+      total_raw = sum(raw_importance, na.rm = TRUE),
+      scaled_importance = dplyr::if_else(total_raw > 0, raw_importance / total_raw, 0)
+    ) %>%
+    dplyr::ungroup() %>%
     dplyr::filter(!is.na(scaled_importance) & scaled_importance > 0) %>%
     dplyr::arrange(desc(scaled_importance))
 
@@ -424,12 +473,55 @@ run_visualizations <- function(output_dir = NULL) {
     links_scaled <- sankey_scaled_data %>%
       dplyr::mutate(
         source = match(Cohort, all_nodes_scaled) - 1,
-        target = match(feature, all_nodes_scaled) - 1
+        target = match(feature, all_nodes_scaled) - 1,
+        # Link colors by cohort, aligned with heatmap / bar chart palette
+        # CHD       -> orange (low color)
+        # MyoCardio -> darkblue (high color)
+        link_color = dplyr::case_when(
+          Cohort == "CHD" ~ "rgba(255,165,0,0.4)",     # orange
+          Cohort == "MyoCardio" ~ "rgba(0,0,139,0.4)", # darkblue
+          TRUE ~ "rgba(128,128,128,0.3)"               # fallback
+        )
       )
     
-    # Color nodes by type (cohort vs feature)
-    node_colors <- ifelse(all_nodes_scaled %in% unique(sankey_scaled_data$Cohort), 
-                         "#1f77b4", "#ff7f0e")  # Blue for cohorts, Orange for features
+    # Node colors:
+    # - Cohort nodes fixed at the palette extremes (orange = CHD, darkblue = MyoCardio)
+    # - Feature nodes use a gradient from orange -> darkblue based on the
+    #   fraction of their normalized importance coming from MyoCardio vs CHD.
+    #   0   -> all CHD (orange)
+    #   0.5 -> balanced (mid color)
+    #   1   -> all MyoCardio (darkblue)
+    is_cohort_node <- all_nodes_scaled %in% unique(sankey_scaled_data$Cohort)
+
+    feature_mix <- sankey_scaled_data %>%
+      dplyr::group_by(feature) %>%
+      dplyr::summarise(
+        contrib_CHD = sum(dplyr::if_else(Cohort == "CHD", scaled_importance, 0), na.rm = TRUE),
+        contrib_Myo = sum(dplyr::if_else(Cohort == "MyoCardio", scaled_importance, 0), na.rm = TRUE),
+        total       = contrib_CHD + contrib_Myo,
+        frac_myo    = dplyr::if_else(total > 0, contrib_Myo / total, 0),
+        .groups     = "drop"
+      )
+    mix_map <- stats::setNames(feature_mix$frac_myo, feature_mix$feature)
+
+    node_values <- ifelse(
+      is_cohort_node,
+      NA_real_,
+      as.numeric(mix_map[all_nodes_scaled])
+    )
+    node_values[is.na(node_values)] <- 0
+
+    pal <- grDevices::colorRamp(c("orange", "darkblue"))
+    cols <- pal(node_values)
+    feature_colors <- grDevices::rgb(cols[, 1], cols[, 2], cols[, 3], maxColorValue = 255)
+
+    node_colors <- ifelse(
+      all_nodes_scaled == "CHD", "orange",
+      ifelse(
+        all_nodes_scaled == "MyoCardio", "darkblue",
+        feature_colors
+      )
+    )
     
     sankey_scaled_plot <- plot_ly(
       type = "sankey",
@@ -445,7 +537,7 @@ run_visualizations <- function(output_dir = NULL) {
         source = links_scaled$source,
         target = links_scaled$target,
         value = links_scaled$scaled_importance,
-        color = "rgba(128, 128, 128, 0.3)"  # Semi-transparent gray links
+        color = links_scaled$link_color
       )
     ) %>%
       layout(

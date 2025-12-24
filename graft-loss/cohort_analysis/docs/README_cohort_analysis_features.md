@@ -5,12 +5,14 @@ This document describes the variables used in the cohort analysis for graft loss
 ## Overview
 
 - **Total Variables in PHTS Dataset**: 476
-- **Modifiable Clinical Features Kept**: 41
+- **Clinical Features Kept**: 51  
+  - 41 **modifiable / partially modifiable** clinical features
+  - 10 **non-modifiable but clinically important context features** (age, surgical history, CHD HLH, immunology)
 - **Variables Excluded**: 43 exact matches + variables with prefixes: dtx_, cc_, dcon, dpri, dsec, dmaj, sd
 
-## Variables Kept (Modifiable Clinical Features)
+## Variables Kept (Clinical Features)
 
-The cohort analysis uses only **modifiable clinical features** that can be influenced by clinical intervention.
+The cohort analysis focuses on **clinically actionable features** (modifiable or partially modifiable) and a small set of **non-modifiable but clinically important context features** that substantially improve risk stratification and are needed for the bedside calculator.
 
 ### Kidney Function (5 features)
 - `txcreat_r` - Creatinine at transplant (mg/dL)
@@ -64,6 +66,15 @@ The cohort analysis uses only **modifiable clinical features** that can be influ
 - `donspac` - Donor-specific crossmatch
 - `txfcpra` - Flow cytometry PRA at transplant (%)
 - `lsfcpra` - Flow cytometry PRA at listing (%)
+ - `lsfprat` - Flow cytometry PRA (T-cell) at listing (%)
+
+### Demographics & Clinical Context (6 features)
+- `age_listing` - Age at listing (years) *(non-modifiable context)*
+- `age_txpl` - Age at transplant (years) *(non-modifiable context)*
+- `hxsurg` - History of surgery *(non-modifiable context)*
+- `chd_hlh` - Congenital heart disease with hypoplastic left heart syndrome *(non-modifiable context)*
+- `height_zscore_txpl` - Height-for-age z-score at transplant **[CALCULATED]**
+- `weight_zscore_txpl` - Weight-for-age z-score at transplant **[CALCULATED]**
 
 ## Top Features from Feature Importance Analysis
 
@@ -207,7 +218,7 @@ Feature importance analysis was performed using multiple methods (RSF, CatBoost,
 
 ### Important Features Excluded from Cohort Analysis
 
-The following features were identified as important in the feature importance analysis but were **excluded from the final cohort analysis** because they are **non-modifiable** (donor characteristics, diagnoses, demographics) or **not actionable** through clinical intervention. These features are documented here to provide transparency about what was considered but ultimately excluded.
+The following features were identified as important in the feature importance analysis but are **not included in the final cohort analysis feature set** because they are **non-modifiable** donor characteristics, diagnoses, demographics, or post-transplant complications. These features are documented here to provide transparency about what was considered but ultimately excluded.
 
 #### Highly Important Excluded Features (Top Importance Scores)
 
@@ -281,7 +292,9 @@ The following features were identified as important in the feature importance an
 6. **Baseline Measurements** (non-actionable at time of prediction): `lsbaosat`, `txbaosat`
 7. **Clinical Measurements Not in Modifiable List**: `lbun_r`, `lsfprab`, `lsfprat`, `txbun_r`, `txtg_r`, `rec_t3`
 
-**Note**: The cohort analysis focuses exclusively on **modifiable clinical features** that can be influenced through clinical intervention. While these excluded features are highly predictive, they do not meet the criteria for actionable clinical variables and were therefore excluded from the final analysis.
+**Note**: The updated cohort analysis uses a **hybrid feature set**:
+- A core of **modifiable / partially modifiable clinical features** (labs, organ function, hemodynamics, nutrition, immunology)
+- A small set of **non-modifiable context features** (age, CHD HLH, surgical history, PRA at listing, WHO growth metrics) that are critical for risk interpretation and are surfaced in the calculator UI, even though they are not targets for intervention.
 
 ## Variables Dropped
 

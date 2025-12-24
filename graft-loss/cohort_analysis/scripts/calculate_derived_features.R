@@ -8,6 +8,10 @@ calculate_derived_features <- function(data) {
   
   # Calculate eGFR using Schwartz formula (if components available)
   if ("height_txpl" %in% names(data) && "txcreat_r" %in% names(data)) {
+    # Initialise egfr_tx if it does not yet exist
+    if (!"egfr_tx" %in% names(data)) {
+      data$egfr_tx <- NA_real_
+    }
     data <- data %>%
       mutate(
         egfr_tx = ifelse(
@@ -21,6 +25,10 @@ calculate_derived_features <- function(data) {
   
   # Calculate BMI (if components available)
   if ("weight_txpl" %in% names(data) && "height_txpl" %in% names(data)) {
+    # Initialise bmi_txpl if it does not yet exist
+    if (!"bmi_txpl" %in% names(data)) {
+      data$bmi_txpl <- NA_real_
+    }
     data <- data %>%
       mutate(
         bmi_txpl = ifelse(
@@ -34,7 +42,9 @@ calculate_derived_features <- function(data) {
   
   # Calculate WHO growth curve z-scores and percentiles (if components available)
   # Source the WHO calculation helper function
-  who_script <- here("scripts", "calculate_who_zscore.R")
+  who_local <- here("scripts", "calculate_who_zscore.R")
+  who_gl    <- here("graft-loss", "cohort_analysis", "scripts", "calculate_who_zscore.R")
+  who_script <- if (file.exists(who_local)) who_local else who_gl
   if (file.exists(who_script)) {
     source(who_script)
     
