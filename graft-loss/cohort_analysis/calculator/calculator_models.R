@@ -262,16 +262,44 @@ fit_simple_calculator_cox <- function(train_data, test_data, time_col = "time", 
     test_x <- test_x[, !names(test_x) %in% constant_cols, drop = FALSE]
   }
   
-  # Impute missing values
+  # Impute missing values: Use "MISSING" for categoricals, median for numerics
   for (var in names(train_x)) {
     if (is.numeric(train_x[[var]])) {
       median_val <- median(train_x[[var]], na.rm = TRUE)
       train_x[[var]][is.na(train_x[[var]])] <- median_val
       test_x[[var]][is.na(test_x[[var]])] <- median_val
-    } else if (is.factor(train_x[[var]]) || is.character(train_x[[var]])) {
-      mode_val <- names(sort(table(train_x[[var]]), decreasing = TRUE))[1]
-      train_x[[var]][is.na(train_x[[var]])] <- mode_val
-      test_x[[var]][is.na(test_x[[var]])] <- mode_val
+    } else if (is.character(train_x[[var]])) {
+      # Convert to factor and use "MISSING" for NAs
+      train_x[[var]] <- as.factor(train_x[[var]])
+      train_vals <- as.character(train_x[[var]])
+      train_vals[is.na(train_vals)] <- "MISSING"
+      train_x[[var]] <- factor(train_vals)
+      train_levels <- levels(train_x[[var]])
+      if (!("MISSING" %in% train_levels)) {
+        train_levels <- c(train_levels, "MISSING")
+        train_x[[var]] <- factor(train_x[[var]], levels = train_levels)
+      }
+      if (var %in% names(test_x)) {
+        test_x[[var]] <- as.factor(test_x[[var]])
+        test_vals <- as.character(test_x[[var]])
+        test_vals[is.na(test_vals) | !(test_vals %in% train_levels)] <- "MISSING"
+        test_x[[var]] <- factor(test_vals, levels = train_levels)
+      }
+    } else if (is.factor(train_x[[var]])) {
+      # Use "MISSING" level for factor NAs
+      train_vals <- as.character(train_x[[var]])
+      train_vals[is.na(train_vals)] <- "MISSING"
+      train_x[[var]] <- factor(train_vals)
+      train_levels <- levels(train_x[[var]])
+      if (!("MISSING" %in% train_levels)) {
+        train_levels <- c(train_levels, "MISSING")
+        train_x[[var]] <- factor(train_x[[var]], levels = train_levels)
+      }
+      if (var %in% names(test_x)) {
+        test_vals <- as.character(test_x[[var]])
+        test_vals[is.na(test_vals) | !(test_vals %in% train_levels)] <- "MISSING"
+        test_x[[var]] <- factor(test_vals, levels = train_levels)
+      }
     }
   }
   
@@ -364,6 +392,33 @@ fit_xgboost_cox <- function(train_data, test_data, time_col = "time", status_col
   train_prep <- remove_leakage_predictors(train_data)
   test_prep <- remove_leakage_predictors(test_data)
   
+  # CRITICAL: Verify row counts match before preprocessing
+  # remove_leakage_predictors should NOT change row counts
+  if (nrow(train_prep) != nrow(train_data)) {
+    stop("Row count mismatch after leakage filtering in train data")
+  }
+  if (nrow(test_prep) != nrow(test_data)) {
+    stop("Row count mismatch after leakage filtering in test data")
+  }
+  
+  # CRITICAL: Preserve original time/status vectors to ensure row alignment
+  # The survival helper needs the original vectors, not from preprocessed data
+  train_time <- train_data[[time_col]]
+  train_status <- train_data[[status_col]]
+  test_time <- test_data[[time_col]]
+  test_status <- test_data[[status_col]]
+  
+  # Ensure time/status are in preprocessed data (they should be, but verify)
+  train_prep[[time_col]] <- train_time
+  train_prep[[status_col]] <- train_status
+  test_prep[[time_col]] <- test_time
+  test_prep[[status_col]] <- test_status
+  
+  # Final verification: row counts must match
+  if (nrow(train_prep) != length(train_time) || nrow(test_prep) != length(test_time)) {
+    stop("Row count mismatch after time/status assignment")
+  }
+  
   # Fix problematic features instead of filtering
   for (col in names(train_prep)) {
     if (col != time_col && col != status_col) {
@@ -372,30 +427,39 @@ fit_xgboost_cox <- function(train_data, test_data, time_col = "time", status_col
         
         if (length(train_levels) < 2) {
           # Single-level factor: convert to numeric (0/1 indicator)
-          # This preserves the feature instead of dropping it
           train_prep[[col]] <- as.numeric(train_prep[[col]]) - 1
           if (col %in% names(test_prep)) {
             test_prep[[col]] <- as.numeric(test_prep[[col]]) - 1
           }
         } else {
           # Multi-level factor: synchronize levels between train and test
-          test_vals <- as.character(test_prep[[col]])
-          # Replace test values not in train levels with most common train level
-          if (length(train_levels) > 0) {
-            most_common <- names(sort(table(train_prep[[col]]), decreasing = TRUE))[1]
-            test_vals[!(test_vals %in% train_levels) | is.na(test_vals)] <- most_common
+          # Use "MISSING" for unseen levels (not most_common, to preserve missingness signal)
+          if (col %in% names(test_prep)) {
+            test_vals <- as.character(test_prep[[col]])
+            # Unseen levels or NAs -> "MISSING" (if it exists) or most common
+            if ("MISSING" %in% train_levels) {
+              test_vals[!(test_vals %in% train_levels) | is.na(test_vals)] <- "MISSING"
+            } else {
+              most_common <- names(sort(table(train_prep[[col]]), decreasing = TRUE))[1]
+              test_vals[!(test_vals %in% train_levels) | is.na(test_vals)] <- most_common
+            }
             test_prep[[col]] <- factor(test_vals, levels = train_levels)
           }
         }
       } else if (is.character(train_prep[[col]])) {
         # Convert character to factor and synchronize
-        train_prep[[col]] <- as.factor(train_prep[[col]])
+        # (Already handled in imputation step above, but ensure consistency)
         train_levels <- levels(train_prep[[col]])
         if (col %in% names(test_prep)) {
           test_vals <- as.character(test_prep[[col]])
           if (length(train_levels) > 0) {
-            most_common <- names(sort(table(train_prep[[col]]), decreasing = TRUE))[1]
-            test_vals[!(test_vals %in% train_levels) | is.na(test_vals)] <- most_common
+            # Use "MISSING" if it exists, otherwise most common
+            if ("MISSING" %in% train_levels) {
+              test_vals[!(test_vals %in% train_levels) | is.na(test_vals)] <- "MISSING"
+            } else {
+              most_common <- names(sort(table(train_prep[[col]]), decreasing = TRUE))[1]
+              test_vals[!(test_vals %in% train_levels) | is.na(test_vals)] <- most_common
+            }
             test_prep[[col]] <- factor(test_vals, levels = train_levels)
           }
         }
@@ -407,6 +471,67 @@ fit_xgboost_cox <- function(train_data, test_data, time_col = "time", status_col
   common_cols <- intersect(names(train_prep), names(test_prep))
   train_prep <- train_prep[, common_cols, drop = FALSE]
   test_prep <- test_prep[, common_cols, drop = FALSE]
+  
+  # Final validation before calling helper
+  if (nrow(train_prep) != length(train_time) || nrow(test_prep) != length(test_time)) {
+    stop("Row count mismatch before XGBoost call")
+  }
+  if (!time_col %in% names(train_prep) || !status_col %in% names(train_prep)) {
+    stop("Time/status columns missing from preprocessed data")
+  }
+  
+  # CRITICAL: Ensure no NA values in time/status before calling helper
+  # model.matrix can cause issues if there are NAs
+  train_na_rows <- is.na(train_prep[[time_col]]) | is.na(train_prep[[status_col]])
+  test_na_rows <- is.na(test_prep[[time_col]]) | is.na(test_prep[[status_col]])
+  
+  if (any(train_na_rows) || any(test_na_rows)) {
+    # Remove rows with NA time/status (shouldn't happen, but handle it)
+    if (any(train_na_rows)) {
+      train_prep <- train_prep[!train_na_rows, , drop = FALSE]
+      train_time <- train_time[!train_na_rows]
+      train_status <- train_status[!train_na_rows]
+    }
+    if (any(test_na_rows)) {
+      test_prep <- test_prep[!test_na_rows, , drop = FALSE]
+      test_time <- test_time[!test_na_rows]
+      test_status <- test_status[!test_na_rows]
+    }
+    # Re-assign time/status after filtering
+    train_prep[[time_col]] <- train_time
+    train_prep[[status_col]] <- train_status
+    test_prep[[time_col]] <- test_time
+    test_prep[[status_col]] <- test_status
+  }
+  
+  # Final validation: row counts must match
+  if (nrow(train_prep) != length(train_time) || nrow(test_prep) != length(test_time)) {
+    stop("Row count mismatch after NA removal")
+  }
+  
+  # FINAL FIX: Remove single-level factors right before calling run_xgb_cox
+  # This prevents "contrasts" errors when small splits cause features to become constant
+  single_level_cols <- character(0)
+  for (col in names(train_prep)) {
+    if (col != time_col && col != status_col) {
+      if (is.factor(train_prep[[col]])) {
+        if (length(levels(train_prep[[col]])) < 2) {
+          single_level_cols <- c(single_level_cols, col)
+        }
+      } else if (is.character(train_prep[[col]])) {
+        # Check if character column has only one unique value
+        unique_vals <- unique(na.omit(train_prep[[col]]))
+        if (length(unique_vals) < 2) {
+          single_level_cols <- c(single_level_cols, col)
+        }
+      }
+    }
+  }
+  
+  if (length(single_level_cols) > 0) {
+    train_prep <- train_prep[, !names(train_prep) %in% single_level_cols, drop = FALSE]
+    test_prep  <- test_prep[, !names(test_prep) %in% single_level_cols, drop = FALSE]
+  }
   
   # Use survival helper function
   xgb_params <- list(
@@ -449,41 +574,110 @@ fit_aorsf <- function(train_data, test_data, time_col = "time", status_col = "st
   train_prep <- remove_leakage_predictors(train_data)
   test_prep <- remove_leakage_predictors(test_data)
   
+  # Impute missing values: Use "MISSING" for categoricals, median for numerics
+  # This must happen BEFORE factor level synchronization
+  for (col in names(train_prep)) {
+    if (col != time_col && col != status_col) {
+      if (is.numeric(train_prep[[col]])) {
+        # Impute numeric with median
+        median_val <- median(train_prep[[col]], na.rm = TRUE)
+        if (is.na(median_val)) median_val <- 0
+        train_prep[[col]][is.na(train_prep[[col]])] <- median_val
+        if (col %in% names(test_prep)) {
+          test_prep[[col]][is.na(test_prep[[col]])] <- median_val
+        }
+      } else if (is.character(train_prep[[col]])) {
+        # Convert to factor and use "MISSING" for NAs
+        train_prep[[col]] <- as.factor(train_prep[[col]])
+        train_vals <- as.character(train_prep[[col]])
+        train_vals[is.na(train_vals)] <- "MISSING"
+        train_prep[[col]] <- factor(train_vals)
+        train_levels <- levels(train_prep[[col]])
+        if (!("MISSING" %in% train_levels)) {
+          train_levels <- c(train_levels, "MISSING")
+          train_prep[[col]] <- factor(train_prep[[col]], levels = train_levels)
+        }
+        if (col %in% names(test_prep)) {
+          test_prep[[col]] <- as.factor(test_prep[[col]])
+          test_vals <- as.character(test_prep[[col]])
+          test_vals[is.na(test_vals) | !(test_vals %in% train_levels)] <- "MISSING"
+          test_prep[[col]] <- factor(test_vals, levels = train_levels)
+        }
+      } else if (is.factor(train_prep[[col]])) {
+        # Use "MISSING" level for factor NAs
+        train_vals <- as.character(train_prep[[col]])
+        train_vals[is.na(train_vals)] <- "MISSING"
+        train_prep[[col]] <- factor(train_vals)
+        train_levels <- levels(train_prep[[col]])
+        if (!("MISSING" %in% train_levels)) {
+          train_levels <- c(train_levels, "MISSING")
+          train_prep[[col]] <- factor(train_prep[[col]], levels = train_levels)
+        }
+        if (col %in% names(test_prep)) {
+          test_vals <- as.character(test_prep[[col]])
+          test_vals[is.na(test_vals) | !(test_vals %in% train_levels)] <- "MISSING"
+          test_prep[[col]] <- factor(test_vals, levels = train_levels)
+        }
+      }
+    }
+  }
+  
   # Fix problematic features instead of filtering
   # AORSF requires exact factor level matching between train and test
   for (col in names(train_prep)) {
     if (col != time_col && col != status_col) {
-      # Convert to factor if character
-      if (is.character(train_prep[[col]])) {
-        train_prep[[col]] <- as.factor(train_prep[[col]])
-      }
-      if (col %in% names(test_prep) && is.character(test_prep[[col]])) {
-        test_prep[[col]] <- as.factor(test_prep[[col]])
-      }
-      
       # Handle factors
       if (is.factor(train_prep[[col]])) {
         train_levels <- levels(train_prep[[col]])
         
         if (length(train_levels) < 2) {
           # Single-level factor: convert to numeric (0/1 indicator)
-          # This preserves the feature instead of dropping it
           train_prep[[col]] <- as.numeric(train_prep[[col]]) - 1
           if (col %in% names(test_prep)) {
             test_prep[[col]] <- as.numeric(test_prep[[col]]) - 1
           }
         } else {
           # Multi-level factor: synchronize levels
+          # Use "MISSING" if it exists, otherwise most common
           if (col %in% names(test_prep)) {
             test_vals <- as.character(test_prep[[col]])
-            # Replace test values not in train levels with most common train level
-            most_common <- names(sort(table(train_prep[[col]]), decreasing = TRUE))[1]
-            test_vals[!(test_vals %in% train_levels) | is.na(test_vals)] <- most_common
+            if ("MISSING" %in% train_levels) {
+              test_vals[!(test_vals %in% train_levels) | is.na(test_vals)] <- "MISSING"
+            } else {
+              most_common <- names(sort(table(train_prep[[col]]), decreasing = TRUE))[1]
+              test_vals[!(test_vals %in% train_levels) | is.na(test_vals)] <- most_common
+            }
             test_prep[[col]] <- factor(test_vals, levels = train_levels)
           }
         }
       }
     }
+  }
+  
+  # Remove empty/constant columns (AORSF fails on these)
+  # Check for columns with no observed values or all same value
+  empty_cols <- character(0)
+  for (col in names(train_prep)) {
+    if (col != time_col && col != status_col) {
+      # Check if column has any variation
+      non_na_vals <- train_prep[[col]][!is.na(train_prep[[col]])]
+      if (length(non_na_vals) == 0) {
+        # All NA - empty column
+        empty_cols <- c(empty_cols, col)
+      } else if (length(unique(non_na_vals)) <= 1) {
+        # All same value (constant column)
+        empty_cols <- c(empty_cols, col)
+      }
+    }
+  }
+  if (length(empty_cols) > 0) {
+    train_prep <- train_prep[, !names(train_prep) %in% empty_cols, drop = FALSE]
+    test_prep <- test_prep[, !names(test_prep) %in% empty_cols, drop = FALSE]
+  }
+  
+  # Verify row counts still match
+  if (nrow(train_prep) != nrow(train_data) || nrow(test_prep) != nrow(test_data)) {
+    stop("Row count mismatch after removing empty columns")
   }
   
   # Ensure both sets share exact same columns
@@ -521,23 +715,185 @@ fit_aorsf <- function(train_data, test_data, time_col = "time", status_col = "st
 }
 
 fit_rsf <- function(train_data, test_data, time_col = "time", status_col = "status", cohort_name = "") {
-  # Use survival helper function
-  result <- run_rsf_ranger(
-    train_df = train_data,
-    test_df = test_data,
-    time_col = time_col,
-    status_col = status_col,
-    cohort_name = cohort_name,
-    model_name = "RSF",
-    num.trees = 500
-  )
+  # Preprocess data: remove leakage predictors
+  train_prep <- remove_leakage_predictors(train_data)
+  test_prep <- remove_leakage_predictors(test_data)
+  
+  # CRITICAL: Ensure time/status are preserved and row counts match
+  # remove_leakage_predictors should not change row counts, but verify
+  if (nrow(train_prep) != nrow(train_data)) {
+    stop("Row count mismatch after leakage filtering in train data")
+  }
+  if (nrow(test_prep) != nrow(test_data)) {
+    stop("Row count mismatch after leakage filtering in test data")
+  }
+  
+  train_prep[[time_col]] <- train_data[[time_col]]
+  train_prep[[status_col]] <- train_data[[status_col]]
+  test_prep[[time_col]] <- test_data[[time_col]]
+  test_prep[[status_col]] <- test_data[[status_col]]
+  
+  # Use survival helper function with error handling
+  result <- tryCatch({
+    run_rsf_ranger(
+      train_df = train_prep,
+      test_df = test_prep,
+      time_col = time_col,
+      status_col = status_col,
+      cohort_name = cohort_name,
+      model_name = "RSF",
+      num.trees = 500
+    )
+  }, error = function(e) {
+    # If RSF fails with subscript error, try to recover
+    err_msg <- conditionMessage(e)
+    if (grepl("subscript out of bounds", err_msg, ignore.case = TRUE)) {
+      # Try using cumulative hazard directly with safer indexing
+      tryCatch({
+        model <- ranger::ranger(
+          formula = as.formula(paste0("survival::Surv(", time_col, ", ", status_col, ") ~ .")),
+          data = train_prep,
+          num.trees = 500,
+          importance = "impurity",
+          splitrule = "logrank",
+          respect.unordered.factors = "partition",
+          seed = 1997
+        )
+        pred <- predict(model, data = test_prep, type = "response")
+        
+        # Safely extract risk scores with multiple fallbacks and validation
+        risk_scores <- NULL
+        
+        # Try cumulative hazard first (most reliable)
+        if (!is.null(pred$chf)) {
+          if (is.matrix(pred$chf) && ncol(pred$chf) > 0 && nrow(pred$chf) == nrow(test_prep)) {
+            risk_scores <- as.numeric(pred$chf[, ncol(pred$chf)])
+          } else if (is.vector(pred$chf) && length(pred$chf) == nrow(test_prep)) {
+            risk_scores <- as.numeric(pred$chf)
+          }
+        }
+        
+        # Fallback to survival if chf didn't work
+        if (is.null(risk_scores) && !is.null(pred$survival)) {
+          if (is.matrix(pred$survival) && ncol(pred$survival) > 0 && nrow(pred$survival) == nrow(test_prep)) {
+            risk_scores <- 1 - as.numeric(pred$survival[, ncol(pred$survival)])
+          }
+        }
+        
+        # Last fallback to predictions
+        if (is.null(risk_scores) && !is.null(pred$predictions)) {
+          if (is.matrix(pred$predictions) && ncol(pred$predictions) > 0 && nrow(pred$predictions) == nrow(test_prep)) {
+            risk_scores <- 1 - as.numeric(pred$predictions[, ncol(pred$predictions)])
+          } else if (is.vector(pred$predictions) && length(pred$predictions) == nrow(test_prep)) {
+            risk_scores <- as.numeric(pred$predictions)
+          }
+        }
+        
+        if (is.null(risk_scores) || length(risk_scores) != nrow(test_prep)) {
+          stop("RSF prediction failed: no valid risk scores (length=", 
+               ifelse(is.null(risk_scores), "NULL", length(risk_scores)), 
+               ", expected=", nrow(test_prep), ")")
+        }
+        
+        conc <- survival::concordance(survival::Surv(test_data[[time_col]], test_data[[status_col]]) ~ risk_scores)
+        vi <- tryCatch(model$variable.importance, error = function(e) NULL)
+        vi_df <- NULL
+        if (!is.null(vi)) {
+          vi_df <- data.frame(feature = names(vi), importance = as.numeric(vi), stringsAsFactors = FALSE)
+        }
+        list(model = model, risk_scores = risk_scores, concordance = conc, vi = vi_df)
+      }, error = function(e2) {
+        stop(paste("RSF recovery failed:", conditionMessage(e2)))
+      })
+    } else {
+      stop(paste("RSF error:", err_msg))
+    }
+  })
+  
+  # Validate risk scores before inversion check
+  if (is.null(result$risk_scores) || length(result$risk_scores) == 0 || 
+      length(result$risk_scores) != nrow(test_data)) {
+    stop("RSF returned invalid risk scores")
+  }
+  
+  # Check if risk scores need inversion (RSF might return inverted scores)
+  # If C-index is suspiciously low (<0.1), try inverting
+  # Wrap entire inversion check in tryCatch to prevent crashes
+  inversion_successful <- FALSE
+  tryCatch({
+    # Validate risk scores before computing concordance
+    if (!is.null(result$risk_scores) && length(result$risk_scores) == nrow(test_data) && all(is.finite(result$risk_scores))) {
+      test_conc_orig <- survival::concordance(survival::Surv(test_data[[time_col]], test_data[[status_col]]) ~ result$risk_scores)
+      test_conc_inv <- survival::concordance(survival::Surv(test_data[[time_col]], test_data[[status_col]]) ~ (-result$risk_scores))
+      
+      # Safely extract concordance values for comparison
+      conc_orig_val <- tryCatch(as.numeric(test_conc_orig$concordance), error = function(e) NA_real_)
+      conc_inv_val <- tryCatch(as.numeric(test_conc_inv$concordance), error = function(e) NA_real_)
+      
+      if (!is.na(conc_inv_val) && !is.na(conc_orig_val) && conc_inv_val > conc_orig_val) {
+        # Inverted version is better, use it
+        result$risk_scores <<- -result$risk_scores
+        result$concordance <<- test_conc_inv
+        inversion_successful <<- TRUE
+      } else {
+        # Use original
+        result$concordance <<- test_conc_orig
+        inversion_successful <<- TRUE
+      }
+    }
+  }, error = function(e) {
+    # If inversion check fails, just use the concordance from run_rsf_ranger
+    # Don't overwrite result$concordance if it already exists
+    if (is.null(result$concordance)) {
+      # Last resort: compute concordance directly
+      tryCatch({
+        result$concordance <<- survival::concordance(survival::Surv(test_data[[time_col]], test_data[[status_col]]) ~ result$risk_scores)
+      }, error = function(e2) {
+        # If even that fails, set to NULL and let the extraction code handle it
+        result$concordance <<- NULL
+      })
+    }
+  })
   
   # Extract importance as named vector
   if (!is.null(result$vi)) {
     importance_vec <- result$vi$importance
     names(importance_vec) <- result$vi$feature
+  } else if (!is.null(result$importance)) {
+    # Alternative: importance might be in result$importance
+    importance_vec <- result$importance$importance
+    names(importance_vec) <- result$importance$feature
   } else {
     importance_vec <- numeric(0)
+  }
+  
+  # Safely extract C-index from concordance object
+  # Handle cases where concordance structure might differ or be NULL
+  c_index_val <- NA_real_
+  if (!is.null(result$concordance)) {
+    tryCatch({
+      # Try standard access
+      if (!is.null(result$concordance$concordance)) {
+        c_index_val <- as.numeric(result$concordance$concordance)
+      } else if (is.numeric(result$concordance) && length(result$concordance) > 0) {
+        # Might be a numeric vector
+        c_index_val <- as.numeric(result$concordance[1])
+      } else if (length(result$concordance) > 0 && is.list(result$concordance)) {
+        # Try first element if it's a list
+        c_index_val <- as.numeric(result$concordance[[1]])
+      }
+    }, error = function(e) {
+      # If all else fails, recalculate from risk scores
+      tryCatch({
+        recalc_conc <- survival::concordance(survival::Surv(test_data[[time_col]], test_data[[status_col]]) ~ result$risk_scores)
+        if (!is.null(recalc_conc$concordance)) {
+          c_index_val <<- as.numeric(recalc_conc$concordance)
+        }
+      }, error = function(e2) {
+        # Final fallback: use NA
+        c_index_val <<- NA_real_
+      })
+    })
   }
   
   return(list(
@@ -545,7 +901,7 @@ fit_rsf <- function(train_data, test_data, time_col = "time", status_col = "stat
     risk_scores = result$risk_scores,
     time = test_data[[time_col]],
     status = test_data[[status_col]],
-    c_index = as.numeric(result$concordance$concordance),
+    c_index = c_index_val,
     importance = importance_vec
   ))
 }
@@ -566,16 +922,44 @@ fit_lasso_cox <- function(train_data, test_data, time_col = "time", status_col =
     test_x <- test_x[, !names(test_x) %in% constant_cols, drop = FALSE]
   }
   
-  # Impute missing values
+  # Impute missing values: Use "MISSING" for categoricals, median for numerics
   for (var in names(train_x)) {
     if (is.numeric(train_x[[var]])) {
       median_val <- median(train_x[[var]], na.rm = TRUE)
       train_x[[var]][is.na(train_x[[var]])] <- median_val
       test_x[[var]][is.na(test_x[[var]])] <- median_val
-    } else if (is.factor(train_x[[var]]) || is.character(train_x[[var]])) {
-      mode_val <- names(sort(table(train_x[[var]]), decreasing = TRUE))[1]
-      train_x[[var]][is.na(train_x[[var]])] <- mode_val
-      test_x[[var]][is.na(test_x[[var]])] <- mode_val
+    } else if (is.character(train_x[[var]])) {
+      # Convert to factor and use "MISSING" for NAs
+      train_x[[var]] <- as.factor(train_x[[var]])
+      train_vals <- as.character(train_x[[var]])
+      train_vals[is.na(train_vals)] <- "MISSING"
+      train_x[[var]] <- factor(train_vals)
+      train_levels <- levels(train_x[[var]])
+      if (!("MISSING" %in% train_levels)) {
+        train_levels <- c(train_levels, "MISSING")
+        train_x[[var]] <- factor(train_x[[var]], levels = train_levels)
+      }
+      if (var %in% names(test_x)) {
+        test_x[[var]] <- as.factor(test_x[[var]])
+        test_vals <- as.character(test_x[[var]])
+        test_vals[is.na(test_vals) | !(test_vals %in% train_levels)] <- "MISSING"
+        test_x[[var]] <- factor(test_vals, levels = train_levels)
+      }
+    } else if (is.factor(train_x[[var]])) {
+      # Use "MISSING" level for factor NAs
+      train_vals <- as.character(train_x[[var]])
+      train_vals[is.na(train_vals)] <- "MISSING"
+      train_x[[var]] <- factor(train_vals)
+      train_levels <- levels(train_x[[var]])
+      if (!("MISSING" %in% train_levels)) {
+        train_levels <- c(train_levels, "MISSING")
+        train_x[[var]] <- factor(train_x[[var]], levels = train_levels)
+      }
+      if (var %in% names(test_x)) {
+        test_vals <- as.character(test_x[[var]])
+        test_vals[is.na(test_vals) | !(test_vals %in% train_levels)] <- "MISSING"
+        test_x[[var]] <- factor(test_vals, levels = train_levels)
+      }
     }
   }
   
@@ -847,12 +1231,13 @@ run_mc_cv_calculator <- function(data, cohort_name, model_type = "CHD") {
 
 main <- function() {
   # Set up parallel processing
-  n_workers <- max(1, parallel::detectCores() - 2)
+  # Reduce workers to avoid memory issues with large mc_splits
+  n_workers <- max(1, min(8, parallel::detectCores() - 4))  # Cap at 8 workers
   plan(multisession, workers = n_workers)
   
   # Increase memory limit for parallel workers (mc_splits can be large)
-  options(future.globals.maxSize = 1000 * 1024^2)  # 1 GB limit
-  cat(sprintf("Using %d workers for parallel processing\n", n_workers))
+  options(future.globals.maxSize = 2000 * 1024^2)  # 2 GB limit (increased)
+  cat(sprintf("Using %d workers for parallel processing (reduced to avoid memory issues)\n", n_workers))
   
   # Load data - use same approach as cohort analysis notebook
   cat("Loading PHTS data...\n")

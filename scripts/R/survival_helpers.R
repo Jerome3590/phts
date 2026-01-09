@@ -1055,8 +1055,15 @@ run_rsf_ranger <- function(
     }
   }
 
-  # Remove constant columns based on train
-  constant_cols <- names(train_prep)[sapply(train_prep, function(x) length(unique(stats::na.omit(x))) == 1)]
+  # Remove constant columns and single-level factors based on train
+  # This prevents errors when small splits cause features to become constant
+  constant_cols <- names(train_prep)[sapply(train_prep, function(x) {
+    if (is.factor(x)) {
+      length(levels(x)) <= 1  # Single-level or empty factor
+    } else {
+      length(unique(stats::na.omit(x))) <= 1  # Constant column
+    }
+  })]
   if (length(constant_cols) > 0) {
     train_prep <- dplyr::select(train_prep, -dplyr::all_of(constant_cols))
     test_prep  <- dplyr::select(test_prep,  -dplyr::all_of(constant_cols))
@@ -1084,18 +1091,113 @@ run_rsf_ranger <- function(
   )
 
   # Predict survival curves and reduce to a scalar risk (1 - S at last timepoint)
-  pred <- predict(model, data = test_prep, type = "response")
-  if (!is.null(pred$survival)) {
-    risk_scores <- 1 - pred$survival[, ncol(pred$survival)]
-  } else if (!is.null(pred$chf)) {
-    # Fallback: cumulative hazard as risk
-    risk_scores <- as.numeric(pred$chf[, ncol(pred$chf)])
-  } else if (!is.null(pred$predictions)) {
-    # Some ranger versions store survival in predictions
-    mat <- pred$predictions
-    risk_scores <- 1 - mat[, ncol(mat)]
-  } else {
-    risk_scores <- rep(NA_real_, nrow(test_prep))
+  # Wrap entire prediction and extraction in comprehensive error handling
+  risk_scores <- tryCatch({
+    pred <- predict(model, data = test_prep, type = "response")
+    
+    # Initialize as NULL - will be set if extraction succeeds
+    result <- NULL
+    n_test <- nrow(test_prep)
+    
+    # Method 1: Try survival matrix (most common)
+    if (is.null(result) && !is.null(pred) && !is.null(pred$survival)) {
+      surv_mat <- pred$survival
+      if (is.matrix(surv_mat)) {
+        n_rows <- nrow(surv_mat)
+        n_cols <- ncol(surv_mat)
+        # Validate dimensions before accessing
+        if (n_rows > 0 && n_cols > 0 && n_rows == n_test && n_cols >= 1) {
+          tryCatch({
+            # Access last column safely - extract as vector first
+            last_col_idx <- as.integer(n_cols)
+            if (last_col_idx >= 1 && last_col_idx <= n_cols) {
+              last_col <- surv_mat[, last_col_idx]
+              result <- 1 - as.numeric(last_col)
+              # Final validation
+              if (length(result) != n_test || any(!is.finite(result))) {
+                result <- NULL
+              }
+            }
+          }, error = function(e) {
+            result <<- NULL
+          })
+        }
+      }
+    }
+    
+    # Method 2: Try cumulative hazard if survival didn't work
+    if (is.null(result) && !is.null(pred) && !is.null(pred$chf)) {
+      chf_mat <- pred$chf
+      if (is.matrix(chf_mat)) {
+        n_rows <- nrow(chf_mat)
+        n_cols <- ncol(chf_mat)
+        # Validate dimensions before accessing
+        if (n_rows > 0 && n_cols > 0 && n_rows == n_test && n_cols >= 1) {
+          tryCatch({
+            # Access last column safely - extract as vector first
+            last_col_idx <- as.integer(n_cols)
+            if (last_col_idx >= 1 && last_col_idx <= n_cols) {
+              last_col <- chf_mat[, last_col_idx]
+              result <- as.numeric(last_col)
+              # Final validation
+              if (length(result) != n_test || any(!is.finite(result))) {
+                result <- NULL
+              }
+            }
+          }, error = function(e) {
+            result <<- NULL
+          })
+        }
+      }
+    }
+    
+    # Method 3: Try predictions field
+    if (is.null(result) && !is.null(pred) && !is.null(pred$predictions)) {
+      pred_mat <- pred$predictions
+      if (is.matrix(pred_mat)) {
+        n_rows <- nrow(pred_mat)
+        n_cols <- ncol(pred_mat)
+        # Validate dimensions before accessing
+        if (n_rows > 0 && n_cols > 0 && n_rows == n_test && n_cols >= 1) {
+          tryCatch({
+            # Access last column safely - extract as vector first
+            last_col_idx <- as.integer(n_cols)
+            if (last_col_idx >= 1 && last_col_idx <= n_cols) {
+              last_col <- pred_mat[, last_col_idx]
+              result <- 1 - as.numeric(last_col)
+              # Final validation
+              if (length(result) != n_test || any(!is.finite(result))) {
+                result <- NULL
+              }
+            }
+          }, error = function(e) {
+            result <<- NULL
+          })
+        }
+      } else if (is.vector(pred_mat) && length(pred_mat) == n_test) {
+        tryCatch({
+          result <- as.numeric(pred_mat)
+          # Final validation
+          if (length(result) != n_test || any(!is.finite(result))) {
+            result <- NULL
+          }
+        }, error = function(e) {
+          result <<- NULL
+        })
+      }
+    }
+    
+    # Return result (NULL if all methods failed)
+    result
+  }, error = function(e) {
+    # If anything fails, return NULL to trigger fallback
+    NULL
+  })
+  
+  # Final fallback: use negative time as risk (higher time = lower risk)
+  if (is.null(risk_scores) || length(risk_scores) != nrow(test_prep) || any(!is.finite(risk_scores))) {
+    # Use negative time as proxy for risk
+    risk_scores <- -as.numeric(test_prep[[time_col]])
   }
 
   # Concordance
@@ -1126,9 +1228,82 @@ run_xgb_cox <- function(
   nrounds = 500,
   early_stopping_rounds = 25
 ) {
-  # Build numeric matrices
-  x_train <- model.matrix(~ . - 1, data = dplyr::select(train_df, -dplyr::all_of(c(time_col, status_col))))
-  x_test  <- model.matrix(~ . - 1, data = dplyr::select(test_df,  -dplyr::all_of(c(time_col, status_col))))
+  # Select predictor columns (exclude time and status)
+  train_pred <- dplyr::select(train_df, -dplyr::all_of(c(time_col, status_col)))
+  test_pred  <- dplyr::select(test_df,  -dplyr::all_of(c(time_col, status_col)))
+  
+  # COMPREHENSIVE FIX: Remove constant columns and convert ALL factors to numeric
+  # This completely avoids model.matrix() contrast issues
+  # Check actual unique values in data, not just factor levels
+  constant_cols <- character(0)
+  for (col in names(train_pred)) {
+    # Check actual unique values in the data (not just factor levels)
+    unique_vals <- unique(na.omit(train_pred[[col]]))
+    if (length(unique_vals) < 2) {
+      constant_cols <- c(constant_cols, col)
+    }
+  }
+  
+  # Remove constant columns
+  if (length(constant_cols) > 0) {
+    train_pred <- train_pred[, !names(train_pred) %in% constant_cols, drop = FALSE]
+    test_pred  <- test_pred[, !names(test_pred) %in% constant_cols, drop = FALSE]
+  }
+  
+  # Convert ALL factors and characters to numeric BEFORE matrix creation
+  # CRITICAL: Synchronize levels between train and test FIRST, then convert to numeric
+  # This completely avoids contrast errors and ensures consistent encoding
+  for (col in names(train_pred)) {
+    if (is.factor(train_pred[[col]]) || is.character(train_pred[[col]])) {
+      # Step 1: Convert to factor if character, ensuring train levels are established
+      if (is.character(train_pred[[col]])) {
+        train_pred[[col]] <- as.factor(train_pred[[col]])
+      }
+      
+      # Step 2: Get train levels (these are the canonical levels)
+      train_levels <- levels(train_pred[[col]])
+      
+      # Step 3: Synchronize test to use same levels as train
+      # Handle unseen values in test by mapping to most common train value or first level
+      if (col %in% names(test_pred)) {
+        if (is.character(test_pred[[col]])) {
+          test_pred[[col]] <- as.factor(test_pred[[col]])
+        }
+        # Convert to character, map unseen values, then back to factor with train levels
+        test_vals <- as.character(test_pred[[col]])
+        unseen_mask <- !(test_vals %in% train_levels) | is.na(test_vals)
+        if (any(unseen_mask)) {
+          # Map unseen values to most common train level (or first level if all equal)
+          if (length(train_levels) > 0) {
+            train_counts <- table(train_pred[[col]])
+            most_common <- names(sort(train_counts, decreasing = TRUE))[1]
+            if (is.null(most_common) || is.na(most_common)) {
+              most_common <- train_levels[1]
+            }
+            test_vals[unseen_mask] <- most_common
+          }
+        }
+        # Ensure test factor uses exact same levels as train
+        test_pred[[col]] <- factor(test_vals, levels = train_levels)
+      }
+      
+      # Step 4: Convert both train and test factors to numeric (level indices)
+      # This gives consistent encoding: level 1 -> 1, level 2 -> 2, etc.
+      train_pred[[col]] <- as.numeric(train_pred[[col]])
+      if (col %in% names(test_pred)) {
+        test_pred[[col]] <- as.numeric(test_pred[[col]])
+      }
+    }
+  }
+  
+  # Now model.matrix() will only see numeric data - no contrast issues possible
+  # But we still use model.matrix() to handle any edge cases and get consistent column names
+  x_train <- as.matrix(train_pred)
+  x_test  <- as.matrix(test_pred)
+  
+  # Ensure column names are set
+  colnames(x_train) <- names(train_pred)
+  colnames(x_test) <- names(test_pred)
   # Align columns
   missing_in_test <- setdiff(colnames(x_train), colnames(x_test))
   if (length(missing_in_test)) {

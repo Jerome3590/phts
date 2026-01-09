@@ -163,6 +163,17 @@ Results are saved to `graft-loss/cohort_analysis/calculator/outputs/`:
 - Constant columns are automatically removed
 - Models are evaluated on unseen test data only
 
+## Lessons Learned
+
+> **📚 For detailed troubleshooting guide and lessons learned from implementation, see [LESSONS_LEARNED.md](LESSONS_LEARNED.md)**
+
+Key lessons:
+- **XGBoost**: Requires factor level synchronization and conversion to numeric before matrix operations
+- **RSF**: Needs robust validation of prediction matrix dimensions and multiple fallback extraction methods
+- **AORSF**: Requires exact factor level matching between train and test sets
+- **CatBoost**: Most robust - handles categorical features natively with minimal preprocessing
+- **General**: Always validate actual data values (not just types), synchronize train/test levels, and handle edge cases in small splits
+
 ## Performance Expectations
 
 Expected C-index ranges:
