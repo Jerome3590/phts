@@ -546,8 +546,7 @@ def predict_risk_survival(
                 feature_vector = prepare_feature_vector(features, feature_names)
                 
                 if model_type == 'catboost':
-                    # Model was loaded with verbose=False and logging_level='Silent'
-                    # logging_level='Silent' overrides everything, so predict() should work
+                    # Model was loaded with logging_level='Silent' which overrides everything
                     # No need to pass verbose parameters to predict()
                     pred = model.predict(feature_vector.reshape(1, -1))[0]
                 else:
