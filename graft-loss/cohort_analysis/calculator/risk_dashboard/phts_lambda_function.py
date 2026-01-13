@@ -365,10 +365,10 @@ def load_model(cohort: str, model_type: str) -> Any:
         model_path = container_model_path / "catboost_model.cbm"
         if model_path.exists():
             logger.info(f"Loading CatBoost model from container: {model_path}")
-            # Load model with NO verbose parameters to avoid conflicts with saved model parameters
-            # The model file itself may have conflicting verbose parameters saved
-            # We'll handle prediction separately to avoid parameter conflicts
-            model = CatBoostRegressor()
+            # Safe pattern: Use BOTH verbose=False AND logging_level='Silent'
+            # logging_level='Silent' overrides everything and is safest
+            # verbose=False and verbose=0 are identical (use boolean False)
+            model = CatBoostRegressor(verbose=False, logging_level='Silent')
             model.load_model(str(model_path))
             _model_cache[cache_key] = {'model': model, 'type': 'catboost'}
             _cache_timestamps[cache_key] = time.time()
@@ -394,8 +394,9 @@ def load_model(cohort: str, model_type: str) -> Any:
             s3_client.download_fileobj(S3_BUCKET, s3_key, f)
         
         if model_type == 'catboost':
-            # Load model with NO verbose parameters to avoid conflicts with saved model parameters
-            model = CatBoostRegressor()
+            # Safe pattern: Use BOTH verbose=False AND logging_level='Silent'
+            # logging_level='Silent' overrides everything and is safest
+            model = CatBoostRegressor(verbose=False, logging_level='Silent')
             model.load_model(f"/tmp/catboost_model.cbm")
         else:
             # Create Booster without parameters - logging is controlled globally
@@ -558,19 +559,10 @@ def predict_risk_survival(
                 feature_vector = prepare_feature_vector(features, feature_names)
                 
                 if model_type == 'catboost':
-                    # CatBoost model may have conflicting verbose parameters saved
-                    # Try prediction without any verbose parameters first
-                    try:
-                        pred = model.predict(feature_vector.reshape(1, -1))[0]
-                    except Exception as e:
-                        if 'verbose' in str(e).lower() or 'logging_level' in str(e).lower():
-                            # Model has conflicting verbose parameters - use internal prediction method
-                            logger.warning(f"CatBoost verbose conflict detected, using workaround: {e}")
-                            from catboost import Pool
-                            pool = Pool(feature_vector.reshape(1, -1))
-                            pred = model._calc_oblivious_trees_for_pool(pool)[0]
-                        else:
-                            raise
+                    # Model was loaded with verbose=False and logging_level='Silent'
+                    # logging_level='Silent' overrides everything, so predict() should work
+                    # No need to pass verbose parameters to predict()
+                    pred = model.predict(feature_vector.reshape(1, -1))[0]
                 else:
                     # Create DMatrix without logging parameters - logging is controlled globally
                     dmatrix = xgb.DMatrix(feature_vector.reshape(1, -1), feature_names=feature_names)
