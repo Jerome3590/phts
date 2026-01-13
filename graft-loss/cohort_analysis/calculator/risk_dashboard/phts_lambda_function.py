@@ -1003,10 +1003,14 @@ def handle_causal(event: Dict[str, Any]) -> Dict[str, Any]:
         dashboard_data = load_dashboard_data(cohort)
         top_causal = dashboard_data.get("top_causal_factors", [])[:top_k]
         
+        # Get feature metadata
+        feature_metadata = get_feature_metadata(cohort)
+        
         return _response(200, {
             "cohort": cohort,
             "top_causal_factors": top_causal,
-            "summary": dashboard_data.get("summary", {})
+            "summary": dashboard_data.get("summary", {}),
+            "feature_metadata": feature_metadata
         })
     
     except Exception as e:
