@@ -6,9 +6,11 @@ This directory contains detailed documentation for all analysis workflows, organ
 
 ```
 docs/
+├── calculator/               # Interactive risk calculator documentation
 ├── cohort_analysis/          # Clinical cohort analysis documentation
 ├── feature_importance/       # Global feature importance documentation
-└── scripts/                  # Scripts and standards documentation
+├── scripts/                  # Scripts and standards documentation
+└── shared/                   # Shared documentation across workflows
 ```
 
 ## Documentation by Workflow
@@ -35,6 +37,16 @@ docs/
 
 - **[Validation & Leakage](shared/README_validation_concordance_variables_leakage.md)** - Validation procedures, C-index implementation, variable mapping, and target leakage prevention (applies to all workflows)
 
+### Interactive Risk Calculator (`docs/calculator/`)
+
+- **[SHAP + FFA Integration](calculator/README_shap_ffa.md)** - SHAP and Formal Feature Attribution workflow for causal analysis
+- **[Final Models](calculator/README_final_models.md)** - Complete variable documentation and final model results
+- **[Dashboard](calculator/README_dashboard.md)** - Risk dashboard user guide and features
+- **[Deployment](calculator/README_deployment.md)** - AWS deployment guide (S3, Lambda, API Gateway)
+- **[Causal Analysis](calculator/README_causal_analysis.md)** - Causal analysis dashboard and workflow
+- **[Models](calculator/README_models.md)** - Model performance, risk score calculation, and normalization
+- **[Architecture](calculator/README_architecture.md)** - System architecture and technical design
+
 ### Scripts & Standards (`docs/scripts/`)
 
 - **[Standards & Conventions](scripts/README_standards.md)** - Consolidated standards document covering logging, outputs structure, and script organization
@@ -42,6 +54,7 @@ docs/
 ## Quick Links
 
 - **Main Project README**: [../README.md](../README.md)
+- **Interactive Risk Calculator**: [../graft-loss/cohort_analysis/calculator/README.md](../graft-loss/cohort_analysis/calculator/README.md)
 - **Clinical Cohort Analysis**: [../graft-loss/cohort_analysis/README.md](../graft-loss/cohort_analysis/README.md)
 - **Global Feature Importance**: [../graft-loss/feature_importance/README.md](../graft-loss/feature_importance/README.md)
 - **Scripts Directory**: [../scripts/README.md](../scripts/README.md)
