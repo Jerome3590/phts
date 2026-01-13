@@ -1026,7 +1026,7 @@
     
     // Render causal factor controls
     function renderCausalControls() {
-      if (!causalAnalysisData || causalAnalysisData.length === 0) return;
+      if (!causalAnalysisData || !causalAnalysisData.factors || causalAnalysisData.factors.length === 0) return;
       
       const controlsList = document.getElementById('causal-controls-list');
       controlsList.innerHTML = '';
@@ -1035,7 +1035,7 @@
       // Get current feature values
       const currentFeatures = collectFeatures();
       
-      causalAnalysisData.slice(0, 15).forEach((factor, index) => {
+      causalAnalysisData.factors.slice(0, 15).forEach((factor, index) => {
         const featureName = factor.feature;
         const currentValue = currentFeatures[featureName] || 0;
         
