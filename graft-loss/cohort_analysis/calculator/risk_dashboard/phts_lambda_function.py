@@ -112,105 +112,66 @@ def _response(status_code: int, body: Dict[str, Any], headers: Optional[Dict[str
 
 def get_feature_metadata(cohort: str) -> Dict[str, str]:
     """
-    Get feature type metadata (binary vs numeric) from model and training data.
+    Get feature type metadata (binary vs numeric) using pattern-based inference.
+    
+    This is a fallback when data is not available in Lambda.
+    Uses feature name patterns to determine type.
     
     Returns:
         Dictionary mapping feature names to their types: 'binary' or 'numeric'
     """
     feature_metadata = {}
     
+    # Known binary feature patterns
+    known_binary_patterns = ['_bin', '_cat', 'txicu', 'txecmo', 'txvad', 'ltxtrach', 'txnomcsd', 
+                             'chd_', 'sec_dx', 'prim_dx', 'ecmo_', 'lvad', 'mcsd', 'cpr', 'vent',
+                             'hx', 'txvent', 'txnomcsd']
+    
+    # Known numeric feature patterns (always numeric, even if data looks binary)
+    known_numeric_patterns = ['bmi', 'egfr', 'age', 'weight', 'height', 'creat', 'bun', 
+                             'albumin', 'ast', 'alt', 'bili', 'chol', 'hdl', 'ldl', 'tg', 
+                             'tp', 'brp', 'bram', 'donisch', 'durcarst', 'bnp', 'sa', 'palb',
+                             'listing', 'txpl', 'ls', 'tx', 'l', 'donor']
+    
+    # Try to get feature names from model or dashboard data
     try:
-        # Try to load a sample of training data to determine feature types
-        # Use the same data loading logic as compute_risk_distributions
-        import sys
-        from pathlib import Path
+        # Try to load dashboard data to get feature names from causal factors
+        dashboard_data = load_dashboard_data(cohort)
+        top_causal = dashboard_data.get("top_causal_factors", [])
         
-        # Add paths for imports
-        project_root = Path(__file__).parent.parent.parent.parent
-        sys.path.insert(0, str(project_root))
-        sys.path.insert(0, str(Path(__file__).parent.parent))
+        # Get all unique feature names from causal factors and importance
+        feature_names = set()
+        for factor in top_causal:
+            if 'feature' in factor:
+                feature_names.add(factor['feature'])
         
-        try:
-            # Import data loading function
-            import sys
-            from pathlib import Path
-            project_root = Path(__file__).parent.parent.parent.parent
-            sys.path.insert(0, str(project_root))
-            sys.path.insert(0, str(Path(__file__).parent.parent))
+        # Also check feature_importance if available
+        feature_importance = dashboard_data.get("feature_importance", [])
+        for item in feature_importance:
+            if isinstance(item, dict) and 'feature' in item:
+                feature_names.add(item['feature'])
+        
+        # Generate metadata for each feature using pattern matching
+        for feature_name in feature_names:
+            feature_name_lower = feature_name.lower()
             
-            from run_shap_ffa_workflow import prepare_calculator_features, load_calculator_data_for_shap
-            import pandas as pd
+            # Check if known binary
+            is_binary = any(pattern in feature_name_lower for pattern in known_binary_patterns)
             
-            # Load a sample of data (use same function as SHAP workflow)
-            df = load_calculator_data_for_shap(cohort)
-            if df is not None and len(df) > 0:
-                # Filter to cohort if needed
-                if 'prim_dx' in df.columns:
-                    if cohort == 'CHD':
-                        df = df[df['prim_dx'].isin(['CHD', 'Congenital Heart Disease'])].copy()
-                    elif cohort == 'Myocardio':
-                        df = df[df['prim_dx'].isin(['Myocardio', 'Cardiomyopathy', 'Myocarditis'])].copy()
-                    # Combined uses all data
-                
-                # Prepare features
-                df_prepared = prepare_calculator_features(df.copy())
-                
-                # Load model to get feature names
-                best_model_type = get_best_model(cohort)
-                model = load_model(cohort, best_model_type)
-                
-                if model:
-                    # Get feature names
-                    if best_model_type == 'catboost' and hasattr(model, 'feature_names_'):
-                        feature_names = model.feature_names_
-                    elif best_model_type in ['xgboost', 'xgboost_rf']:
-                        # Try to get from model
-                        try:
-                            feature_names = model.feature_names if hasattr(model, 'feature_names') else []
-                        except:
-                            feature_names = []
-                    else:
-                        feature_names = []
-                    
-                    # Determine type for each feature
-                    for feature_name in feature_names:
-                        if feature_name in df_prepared.columns:
-                            col_data = df_prepared[feature_name].dropna()
-                            
-                            if len(col_data) > 0:
-                                # Known numeric features (calculated/continuous) - always numeric
-                                known_numeric = ['bmi', 'egfr', 'age', 'weight', 'height', 'creat', 'bun', 
-                                               'albumin', 'ast', 'alt', 'bili', 'chol', 'hdl', 'ldl', 'tg', 
-                                               'tp', 'brp', 'bram', 'donisch', 'durcarst', 'bnp', 'sa', 'palb']
-                                
-                                # Check if feature name suggests it's numeric (even if data looks binary)
-                                is_known_numeric = any(pattern in feature_name.lower() for pattern in known_numeric)
-                                
-                                # Check if binary: only contains 0 and/or 1
-                                unique_vals = set(col_data.unique())
-                                is_binary_vals = unique_vals.issubset({0, 1, 0.0, 1.0})
-                                
-                                # If known numeric feature, always treat as numeric
-                                # Otherwise, use value-based detection
-                                if is_known_numeric:
-                                    feature_metadata[feature_name] = 'numeric'
-                                elif is_binary_vals:
-                                    feature_metadata[feature_name] = 'binary'
-                                else:
-                                    feature_metadata[feature_name] = 'numeric'
-                            else:
-                                # Default to numeric if no data
-                                feature_metadata[feature_name] = 'numeric'
-                        else:
-                            # Default to numeric if feature not in data
-                            feature_metadata[feature_name] = 'numeric'
+            # Check if known numeric
+            is_numeric = any(pattern in feature_name_lower for pattern in known_numeric_patterns)
             
-        except Exception as e:
-            logger.warning(f"Could not determine feature metadata from data: {e}")
-            # Return empty dict - will fall back to inference
+            # Determine type
+            if is_binary and not is_numeric:
+                feature_metadata[feature_name] = 'binary'
+            else:
+                # Default to numeric (most features are numeric)
+                feature_metadata[feature_name] = 'numeric'
+        
+        logger.info(f"Generated feature metadata for {len(feature_metadata)} features using pattern matching")
     
     except Exception as e:
-        logger.warning(f"Error getting feature metadata: {e}")
+        logger.warning(f"Error generating feature metadata: {e}")
     
     return feature_metadata
 
@@ -1003,8 +964,12 @@ def handle_causal(event: Dict[str, Any]) -> Dict[str, Any]:
         dashboard_data = load_dashboard_data(cohort)
         top_causal = dashboard_data.get("top_causal_factors", [])[:top_k]
         
-        # Get feature metadata
-        feature_metadata = get_feature_metadata(cohort)
+        # Get feature metadata from dashboard_data (pre-computed) or generate it
+        feature_metadata = dashboard_data.get("feature_metadata", {})
+        if not feature_metadata:
+            # Fallback: try to generate it (may fail in Lambda if data not available)
+            logger.warning("Feature metadata not found in dashboard_data, attempting to generate...")
+            feature_metadata = get_feature_metadata(cohort)
         
         return _response(200, {
             "cohort": cohort,

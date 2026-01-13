@@ -1263,6 +1263,54 @@ def combine_importance_to_shap(
     return combined, shap_map
 
 
+def generate_feature_metadata(df: pd.DataFrame, feature_names: List[str]) -> Dict[str, str]:
+    """
+    Generate feature metadata (binary vs numeric) from prepared data.
+    
+    Args:
+        df: Prepared dataframe with features
+        feature_names: List of feature names to check
+    
+    Returns:
+        Dictionary mapping feature names to 'binary' or 'numeric'
+    """
+    feature_metadata = {}
+    
+    # Known numeric feature patterns (always numeric, even if data looks binary)
+    known_numeric = ['bmi', 'egfr', 'age', 'weight', 'height', 'creat', 'bun', 
+                     'albumin', 'ast', 'alt', 'bili', 'chol', 'hdl', 'ldl', 'tg', 
+                     'tp', 'brp', 'bram', 'donisch', 'durcarst', 'bnp', 'sa', 'palb']
+    
+    for feature_name in feature_names:
+        if feature_name in df.columns:
+            col_data = df[feature_name].dropna()
+            
+            if len(col_data) > 0:
+                # Check if feature name suggests it's numeric
+                is_known_numeric = any(pattern in feature_name.lower() for pattern in known_numeric)
+                
+                # Check if binary: only contains 0 and/or 1
+                unique_vals = set(col_data.unique())
+                is_binary_vals = unique_vals.issubset({0, 1, 0.0, 1.0})
+                
+                # If known numeric feature, always treat as numeric
+                # Otherwise, use value-based detection
+                if is_known_numeric:
+                    feature_metadata[feature_name] = 'numeric'
+                elif is_binary_vals:
+                    feature_metadata[feature_name] = 'binary'
+                else:
+                    feature_metadata[feature_name] = 'numeric'
+            else:
+                # Default to numeric if no data
+                feature_metadata[feature_name] = 'numeric'
+        else:
+            # Default to numeric if feature not in data
+            feature_metadata[feature_name] = 'numeric'
+    
+    return feature_metadata
+
+
 def generate_dashboard_outputs(
     combined_importance: pd.DataFrame,
     causal_df: Optional[pd.DataFrame],
@@ -1270,7 +1318,8 @@ def generate_dashboard_outputs(
     cohort: str,
     top_k: int = 10,
     xgboost_json_used: bool = False,
-    use_xgboost_only: bool = False
+    use_xgboost_only: bool = False,
+    feature_data: Optional[pd.DataFrame] = None
 ):
     """Generate dashboard-ready outputs for risk dashboard."""
     logger.info("Generating dashboard outputs...")
@@ -1287,6 +1336,13 @@ def generate_dashboard_outputs(
     else:
         top_causal = causal_df.head(top_k).copy()
     
+    # Generate feature metadata if data is available
+    feature_metadata = {}
+    if feature_data is not None:
+        feature_names = combined_importance['feature'].tolist()
+        feature_metadata = generate_feature_metadata(feature_data, feature_names)
+        logger.info(f"Generated feature metadata for {len(feature_metadata)} features")
+    
     # Create comprehensive dashboard data
     dashboard_data = {
         'cohort': cohort,
@@ -1302,6 +1358,7 @@ def generate_dashboard_outputs(
             'top_feature_importance': top_causal.iloc[0]['causal_responsibility'] if len(top_causal) > 0 else None
         },
         'feature_importance': combined_importance.head(50).to_dict('records'),
+        'feature_metadata': feature_metadata,  # Add feature metadata
         'notes': {
             'model_json_used': 'XGBoost (CatBoost JSON not used due to categorical hashing)',
             'shap_filtering': 'XGBoost SHAP only (simplified pipeline)' if use_xgboost_only else 'Combined SHAP from both XGBoost and CatBoost',
@@ -1666,6 +1723,44 @@ def main():
         # Step 5: Generate dashboard outputs
         logger.info("")
         logger.info("Step 5: Generating dashboard outputs...")
+        
+        # Get feature data for metadata generation
+        # Try to load test data that was used for SHAP computation
+        feature_data_for_metadata = None
+        try:
+            df_test = load_calculator_data_for_shap(args.cohort)
+            df_test = prepare_calculator_features(df_test)
+            if 'txpl_year' in df_test.columns:
+                cutoff_year = 2021
+                test_mask = df_test['txpl_year'] > cutoff_year
+                df_test = df_test[test_mask].copy()
+            
+            # Remove leakage and prepare features (same as SHAP computation)
+            if remove_leakage_predictors is not None:
+                df_clean = remove_leakage_predictors(df_test, time_col='time', status_col='status')
+            else:
+                leakage_cols = ['ev_time', 'ev_type', 'time', 'status', 'int_dead', 'age_death', 
+                               'graft_loss', 'int_graft_loss', 'outcome', 'outcome_int_graft_loss', 
+                               'outcome_graft_loss']
+                df_clean = df_test.drop(columns=[c for c in leakage_cols if c in df_test.columns], errors='ignore')
+            feature_cols = [col for col in df_clean.columns if col not in ['time', 'status', 'txpl_year']]
+            feature_data_for_metadata = df_clean[feature_cols].copy()
+            
+            # Remove constant columns and fill NaN (same as model training)
+            constant_cols = [col for col in feature_data_for_metadata.columns if feature_data_for_metadata[col].nunique() < 2]
+            if constant_cols:
+                feature_data_for_metadata = feature_data_for_metadata.drop(columns=constant_cols)
+            feature_data_for_metadata = feature_data_for_metadata.fillna(0)
+            
+            # Convert categorical to numeric
+            for col in feature_data_for_metadata.columns:
+                if feature_data_for_metadata[col].dtype == 'object':
+                    feature_data_for_metadata[col] = pd.Categorical(feature_data_for_metadata[col]).codes
+            
+            logger.info(f"Loaded feature data for metadata: {len(feature_data_for_metadata)} rows, {len(feature_data_for_metadata.columns)} features")
+        except Exception as e:
+            logger.warning(f"Could not load feature data for metadata generation: {e}")
+        
         dashboard_data = generate_dashboard_outputs(
             combined_importance,
             causal_df,
@@ -1673,7 +1768,8 @@ def main():
             args.cohort,
             top_k=args.top_k,
             xgboost_json_used=xgboost_json is not None,
-            use_xgboost_only=use_xgboost_only
+            use_xgboost_only=use_xgboost_only,
+            feature_data=feature_data_for_metadata
         )
         
         logger.info("")
