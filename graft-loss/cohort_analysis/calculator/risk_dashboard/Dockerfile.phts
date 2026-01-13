@@ -24,6 +24,9 @@ COPY phts_lambda_function.py ${LAMBDA_TASK_ROOT}
 # Models are copied directly to /var/task/models/ for fast access
 COPY lambda_dir_phts/models/ ${LAMBDA_TASK_ROOT}/models/
 
+# Copy model features (feature metadata)
+COPY lambda_dir_phts/model_features/ ${LAMBDA_TASK_ROOT}/model_features/
+
 # Copy dashboard data directory
 COPY lambda_dir_phts/dashboard_data/ ${LAMBDA_TASK_ROOT}/dashboard_data/
 

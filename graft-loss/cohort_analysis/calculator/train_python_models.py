@@ -94,13 +94,15 @@ def get_survival_leakage_keywords() -> List[str]:
     return [
         # Identifiers and outcomes (handled separately in drop_cols)
         "transplant_year", "primary_etiology", "txpl_year",
+        # Cohort-defining variables (should not be features - defines the cohort itself)
+        "prim_dx", "PRIM_DX",  # Primary diagnosis defines cohorts (CHD, Myocardio, Combined)
         # Donor/survival variables and obvious leak sources
         "graft_loss", "int_graft_loss", "dtx_", "cc_", "isc_oth",
         "dcardiac", "dcon", "dpri", "dpricaus", "rec_", "papooth",
         "dneuro", "sdprathr", "int_dead", "listing_year", "cpathneg",
         "dcauseod",
         # Demographics (optional, keep if clinically needed)
-        "race", "sex", "drace_b", "rrace_a", "hisp", "Iscntry",
+        "race", "sex", "drace_b", "rrace_a", "hisp", "Iscntry", "lscntry",  # lscntry = listing country (not modifiable)
         # Transplant-specific variables often post-outcome or unclear timing
         "dreject", "dsecaccsEmpty", "dmajbldEmpty", "pishltgr1R",
         "drejectEmpty", "drejectHyperacute", "pishltgrEmpty", "pishltgr",

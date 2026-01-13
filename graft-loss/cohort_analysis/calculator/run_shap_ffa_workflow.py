@@ -784,14 +784,57 @@ def run_calculator_shap_analysis(cohort: str) -> Tuple[Dict[str, float], Dict[st
     except ImportError:
         raise ImportError("SHAP library not available. Install with: pip install shap")
     
-    from shap_analysis.run_shap_analysis import _load_calculator_models
-    
     logger.info(f"Running FULL SHAP analysis for calculator models (cohort: {cohort})...")
     logger.info("This will compute actual SHAP values from models (not proxies)")
     
-    # Load calculator models
+    # Load calculator models directly
     try:
-        cb_model, xgb_model = _load_calculator_models(cohort)
+        from catboost import CatBoostRegressor
+        import xgboost as xgb
+        
+        # Check both calculator outputs and parent outputs
+        calculator_models_dir = CALCULATOR_DIR / "outputs" / "models" / cohort
+        parent_models_dir = CALCULATOR_DIR.parent / "outputs" / "models" / cohort
+        
+        # Load CatBoost model
+        cb_path = None
+        for models_dir in [calculator_models_dir, parent_models_dir]:
+            candidate_path = models_dir / "catboost_model.cbm"
+            if candidate_path.exists():
+                cb_path = candidate_path
+                break
+        
+        if cb_path is None:
+            raise FileNotFoundError(
+                f"CatBoost model not found. Checked:\n"
+                f"  - {calculator_models_dir / 'catboost_model.cbm'}\n"
+                f"  - {parent_models_dir / 'catboost_model.cbm'}\n"
+                f"Please run train_python_models.py first."
+            )
+        
+        cb_model = CatBoostRegressor(logging_level='Silent')
+        cb_model.load_model(str(cb_path))
+        logger.info(f"Loaded CatBoost model: {cb_path}")
+        
+        # Load XGBoost model
+        xgb_path = None
+        for models_dir in [calculator_models_dir, parent_models_dir]:
+            candidate_path = models_dir / "xgboost_model.ubj"
+            if candidate_path.exists():
+                xgb_path = candidate_path
+                break
+        
+        if xgb_path is None:
+            raise FileNotFoundError(
+                f"XGBoost model not found. Checked:\n"
+                f"  - {calculator_models_dir / 'xgboost_model.ubj'}\n"
+                f"  - {parent_models_dir / 'xgboost_model.ubj'}\n"
+                f"Please run train_python_models.py first."
+            )
+        
+        xgb_model = xgb.XGBRegressor()
+        xgb_model.load_model(str(xgb_path))
+        logger.info(f"Loaded XGBoost model: {xgb_path}")
         logger.info("Loaded calculator models successfully")
     except FileNotFoundError as e:
         raise FileNotFoundError(
@@ -1324,17 +1367,36 @@ def generate_dashboard_outputs(
     """Generate dashboard-ready outputs for risk dashboard."""
     logger.info("Generating dashboard outputs...")
     
+    # Filter out cohort-defining variables (should not be causal factors)
+    # prim_dx defines the cohorts (CHD, Myocardio, Combined) - it's not a causal feature
+    cohort_defining_vars = ['prim_dx', 'PRIM_DX', 'primary_etiology']
+    
     # Top K causal factors (handle case when FFA is not available)
     if causal_df is None or len(causal_df) == 0:
         logger.warning("No causal factors available (FFA may not be available). Using feature importance instead.")
         # Fallback: Use top features from importance
-        top_causal = combined_importance.head(top_k).copy()
+        top_causal = combined_importance.head(top_k * 2).copy()  # Get more to account for filtering
+        # Filter out cohort-defining variables
+        top_causal = top_causal[~top_causal['feature'].isin(cohort_defining_vars)].head(top_k).copy()
         top_causal = top_causal.rename(columns={'combined_importance_norm': 'causal_responsibility'})
         top_causal['shap_importance'] = top_causal['causal_responsibility']
         top_causal['rule_frequency'] = 0
         top_causal['total_rules'] = 0
     else:
-        top_causal = causal_df.head(top_k).copy()
+        # Filter out cohort-defining variables from causal factors
+        causal_df_filtered = causal_df[~causal_df['feature'].isin(cohort_defining_vars)].copy()
+        top_causal = causal_df_filtered.head(top_k).copy()
+    
+    # Also filter from combined_importance for feature importance
+    combined_importance_filtered = combined_importance[~combined_importance['feature'].isin(cohort_defining_vars)].copy()
+    
+    if len(top_causal) == 0:
+        logger.warning("No causal factors after filtering cohort-defining variables. Using filtered importance.")
+        top_causal = combined_importance_filtered.head(top_k).copy()
+        top_causal = top_causal.rename(columns={'combined_importance_norm': 'causal_responsibility'})
+        top_causal['shap_importance'] = top_causal['causal_responsibility']
+        top_causal['rule_frequency'] = 0
+        top_causal['total_rules'] = 0
     
     # Generate feature metadata if data is available
     feature_metadata = {}
@@ -1350,14 +1412,14 @@ def generate_dashboard_outputs(
         'ffa_method': 'xgboost_json_with_xgboost_shap_filtering' if use_xgboost_only else 'xgboost_json_with_combined_shap_filtering',
         'top_causal_factors': top_causal.to_dict('records'),
         'summary': {
-            'total_features': len(combined_importance),
+            'total_features': len(combined_importance_filtered),
             'top_k': top_k,
-            'mean_importance': combined_importance['combined_importance_norm'].mean(),
-            'max_importance': combined_importance['combined_importance_norm'].max(),
+            'mean_importance': combined_importance_filtered['combined_importance_norm'].mean(),
+            'max_importance': combined_importance_filtered['combined_importance_norm'].max(),
             'top_feature': top_causal.iloc[0]['feature'] if len(top_causal) > 0 else None,
             'top_feature_importance': top_causal.iloc[0]['causal_responsibility'] if len(top_causal) > 0 else None
         },
-        'feature_importance': combined_importance.head(50).to_dict('records'),
+        'feature_importance': combined_importance_filtered.head(50).to_dict('records'),
         'feature_metadata': feature_metadata,  # Add feature metadata
         'notes': {
             'model_json_used': 'XGBoost (CatBoost JSON not used due to categorical hashing)',
@@ -1772,23 +1834,22 @@ def main():
             feature_data=feature_data_for_metadata
         )
         
+        # Get filtered causal factors from dashboard data for logging
+        top_causal_from_dashboard = dashboard_data.get('top_causal_factors', [])
+        
         logger.info("")
         logger.info("=" * 80)
         logger.info("Analysis Complete!")
         logger.info("=" * 80)
         logger.info(f"FFA Method: XGBoost JSON + Combined SHAP filtering")
-        logger.info(f"Top {args.top_k} Causal Factors:")
-        if causal_df is not None and len(causal_df) > 0:
-            for idx, row in causal_df.head(args.top_k).iterrows():
-                logger.info(f"  {idx+1:2d}. {row['feature']:40s} "
-                           f"(Causal: {row['causal_responsibility']:.4f})")
+        logger.info(f"Top {args.top_k} Causal Factors (cohort-defining variables filtered):")
+        if top_causal_from_dashboard and len(top_causal_from_dashboard) > 0:
+            for idx, factor in enumerate(top_causal_from_dashboard[:args.top_k]):
+                importance = factor.get('causal_responsibility', factor.get('importance', factor.get('combined_importance_norm', 0)))
+                logger.info(f"  {idx+1:2d}. {factor['feature']:40s} "
+                           f"(Importance: {importance:.4f})")
         else:
-            # Fallback: Use importance-based ranking
-            logger.info("  (Using feature importance ranking - FFA not available)")
-            if combined_importance is not None and len(combined_importance) > 0:
-                for idx, row in combined_importance.head(args.top_k).iterrows():
-                    logger.info(f"  {idx+1:2d}. {row['feature']:40s} "
-                               f"(Importance: {row.get('combined_importance_norm', 0):.4f})")
+            logger.info("  (No causal factors available)")
         logger.info("")
         logger.info(f"Results saved to: {output_dir}")
         logger.info("=" * 80)

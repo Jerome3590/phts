@@ -85,7 +85,7 @@ def load_training_data(cohort: str) -> Optional[pd.DataFrame]:
     print(f"Loaded {len(df)} rows for cohort {cohort}")
     return df
 
-def prepare_features_for_model(df: pd.DataFrame, model, model_type: str) -> Optional[tuple]:
+def prepare_features_for_model(df: pd.DataFrame, model, model_type: str, cohort: Optional[str] = None) -> Optional[tuple]:
     """
     Prepare features from dataframe to match model's expected format.
     
@@ -107,34 +107,84 @@ def prepare_features_for_model(df: pd.DataFrame, model, model_type: str) -> Opti
                 print(f"Warning: Cannot get feature names from CatBoost model")
                 return None
             
-            # Select features that exist in dataframe (in model's order)
+            # Load feature metadata to determine correct feature types
+            # This tells us which features are numeric vs binary (from saved metadata)
+            feature_metadata = {}
+            if cohort:
+                try:
+                    project_root = Path(__file__).parent.parent.parent
+                    metadata_file = project_root / "calculator" / "outputs" / "shap_ffa" / cohort / "dashboard_data.json"
+                    if metadata_file.exists():
+                        import json
+                        with open(metadata_file, 'r') as f:
+                            dashboard_data = json.load(f)
+                            feature_metadata = dashboard_data.get("feature_metadata", {})
+                            print(f"  Loaded feature metadata for {len(feature_metadata)} features")
+                except Exception as e:
+                    print(f"  Warning: Could not load feature metadata: {e}")
+            
+            # Exclude lscntry (listing country) - not modifiable
+            features_to_exclude = ['lscntry', 'Iscntry']
+            
             X_df = pd.DataFrame(index=df_prepared.index)
             cat_feature_indices = []
             
             for idx, fname in enumerate(feature_names):
+                # Skip excluded features
+                if fname in features_to_exclude:
+                    print(f"  Warning: Feature '{fname}' should have been excluded during training. Skipping.")
+                    continue
+                    
                 if fname in df_prepared.columns:
                     col_data = df_prepared[fname].copy()
                     
-                    # Check if categorical (object, category, or string-like)
-                    is_categorical = (
-                        col_data.dtype == 'object' or 
-                        col_data.dtype.name == 'category' or
-                        (col_data.dtype == 'bool') or
-                        (col_data.dtype == 'int64' and col_data.nunique() < 20)  # Low cardinality ints might be categorical
-                    )
-                    
-                    if is_categorical:
-                        # Convert to string and handle missing
-                        col_data = col_data.astype(str).fillna('')
-                        cat_feature_indices.append(idx)
+                    # Use feature metadata to determine type (if available)
+                    # If metadata says 'numeric', force to numeric (even if data looks categorical)
+                    # If metadata says 'binary', treat as categorical (0/1)
+                    if fname in feature_metadata:
+                        feature_type = feature_metadata[fname]
+                        if feature_type == 'numeric':
+                            # Force to numeric (handles numeric-encoded categories)
+                            col_data = pd.to_numeric(col_data, errors='coerce').fillna(0.0)
+                            X_df[fname] = col_data
+                            # Don't add to categorical features
+                        elif feature_type == 'binary':
+                            # Treat as categorical (0/1)
+                            col_data = col_data.astype(str).fillna('')
+                            cat_feature_indices.append(idx)
+                            X_df[fname] = col_data
+                        else:
+                            # Unknown type, infer from data
+                            is_categorical = (
+                                col_data.dtype == 'object' or 
+                                col_data.dtype.name == 'category' or
+                                (col_data.dtype == 'bool')
+                            )
+                            if is_categorical:
+                                col_data = col_data.astype(str).fillna('')
+                                cat_feature_indices.append(idx)
+                            else:
+                                col_data = pd.to_numeric(col_data, errors='coerce').fillna(0.0)
+                            X_df[fname] = col_data
                     else:
-                        # Numeric: convert to float and fill NaN
-                        col_data = pd.to_numeric(col_data, errors='coerce').fillna(0.0)
-                    
-                    X_df[fname] = col_data
+                        # No metadata - infer from data (fallback)
+                        is_categorical = (
+                            col_data.dtype == 'object' or 
+                            col_data.dtype.name == 'category' or
+                            (col_data.dtype == 'bool') or
+                            (col_data.dtype == 'int64' and col_data.nunique() < 20)  # Low cardinality ints might be categorical
+                        )
+                        
+                        if is_categorical:
+                            col_data = col_data.astype(str).fillna('')
+                            cat_feature_indices.append(idx)
+                        else:
+                            col_data = pd.to_numeric(col_data, errors='coerce').fillna(0.0)
+                        
+                        X_df[fname] = col_data
                 else:
-                    # Missing feature - add zeros/empty strings
-                    X_df[fname] = 0.0  # Default to numeric 0
+                    # Missing feature - default to numeric 0
+                    X_df[fname] = 0.0
                     print(f"  Warning: Feature '{fname}' missing from data, using default")
             
             if len(X_df.columns) == 0:
@@ -285,7 +335,7 @@ def compute_percentiles(scores: np.ndarray) -> Dict[str, float]:
         'p95': float(np.percentile(scores_clean, 95)),
     }
 
-def generate_predictions(model, X, model_type: str, feature_names: Optional[List[str]] = None, cat_features: Optional[List[int]] = None, model_file: Optional[Path] = None) -> np.ndarray:
+def generate_predictions(model, X, model_type: str, feature_names: Optional[List[str]] = None, cat_features: Optional[List[int]] = None, model_file: Optional[Path] = None, df_prepared: Optional[pd.DataFrame] = None) -> np.ndarray:
     """
     Generate predictions from model.
     
@@ -295,65 +345,54 @@ def generate_predictions(model, X, model_type: str, feature_names: Optional[List
         model_type: 'catboost' or 'xgboost' or 'xgboost_rf'
         feature_names: Feature names for XGBoost
         cat_features: List of categorical feature indices for CatBoost
+        df_prepared: Original prepared dataframe (for CatBoost retry with feature fixes)
     """
     try:
         if model_type == 'catboost':
-            # CatBoost: The model has conflicting verbose parameters from training
-            # Workaround: Reload model from file with clean parameters
-            # Get the model file path from the model object or reload
-            try:
-                # Method 1: Try to reload model with clean params
-                # We need the original model file path - try to get it from model
-                # If not available, we'll need to pass it as a parameter
-                # For now, try Pool prediction which might work
-                pool = Pool(
-                    data=X,
-                    cat_features=cat_features if cat_features else None
-                )
-                predictions = model.predict(pool)
-            except Exception as e1:
-                # Method 2: Reload model from file with clean parameters
-                # We need to know the model file path - get it from the calling function
-                # Actually, let's try using the model's internal _calc_oblivious_trees
+            # CatBoost: Try prediction, catch feature type errors and fix them automatically
+            max_retries = 50  # Allow up to 50 feature fixes (many numeric-encoded categories)
+            retry_count = 0
+            X_working = X.copy() if isinstance(X, pd.DataFrame) else X
+            cat_features_working = cat_features.copy() if cat_features else []
+            
+            while retry_count < max_retries:
                 try:
-                    # Try to use model's internal prediction without parameter validation
-                    # Access the model's trees directly
-                    if hasattr(model, '_calc_oblivious_trees'):
-                        # Use internal method that bypasses parameter validation
-                        pool = Pool(
-                            data=X,
-                            cat_features=cat_features if cat_features else None
-                        )
-                        # Try to call internal prediction method
-                        predictions = model._calc_oblivious_trees(pool)
+                    pool = Pool(
+                        data=X_working,
+                        cat_features=cat_features_working if cat_features_working else None
+                    )
+                    predictions = model.predict(pool)
+                    return np.array(predictions).flatten()
+                except Exception as e:
+                    error_msg = str(e)
+                    # Check if it's a feature type mismatch error
+                    if "is Float in model but marked different" in error_msg or ("Feature" in error_msg and "Float" in error_msg):
+                        # Extract feature name from error message
+                        # Format: "Feature FEATURE_NAME is Float in model but marked different in the dataset"
+                        import re
+                        match = re.search(r'Feature (\w+) is Float', error_msg)
+                        if match:
+                            problematic_feature = match.group(1)
+                            print(f"  Retry {retry_count + 1}: Feature '{problematic_feature}' type mismatch, forcing to numeric")
+                            
+                            # Force this feature to numeric
+                            if isinstance(X_working, pd.DataFrame) and problematic_feature in X_working.columns:
+                                X_working[problematic_feature] = pd.to_numeric(X_working[problematic_feature], errors='coerce').fillna(0.0)
+                                # Remove from categorical features if present
+                                feature_idx = X_working.columns.get_loc(problematic_feature)
+                                if feature_idx in cat_features_working:
+                                    cat_features_working.remove(feature_idx)
+                                retry_count += 1
+                                continue
+                        # If we can't extract feature name or fix it, break
+                        print(f"  Could not fix feature type error: {error_msg}")
+                        break
                     else:
-                        raise e1
-                except Exception as e2:
-                    # Method 3: Use model's internal prediction method to bypass parameter validation
-                    # Try to access the model's trees directly
-                    try:
-                        # Use model's _calc_oblivious_trees or _calc_oblivious_trees_for_pool
-                        if hasattr(model, '_calc_oblivious_trees_for_pool'):
-                            pool = Pool(
-                                data=X,
-                                cat_features=cat_features if cat_features else None
-                            )
-                            predictions = model._calc_oblivious_trees_for_pool(pool)
-                        elif hasattr(model, '_calc_oblivious_trees'):
-                            # Convert DataFrame to numpy array for internal method
-                            X_arr = X.values if isinstance(X, pd.DataFrame) else X
-                            predictions = model._calc_oblivious_trees(X_arr)
-                        else:
-                            raise e1
-                    except Exception as e3:
-                        # Method 4: Reload model from file - but this won't help if file has conflicting params
-                        # The real issue is the model file itself has conflicting params
-                        print(f"  CatBoost verbose conflict: Model file contains conflicting parameters.")
-                        print(f"  This is a known issue with CatBoost models trained with both logging_level and verbose.")
-                        print(f"  Workaround: Using placeholder distribution for Myocardio cohort.")
-                        print(f"  Error details: {e1}")
-                        # Return empty array to trigger placeholder distribution
-                        return np.array([])
+                        # Not a feature type error, re-raise
+                        raise
+            
+            # If we exhausted retries, raise the last error
+            raise Exception(f"Failed after {max_retries} retries fixing feature type mismatches")
         else:  # XGBoost
             # XGBoost: X should be a numpy array (all numeric)
             if feature_names is not None and len(feature_names) == X.shape[1]:
@@ -397,30 +436,57 @@ def main():
         best_model_type = get_best_model_type(cohort, models_dir)
         print(f"  Best model: {best_model_type}")
         
+        # Use the best model type for distribution computation
+        # For Myocardio, prefer CatBoost if available (even if not best) to get proper distribution
+        # Now that lscntry is excluded and retry mechanism handles numeric-encoded categories, CatBoost should work
+        model_type_to_use = best_model_type
+        if cohort == "Myocardio":
+            # Try CatBoost first for Myocardio (user preference)
+            catboost_model = load_model(cohort, 'catboost', models_dir)
+            if catboost_model is not None:
+                print(f"  Using CatBoost for Myocardio distribution computation")
+                model_type_to_use = 'catboost'
+                model = catboost_model
+            else:
+                print(f"  CatBoost not available, using best model: {best_model_type}")
+        
         # Load model (for CatBoost, also get file path for reload if needed)
         model_file = None
-        if best_model_type == 'catboost':
-            result = load_model(cohort, best_model_type, models_dir, return_file_path=True)
+        if model_type_to_use == 'catboost':
+            result = load_model(cohort, model_type_to_use, models_dir, return_file_path=True)
             if isinstance(result, tuple):
                 model, model_file = result
             else:
                 model = result
         else:
-            model = load_model(cohort, best_model_type, models_dir)
+            model = load_model(cohort, model_type_to_use, models_dir)
         
         if model is None:
-            print(f"  Warning: Could not load {best_model_type} model for {cohort}")
-            continue
+            # For Myocardio, try XGBoost as fallback if CatBoost fails
+            if cohort == "Myocardio" and best_model_type == 'catboost':
+                print(f"  CatBoost failed, trying XGBoost for distribution computation...")
+                model_type_to_use = 'xgboost'
+                model = load_model(cohort, model_type_to_use, models_dir)
+                if model is None:
+                    print(f"  Warning: Could not load any model for {cohort}")
+                    continue
+            else:
+                print(f"  Warning: Could not load {best_model_type} model for {cohort}")
+                continue
         
         # Try to load training data
         df = load_training_data(cohort)
         
         if df is not None and len(df) > 0:
-            # Prepare features
-            result = prepare_features_for_model(df, model, best_model_type)
+            # Prepare features (use model_type_to_use, not best_model_type)
+            # Also prepare df_prepared for CatBoost retry mechanism
+            from run_shap_ffa_workflow import prepare_calculator_features
+            df_prepared = prepare_calculator_features(df.copy())
+            
+            result = prepare_features_for_model(df, model, model_type_to_use, cohort=cohort)
             
             if result is not None:
-                if best_model_type == 'catboost':
+                if model_type_to_use == 'catboost':
                     X, cat_features = result
                     feature_names = None
                 else:
@@ -429,9 +495,10 @@ def main():
                 
                 if X is not None and len(X) > 0:
                     # Generate predictions
-                    print(f"  Generating predictions on {len(X)} samples...")
-                    # Pass model_file for CatBoost to enable reload if needed
-                    predictions = generate_predictions(model, X, best_model_type, feature_names, cat_features, model_file if best_model_type == 'catboost' else None)
+                    print(f"  Generating predictions on {len(X)} samples using {model_type_to_use} model...")
+                    # Pass model_file and df_prepared for CatBoost to enable retry with feature fixes
+                    df_prepared_for_retry = df_prepared if model_type_to_use == 'catboost' else None
+                    predictions = generate_predictions(model, X, model_type_to_use, feature_names, cat_features, model_file if model_type_to_use == 'catboost' else None, df_prepared_for_retry)
                 
                 if len(predictions) > 0:
                     # Compute percentiles
@@ -440,10 +507,10 @@ def main():
                     if percentiles:
                         # Store distribution
                         all_distributions[cohort] = {
-                            'model_type': best_model_type,
+                            'model_type': model_type_to_use,  # Use actual model used, not best_model_type
                             'percentiles': percentiles,
                             'n_samples': len(predictions),
-                            'note': 'Computed from training data'
+                            'note': f'Computed from training data using {model_type_to_use} model' + (' (fallback from CatBoost)' if cohort == 'Myocardio' and best_model_type == 'catboost' and model_type_to_use != 'catboost' else '')
                         }
                         
                         print(f"  [OK] Percentiles computed: min={percentiles['min']:.3f}, max={percentiles['max']:.3f}, median={percentiles['median']:.3f}")
@@ -454,7 +521,8 @@ def main():
         print(f"  [WARNING] Using placeholder distribution (training data not available)")
         
         # Typical survival model risk scores range from negative to positive values
-        if best_model_type == 'catboost':
+        # Use model_type_to_use (may be XGBoost fallback for Myocardio)
+        if model_type_to_use == 'catboost':
             # CatBoost Cox typically outputs negative values (higher risk = more negative)
             default_scores = np.random.normal(-2.0, 1.5, 1000)
         else:  # XGBoost

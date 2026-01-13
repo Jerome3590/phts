@@ -16,6 +16,7 @@ Endpoints:
 Environment Variables:
 - PHTS_BUCKET: S3 bucket name (default: phts-calculator)
 - MODEL_BASE_PATH: Path to models in container (default: /var/task/models)
+- MODEL_FEATURES_PATH: Path to model features (default: /var/task/model_features)
 - DASHBOARD_DATA_PATH: Path to dashboard data (default: /var/task/dashboard_data)
 """
 
@@ -59,6 +60,7 @@ S3_BUCKET = os.environ.get("PHTS_BUCKET", "jerome-dixon.io")
 S3_PREFIX = os.environ.get("S3_PREFIX", "uva/phts-risk-calculator")
 # Lambda container paths (models are baked into container)
 MODEL_BASE_PATH = os.environ.get("MODEL_BASE_PATH", "/var/task/models")
+MODEL_FEATURES_PATH = os.environ.get("MODEL_FEATURES_PATH", "/var/task/model_features")
 DASHBOARD_DATA_PATH = os.environ.get("DASHBOARD_DATA_PATH", "/var/task/dashboard_data")
 RISK_DISTRIBUTION_PATH = os.environ.get("RISK_DISTRIBUTION_PATH", "/var/task/risk_distributions")
 MODEL_CACHE_TTL = int(os.environ.get("MODEL_CACHE_TTL", "3600"))
@@ -112,68 +114,58 @@ def _response(status_code: int, body: Dict[str, Any], headers: Optional[Dict[str
 
 def get_feature_metadata(cohort: str) -> Dict[str, str]:
     """
-    Get feature type metadata (binary vs numeric) using pattern-based inference.
+    Get feature type metadata (binary vs numeric) from saved file in Lambda.
     
-    This is a fallback when data is not available in Lambda.
-    Uses feature name patterns to determine type.
+    Tries:
+    1. Container filesystem (MODEL_FEATURES_PATH)
+    2. Dashboard data (DASHBOARD_DATA_PATH) - fallback
+    3. S3 bucket - fallback
     
     Returns:
         Dictionary mapping feature names to their types: 'binary' or 'numeric'
     """
-    feature_metadata = {}
+    # Try container filesystem first (MODEL_FEATURES_PATH)
+    container_path = Path(MODEL_FEATURES_PATH) / cohort / "feature_metadata.json"
+    if container_path.exists():
+        logger.info(f"Loading feature metadata from container: {container_path}")
+        try:
+            with open(container_path, 'r') as f:
+                feature_metadata = json.load(f)
+            logger.info(f"Loaded feature metadata for {len(feature_metadata)} features")
+            return feature_metadata
+        except Exception as e:
+            logger.warning(f"Error loading feature metadata from container: {e}")
     
-    # Known binary feature patterns
-    known_binary_patterns = ['_bin', '_cat', 'txicu', 'txecmo', 'txvad', 'ltxtrach', 'txnomcsd', 
-                             'chd_', 'sec_dx', 'prim_dx', 'ecmo_', 'lvad', 'mcsd', 'cpr', 'vent',
-                             'hx', 'txvent', 'txnomcsd']
-    
-    # Known numeric feature patterns (always numeric, even if data looks binary)
-    known_numeric_patterns = ['bmi', 'egfr', 'age', 'weight', 'height', 'creat', 'bun', 
-                             'albumin', 'ast', 'alt', 'bili', 'chol', 'hdl', 'ldl', 'tg', 
-                             'tp', 'brp', 'bram', 'donisch', 'durcarst', 'bnp', 'sa', 'palb',
-                             'listing', 'txpl', 'ls', 'tx', 'l', 'donor']
-    
-    # Try to get feature names from model or dashboard data
+    # Fallback: Try dashboard data (pre-computed in dashboard_data.json)
     try:
-        # Try to load dashboard data to get feature names from causal factors
         dashboard_data = load_dashboard_data(cohort)
-        top_causal = dashboard_data.get("top_causal_factors", [])
-        
-        # Get all unique feature names from causal factors and importance
-        feature_names = set()
-        for factor in top_causal:
-            if 'feature' in factor:
-                feature_names.add(factor['feature'])
-        
-        # Also check feature_importance if available
-        feature_importance = dashboard_data.get("feature_importance", [])
-        for item in feature_importance:
-            if isinstance(item, dict) and 'feature' in item:
-                feature_names.add(item['feature'])
-        
-        # Generate metadata for each feature using pattern matching
-        for feature_name in feature_names:
-            feature_name_lower = feature_name.lower()
-            
-            # Check if known binary
-            is_binary = any(pattern in feature_name_lower for pattern in known_binary_patterns)
-            
-            # Check if known numeric
-            is_numeric = any(pattern in feature_name_lower for pattern in known_numeric_patterns)
-            
-            # Determine type
-            if is_binary and not is_numeric:
-                feature_metadata[feature_name] = 'binary'
-            else:
-                # Default to numeric (most features are numeric)
-                feature_metadata[feature_name] = 'numeric'
-        
-        logger.info(f"Generated feature metadata for {len(feature_metadata)} features using pattern matching")
-    
+        feature_metadata = dashboard_data.get("feature_metadata", {})
+        if feature_metadata:
+            logger.info(f"Loaded feature metadata from dashboard_data for {len(feature_metadata)} features")
+            return feature_metadata
     except Exception as e:
-        logger.warning(f"Error generating feature metadata: {e}")
+        logger.warning(f"Error loading feature metadata from dashboard_data: {e}")
     
-    return feature_metadata
+    # Fallback: Try S3 (if client is available)
+    if s3_client is not None:
+        s3_key = f"{S3_PREFIX}/model_features/{cohort}/feature_metadata.json"
+        try:
+            logger.info(f"Loading feature metadata from S3: s3://{S3_BUCKET}/{s3_key}")
+            response = s3_client.get_object(Bucket=S3_BUCKET, Key=s3_key)
+            feature_metadata = json.loads(response['Body'].read().decode('utf-8'))
+            logger.info(f"Loaded feature metadata from S3 for {len(feature_metadata)} features")
+            return feature_metadata
+        except ClientError as e:
+            if e.response['Error']['Code'] == 'NoSuchKey':
+                logger.warning(f"Feature metadata not found in S3: {s3_key}")
+            else:
+                logger.error(f"Error loading feature metadata from S3: {e}")
+        except Exception as e:
+            logger.error(f"Error accessing S3: {e}")
+    
+    # If we get here, feature metadata not found
+    logger.error(f"Feature metadata not found for cohort: {cohort}")
+    return {}
 
 
 def load_dashboard_data(cohort: str) -> Dict[str, Any]:
@@ -266,7 +258,7 @@ def load_risk_distribution(cohort: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def normalize_risk_score(raw_score: float, cohort: str, method: str = "percentile") -> Dict[str, Any]:
+def normalize_risk_score(raw_score: float, cohort: str, method: str = "percentile", model_type: Optional[str] = None) -> Dict[str, Any]:
     """
     Normalize risk score for interpretability across cohorts.
     
@@ -274,6 +266,7 @@ def normalize_risk_score(raw_score: float, cohort: str, method: str = "percentil
         raw_score: Raw prediction from model
         cohort: Cohort name
         method: Normalization method ("percentile" or "0-1")
+        model_type: Model type used for prediction (e.g., 'catboost', 'xgboost')
     
     Returns:
         Dictionary with normalized scores and metadata
@@ -288,6 +281,23 @@ def normalize_risk_score(raw_score: float, cohort: str, method: str = "percentil
             'percentile': None,
             'normalization_method': 'none',
             'note': 'Distribution not available, using raw score'
+        }
+    
+    # Check if model type matches distribution model type
+    # This is critical: CatBoost produces negative scores, XGBoost produces positive scores
+    # Normalizing CatBoost scores with XGBoost distribution will give incorrect results
+    dist_model_type = distribution.get('model_type', 'unknown')
+    if model_type and dist_model_type != model_type:
+        logger.warning(
+            f"Model type mismatch for {cohort}: prediction model={model_type}, "
+            f"distribution model={dist_model_type}. Skipping normalization to avoid incorrect results."
+        )
+        return {
+            'raw_score': raw_score,
+            'normalized_score': raw_score,
+            'percentile': None,
+            'normalization_method': 'none',
+            'note': f'Model type mismatch ({model_type} vs {dist_model_type}), using raw score'
         }
     
     percentiles = distribution.get('percentiles', {})
@@ -915,7 +925,8 @@ def handle_risk(event: Dict[str, Any]) -> Dict[str, Any]:
         
         # Normalize risk score for interpretability
         raw_score = result['risk_score']
-        normalization = normalize_risk_score(raw_score, cohort, method="percentile")
+        model_used = result.get('model_used', 'unknown')
+        normalization = normalize_risk_score(raw_score, cohort, method="percentile", model_type=model_used)
         
         # Use normalized score and percentile for display
         normalized_score = normalization.get('normalized_score', raw_score)
@@ -964,12 +975,8 @@ def handle_causal(event: Dict[str, Any]) -> Dict[str, Any]:
         dashboard_data = load_dashboard_data(cohort)
         top_causal = dashboard_data.get("top_causal_factors", [])[:top_k]
         
-        # Get feature metadata from dashboard_data (pre-computed) or generate it
-        feature_metadata = dashboard_data.get("feature_metadata", {})
-        if not feature_metadata:
-            # Fallback: try to generate it (may fail in Lambda if data not available)
-            logger.warning("Feature metadata not found in dashboard_data, attempting to generate...")
-            feature_metadata = get_feature_metadata(cohort)
+        # Get feature metadata from dedicated model_features path (always available in Lambda)
+        feature_metadata = get_feature_metadata(cohort)
         
         return _response(200, {
             "cohort": cohort,

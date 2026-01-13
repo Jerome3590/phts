@@ -38,10 +38,12 @@ def prepare_lambda_directory():
     
     # Create lambda directory structure
     lambda_models_dir = LAMBDA_DIR / "models"
+    lambda_model_features_dir = LAMBDA_DIR / "model_features"
     lambda_dashboard_dir = LAMBDA_DIR / "dashboard_data"
     lambda_risk_dist_dir = LAMBDA_DIR / "risk_distributions"
     
     lambda_models_dir.mkdir(parents=True, exist_ok=True)
+    lambda_model_features_dir.mkdir(parents=True, exist_ok=True)
     lambda_dashboard_dir.mkdir(parents=True, exist_ok=True)
     lambda_risk_dist_dir.mkdir(parents=True, exist_ok=True)
     
@@ -88,6 +90,41 @@ def prepare_lambda_directory():
             print(f"  [WARNING] {cohort}: No model files found")
     
     print(f"Total model files copied: {models_copied}")
+    print()
+    
+    # Copy feature metadata
+    print("Copying feature metadata...")
+    features_copied = 0
+    for cohort in COHORTS:
+        cohort_dashboard_dir = DASHBOARD_DIR / cohort
+        if not cohort_dashboard_dir.exists():
+            print(f"  [WARNING] Dashboard data not found for {cohort} at {cohort_dashboard_dir}")
+            continue
+        
+        # Load dashboard_data.json to extract feature_metadata
+        dashboard_data_file = cohort_dashboard_dir / "dashboard_data.json"
+        if dashboard_data_file.exists():
+            try:
+                with open(dashboard_data_file, 'r') as f:
+                    dashboard_data = json.load(f)
+                
+                feature_metadata = dashboard_data.get("feature_metadata", {})
+                if feature_metadata:
+                    # Save feature_metadata to model_features directory
+                    cohort_features_dir = lambda_model_features_dir / cohort
+                    cohort_features_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    feature_metadata_file = cohort_features_dir / "feature_metadata.json"
+                    with open(feature_metadata_file, 'w') as f:
+                        json.dump(feature_metadata, f, indent=2)
+                    features_copied += 1
+                    print(f"  [OK] {cohort}: feature_metadata.json copied ({len(feature_metadata)} features)")
+                else:
+                    print(f"  [WARNING] {cohort}: No feature_metadata in dashboard_data.json")
+            except Exception as e:
+                print(f"  [ERROR] {cohort}: Failed to extract feature_metadata: {e}")
+    
+    print(f"Total feature metadata files copied: {features_copied}")
     print()
     
     # Copy dashboard data
@@ -177,6 +214,11 @@ def prepare_lambda_directory():
         if cohort_dir.exists():
             file_count = len(list(cohort_dir.rglob('*'))) - len(list(cohort_dir.rglob('*/')))
             print(f"      {cohort}/ ({file_count} files)")
+    print(f"    model_features/")
+    for cohort in COHORTS:
+        cohort_dir = lambda_model_features_dir / cohort
+        if cohort_dir.exists():
+            print(f"      {cohort}/")
     print(f"    dashboard_data/")
     for cohort in COHORTS:
         cohort_dir = lambda_dashboard_dir / cohort
