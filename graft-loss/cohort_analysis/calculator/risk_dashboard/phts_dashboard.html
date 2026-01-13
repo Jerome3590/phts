@@ -919,9 +919,12 @@
         }
         
         const causalData = await causalResponse.json();
-        causalAnalysisData = causalData.top_causal_factors || [];
+        causalAnalysisData = {
+          factors: causalData.top_causal_factors || [],
+          feature_metadata: causalData.feature_metadata || {}  // Store feature metadata
+        };
         
-        if (causalAnalysisData.length === 0) {
+        if (!causalAnalysisData.factors || causalAnalysisData.factors.length === 0) {
           controlsList.innerHTML = '<p style="text-align: center; padding: 2rem; color: #64748b;">No causal factors available for this cohort.</p>';
           return;
         }
@@ -951,9 +954,9 @@
     
     // Render causal factor charts
     function renderCausalCharts() {
-      if (!causalAnalysisData || causalAnalysisData.length === 0) return;
+      if (!causalAnalysisData || !causalAnalysisData.factors || causalAnalysisData.factors.length === 0) return;
       
-      const top10 = causalAnalysisData.slice(0, 10);
+      const top10 = causalAnalysisData.factors.slice(0, 10);
       const labels = top10.map(f => f.feature);
       const importanceValues = top10.map(f => f.importance || f.combined_importance || 0);
       const responsibilityValues = top10.map(f => f.causal_responsibility || 0);
@@ -1040,33 +1043,29 @@
         controlDiv.className = 'causal-factor-control';
         
         // Determine if this is a binary or numeric feature
-        // Use feature name patterns and value range to determine type
-        const knownBinaryPatterns = ['_bin', '_cat', 'txicu', 'txecmo', 'txvad', 'ltxtrach', 'txnomcsd', 
-                                     'chd_', 'sec_dx', 'prim_dx', 'ecmo_', 'lvad', 'mcsd', 'cpr', 'vent'];
-        const knownNumericPatterns = ['age', 'weight', 'height', 'bmi', 'egfr', 'bun', 'creat', 'albumin', 
-                                     'ast', 'alt', 'bili', 'chol', 'hdl', 'ldl', 'tg', 'tp', 'brp', 'bram',
-                                     'donisch', 'durcarst', 'bnp', 'sa', 'palb', 'tcd', 'tcdsxm', 'listing', 'txpl'];
-        
-        const featureNameLower = featureName.toLowerCase();
-        const isKnownBinary = knownBinaryPatterns.some(pattern => featureNameLower.includes(pattern));
-        const isKnownNumeric = knownNumericPatterns.some(pattern => featureNameLower.includes(pattern));
-        
-        // If feature name suggests binary, treat as binary
-        // If feature name suggests numeric, treat as numeric
-        // Otherwise, use value-based heuristic (but be more lenient)
+        // Use feature metadata from API if available, otherwise fall back to inference
         let isBinary = false;
-        if (isKnownBinary) {
-          isBinary = true;
-        } else if (isKnownNumeric) {
-          isBinary = false;  // Explicitly set to false for numeric features
-        } else {
-          // Fallback: only treat as binary if value is exactly 0 or 1 AND feature name doesn't suggest numeric
-          // Check numeric patterns again in fallback to be safe
-          const hasNumericPattern = knownNumericPatterns.some(pattern => featureNameLower.includes(pattern));
-          isBinary = typeof currentValue === 'number' && (currentValue === 0 || currentValue === 1) && !hasNumericPattern;
-        }
+        let isNumeric = false;
         
-        const isNumeric = typeof currentValue === 'number' && !isBinary;
+        // Use feature metadata from API if available
+        if (causalAnalysisData && causalAnalysisData.feature_metadata && causalAnalysisData.feature_metadata[featureName]) {
+          const featureType = causalAnalysisData.feature_metadata[featureName];
+          if (featureType === 'binary') {
+            isBinary = true;
+            isNumeric = false;
+          } else if (featureType === 'numeric') {
+            isBinary = false;
+            isNumeric = true;
+          } else {
+            // Fallback to value-based inference if metadata type is unknown
+            isBinary = typeof currentValue === 'number' && (currentValue === 0 || currentValue === 1);
+            isNumeric = typeof currentValue === 'number' && !isBinary;
+          }
+        } else {
+          // Fallback: use value-based heuristic if no metadata available
+          isBinary = typeof currentValue === 'number' && (currentValue === 0 || currentValue === 1);
+          isNumeric = typeof currentValue === 'number' && !isBinary;
+        }
         
         let inputHTML = '';
         if (isBinary) {

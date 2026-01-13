@@ -110,6 +110,98 @@ def _response(status_code: int, body: Dict[str, Any], headers: Optional[Dict[str
     }
 
 
+def get_feature_metadata(cohort: str) -> Dict[str, str]:
+    """
+    Get feature type metadata (binary vs numeric) from model and training data.
+    
+    Returns:
+        Dictionary mapping feature names to their types: 'binary' or 'numeric'
+    """
+    feature_metadata = {}
+    
+    try:
+        # Try to load a sample of training data to determine feature types
+        # Use the same data loading logic as compute_risk_distributions
+        import sys
+        from pathlib import Path
+        
+        # Add paths for imports
+        project_root = Path(__file__).parent.parent.parent.parent
+        sys.path.insert(0, str(project_root))
+        sys.path.insert(0, str(Path(__file__).parent.parent))
+        
+        try:
+            # Import data loading function
+            import sys
+            from pathlib import Path
+            project_root = Path(__file__).parent.parent.parent.parent
+            sys.path.insert(0, str(project_root))
+            sys.path.insert(0, str(Path(__file__).parent.parent))
+            
+            from run_shap_ffa_workflow import prepare_calculator_features
+            from py_helpers.common_imports import load_phts_data
+            import pandas as pd
+            
+            # Load a sample of data
+            df = load_phts_data()
+            if df is not None and len(df) > 0:
+                # Filter to cohort if needed
+                if 'prim_dx' in df.columns:
+                    if cohort == 'CHD':
+                        df = df[df['prim_dx'].isin(['CHD', 'Congenital Heart Disease'])].copy()
+                    elif cohort == 'Myocardio':
+                        df = df[df['prim_dx'].isin(['Myocardio', 'Cardiomyopathy', 'Myocarditis'])].copy()
+                    # Combined uses all data
+                
+                # Prepare features
+                df_prepared = prepare_calculator_features(df.copy())
+                
+                # Load model to get feature names
+                best_model_type = get_best_model(cohort)
+                model = load_model(cohort, best_model_type)
+                
+                if model:
+                    # Get feature names
+                    if best_model_type == 'catboost' and hasattr(model, 'feature_names_'):
+                        feature_names = model.feature_names_
+                    elif best_model_type in ['xgboost', 'xgboost_rf']:
+                        # Try to get from model
+                        try:
+                            feature_names = model.feature_names if hasattr(model, 'feature_names') else []
+                        except:
+                            feature_names = []
+                    else:
+                        feature_names = []
+                    
+                    # Determine type for each feature
+                    for feature_name in feature_names:
+                        if feature_name in df_prepared.columns:
+                            col_data = df_prepared[feature_name].dropna()
+                            
+                            if len(col_data) > 0:
+                                # Check if binary: only contains 0 and/or 1
+                                unique_vals = set(col_data.unique())
+                                if unique_vals.issubset({0, 1, 0.0, 1.0}):
+                                    feature_metadata[feature_name] = 'binary'
+                                else:
+                                    feature_metadata[feature_name] = 'numeric'
+                            else:
+                                # Default to numeric if no data
+                                feature_metadata[feature_name] = 'numeric'
+                        else:
+                            # Default to numeric if feature not in data
+                            feature_metadata[feature_name] = 'numeric'
+            
+        except Exception as e:
+            logger.warning(f"Could not determine feature metadata from data: {e}")
+            # Return empty dict - will fall back to inference
+    
+    except Exception as e:
+        logger.warning(f"Error getting feature metadata: {e}")
+    
+    return feature_metadata
+
+
 def load_dashboard_data(cohort: str) -> Dict[str, Any]:
     """
     Load dashboard data (causal factors) for a cohort.
@@ -731,11 +823,14 @@ def handle_metadata(event: Dict[str, Any]) -> Dict[str, Any]:
             # Load dashboard data for specific cohort
             try:
                 dashboard_data = load_dashboard_data(cohort)
+                # Get feature metadata (binary vs numeric)
+                feature_metadata = get_feature_metadata(cohort)
                 return _response(200, {
                     "cohort": cohort,
                     "available_cohorts": AVAILABLE_COHORTS,
                     "causal_factors": dashboard_data.get("top_causal_factors", []),
                     "summary": dashboard_data.get("summary", {}),
+                    "feature_metadata": feature_metadata,  # Map of feature_name -> 'binary' or 'numeric'
                     "api_url": api_url
                 })
             except Exception as e:
@@ -758,9 +853,12 @@ def handle_metadata(event: Dict[str, Any]) -> Dict[str, Any]:
                 try:
                     logger.info(f"Loading dashboard data for cohort: {c}")
                     dashboard_data = load_dashboard_data(c)
+                    # Get feature metadata for this cohort
+                    feature_metadata = get_feature_metadata(c)
                     all_causal_factors[c] = {
                         "top_causal_factors": dashboard_data.get("top_causal_factors", []),
-                        "summary": dashboard_data.get("summary", {})
+                        "summary": dashboard_data.get("summary", {}),
+                        "feature_metadata": feature_metadata
                     }
                     available_cohorts_with_data.append(c)
                     logger.info(f"Successfully loaded dashboard data for {c}")
