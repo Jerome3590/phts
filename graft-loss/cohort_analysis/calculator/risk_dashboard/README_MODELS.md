@@ -223,12 +223,88 @@ Each cohort has:
 - **XGBoost**: Extreme gradient boosting
 - **Survival Analysis**: Cox proportional hazards models
 
+## Model Tradeoffs
+
+### CatBoost vs XGBoost
+
+#### CatBoost Advantages
+- **Native Categorical Support**: Handles categorical features without manual encoding
+- **Better MC-CV Performance**: Highest average C-index across all cohorts (0.567-0.577)
+- **Robust to Overfitting**: Built-in regularization and early stopping
+- **Less Preprocessing**: No need to encode categoricals manually
+
+#### CatBoost Disadvantages
+- **Verbose Parameter Conflicts**: Models saved with conflicting logging parameters can cause prediction errors
+- **Larger Model Size**: Slightly larger model files
+- **Slower Training**: Can be slower than XGBoost for large datasets
+
+#### XGBoost Advantages
+- **Faster Training**: Generally faster than CatBoost
+- **Better Single Evaluation**: Higher C-index on single evaluation (0.645-0.677)
+- **Smaller Model Size**: More compact model files
+- **Mature Ecosystem**: More documentation and community support
+
+#### XGBoost Disadvantages
+- **Requires Manual Encoding**: Categorical features must be converted to numeric
+- **Lower MC-CV Performance**: Lower average C-index (0.434-0.478)
+- **More Preprocessing**: Need to handle categoricals explicitly
+
+### Model Selection Rationale
+
+**CHD & Combined Cohorts**: Use XGBoost
+- **Reason**: Higher single evaluation C-index (0.645-0.677)
+- **Tradeoff**: Lower MC-CV average but better on specific evaluation
+- **Use Case**: Production deployment prioritizes single evaluation performance
+
+**Myocardio Cohort**: Use CatBoost
+- **Reason**: Best overall performance (C-index: 0.599 single, 0.567 MC-CV)
+- **Tradeoff**: CatBoost handles categoricals natively, reducing preprocessing complexity
+- **Use Case**: Best balance of performance and ease of use
+
+### Ensemble vs Single Model
+
+**Current**: Single best model (default)
+- **Advantage**: Faster inference, simpler deployment
+- **Disadvantage**: May miss benefits of model diversity
+
+**Future Consideration**: Ensemble mode (optional)
+- **Advantage**: Potentially more robust predictions
+- **Disadvantage**: Slower inference, more complex deployment
+- **Implementation**: Simple average of all three model predictions
+
+## Model Limitations
+
+1. **Training Data**: Models trained on PHTS registry data - performance may vary on external populations
+2. **Feature Availability**: Requires all model features to be present (missing features use defaults)
+3. **Temporal Validity**: Models trained on historical data - may need retraining as practices evolve
+4. **Cohort Specificity**: Models are cohort-specific - cannot mix CHD/Combined/Myocardio predictions
+5. **Risk Interpretation**: Percentiles are relative to training population - absolute risk requires calibration
+
+## Model Updates
+
+### When to Retrain
+
+1. **New Data Available**: Significant new PHTS registry data
+2. **Performance Degradation**: Model performance decreases over time
+3. **Feature Changes**: New clinical features become available
+4. **Practice Changes**: Clinical practices evolve significantly
+
+### Retraining Process
+
+1. **Data Preparation**: Load latest PHTS registry data
+2. **Feature Engineering**: Apply same feature preparation pipeline
+3. **Model Training**: Train all model types (CatBoost, XGBoost, XGBoost RF)
+4. **Evaluation**: Compare performance (C-index, MC-CV)
+5. **Selection**: Choose best model for each cohort
+6. **Deployment**: Update Lambda container with new models
+
 ## Notes
 
 - Models are trained on PHTS (Pediatric Heart Transplant Survival) registry data
 - Performance metrics are from 25 Monte Carlo Cross-Validation splits
 - Risk scores should be interpreted in clinical context
 - Models are updated periodically as new data becomes available
+- Single evaluation C-index may differ from MC-CV average due to data split variability
 
 ---
 

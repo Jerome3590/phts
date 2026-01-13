@@ -201,4 +201,9 @@ For questions or issues with the Causal Analysis dashboard:
 1. Check the browser console for error messages
 2. Verify API connectivity (see Risk Calculator tab)
 3. Ensure cohort data is available
-4. Review API documentation in `README_PHTS_DASHBOARD.md`
+4. Review API documentation in `README_DASHBOARD.md`
+
+---
+
+**Last Updated**: 2026-01-13  
+**Causal Analysis Version**: 1.0
