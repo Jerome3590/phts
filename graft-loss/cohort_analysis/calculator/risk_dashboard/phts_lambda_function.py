@@ -39,6 +39,11 @@ try:
     # This must be done before any XGBoost operations
     import os
     os.environ['XGBOOST_VERBOSE'] = '0'  # Disable XGBoost logging
+    # Try to set CatBoost verbosity globally (may not be supported in all versions)
+    try:
+        os.environ['CATBOOST_VERBOSE'] = '0'
+    except:
+        pass
     MODEL_LIBS_AVAILABLE = True
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
@@ -360,9 +365,10 @@ def load_model(cohort: str, model_type: str) -> Any:
         model_path = container_model_path / "catboost_model.cbm"
         if model_path.exists():
             logger.info(f"Loading CatBoost model from container: {model_path}")
-            # Create CatBoost model with only logging_level (not verbose) to avoid parameter conflicts
-            # The model file may have conflicting verbose parameters saved, so we use only logging_level
-            model = CatBoostRegressor(logging_level='Silent')
+            # Load model with NO verbose parameters to avoid conflicts with saved model parameters
+            # The model file itself may have conflicting verbose parameters saved
+            # We'll handle prediction separately to avoid parameter conflicts
+            model = CatBoostRegressor()
             model.load_model(str(model_path))
             _model_cache[cache_key] = {'model': model, 'type': 'catboost'}
             _cache_timestamps[cache_key] = time.time()
@@ -388,8 +394,8 @@ def load_model(cohort: str, model_type: str) -> Any:
             s3_client.download_fileobj(S3_BUCKET, s3_key, f)
         
         if model_type == 'catboost':
-            # Create CatBoost model with only logging_level (not verbose) to avoid parameter conflicts
-            model = CatBoostRegressor(logging_level='Silent')
+            # Load model with NO verbose parameters to avoid conflicts with saved model parameters
+            model = CatBoostRegressor()
             model.load_model(f"/tmp/catboost_model.cbm")
         else:
             # Create Booster without parameters - logging is controlled globally
@@ -542,9 +548,19 @@ def predict_risk_survival(
                 feature_vector = prepare_feature_vector(features, feature_names)
                 
                 if model_type == 'catboost':
-                    # Don't pass verbose parameter - model was loaded with logging_level='Silent'
-                    # Passing verbose=False conflicts with logging_level in the saved model
-                    pred = model.predict(feature_vector.reshape(1, -1))[0]
+                    # CatBoost model may have conflicting verbose parameters saved
+                    # Try prediction without any verbose parameters first
+                    try:
+                        pred = model.predict(feature_vector.reshape(1, -1))[0]
+                    except Exception as e:
+                        if 'verbose' in str(e).lower() or 'logging_level' in str(e).lower():
+                            # Model has conflicting verbose parameters - use internal prediction method
+                            logger.warning(f"CatBoost verbose conflict detected, using workaround: {e}")
+                            from catboost import Pool
+                            pool = Pool(feature_vector.reshape(1, -1))
+                            pred = model._calc_oblivious_trees_for_pool(pool)[0]
+                        else:
+                            raise
                 else:
                     # Create DMatrix without logging parameters - logging is controlled globally
                     dmatrix = xgb.DMatrix(feature_vector.reshape(1, -1), feature_names=feature_names)
