@@ -138,12 +138,11 @@ def get_feature_metadata(cohort: str) -> Dict[str, str]:
             sys.path.insert(0, str(project_root))
             sys.path.insert(0, str(Path(__file__).parent.parent))
             
-            from run_shap_ffa_workflow import prepare_calculator_features
-            from py_helpers.common_imports import load_phts_data
+            from run_shap_ffa_workflow import prepare_calculator_features, load_calculator_data_for_shap
             import pandas as pd
             
-            # Load a sample of data
-            df = load_phts_data()
+            # Load a sample of data (use same function as SHAP workflow)
+            df = load_calculator_data_for_shap(cohort)
             if df is not None and len(df) > 0:
                 # Filter to cohort if needed
                 if 'prim_dx' in df.columns:
