@@ -1,0 +1,3 @@
+{
+  "Variables": {"PHTS_BUCKET":"jerome-dixon.io","S3_PREFIX":"uva/phts-risk-calculator","API_GATEWAY_URL":"https://359vxflbzj.execute-api.us-east-1.amazonaws.com/prod"}
+}

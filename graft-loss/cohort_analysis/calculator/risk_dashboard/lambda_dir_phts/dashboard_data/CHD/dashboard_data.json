@@ -1,0 +1,534 @@
+{
+  "cohort": "CHD",
+  "timestamp": "2026-01-13T02:32:25.914690",
+  "ffa_method": "xgboost_json_with_xgboost_shap_filtering",
+  "top_causal_factors": [
+    {
+      "feature": "ltxtrach",
+      "importance": 0.092150269494147,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.092150269494147,
+      "causal_responsibility": 1.0,
+      "shap_importance": 1.0,
+      "rule_frequency": 0,
+      "total_rules": 0
+    },
+    {
+      "feature": "txbun_r",
+      "importance": 0.0429481554426782,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0429481554426782,
+      "causal_responsibility": 0.46606652024393797,
+      "shap_importance": 0.46606652024393797,
+      "rule_frequency": 0,
+      "total_rules": 0
+    },
+    {
+      "feature": "neuroth",
+      "importance": 0.0294040026509266,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0294040026509266,
+      "causal_responsibility": 0.31908753834728854,
+      "shap_importance": 0.31908753834728854,
+      "rule_frequency": 0,
+      "total_rules": 0
+    },
+    {
+      "feature": "lstp_r",
+      "importance": 0.0267332960192889,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0267332960192889,
+      "causal_responsibility": 0.2901054567288801,
+      "shap_importance": 0.2901054567288801,
+      "rule_frequency": 0,
+      "total_rules": 0
+    },
+    {
+      "feature": "txnomcsd",
+      "importance": 0.0241744227239417,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0241744227239417,
+      "causal_responsibility": 0.2623369726062186,
+      "shap_importance": 0.2623369726062186,
+      "rule_frequency": 0,
+      "total_rules": 0
+    },
+    {
+      "feature": "txbcdc",
+      "importance": 0.0238550638141203,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0238550638141203,
+      "causal_responsibility": 0.25887134074670803,
+      "shap_importance": 0.25887134074670803,
+      "rule_frequency": 0,
+      "total_rules": 0
+    },
+    {
+      "feature": "bmi_txpl",
+      "importance": 0.0230598394686929,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0230598394686929,
+      "causal_responsibility": 0.25024169321781053,
+      "shap_importance": 0.25024169321781053,
+      "rule_frequency": 0,
+      "total_rules": 0
+    },
+    {
+      "feature": "lpace",
+      "importance": 0.0224175296698949,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0224175296698949,
+      "causal_responsibility": 0.24327144991495406,
+      "shap_importance": 0.24327144991495406,
+      "rule_frequency": 0,
+      "total_rules": 0
+    },
+    {
+      "feature": "lsalt",
+      "importance": 0.0207205099509803,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0207205099509803,
+      "causal_responsibility": 0.22485566308947563,
+      "shap_importance": 0.22485566308947563,
+      "rule_frequency": 0,
+      "total_rules": 0
+    },
+    {
+      "feature": "anxinj",
+      "importance": 0.0202492145403721,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0202492145403721,
+      "causal_responsibility": 0.21974124060112754,
+      "shap_importance": 0.21974124060112754,
+      "rule_frequency": 0,
+      "total_rules": 0
+    }
+  ],
+  "summary": {
+    "total_features": 280,
+    "top_k": 10,
+    "mean_importance": 0.06127753639395991,
+    "max_importance": 1.0,
+    "top_feature": "ltxtrach",
+    "top_feature_importance": 1.0
+  },
+  "feature_importance": [
+    {
+      "feature": "ltxtrach",
+      "importance": 0.092150269494147,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.092150269494147,
+      "combined_importance_norm": 1.0
+    },
+    {
+      "feature": "txbun_r",
+      "importance": 0.0429481554426782,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0429481554426782,
+      "combined_importance_norm": 0.46606652024393797
+    },
+    {
+      "feature": "neuroth",
+      "importance": 0.0294040026509266,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0294040026509266,
+      "combined_importance_norm": 0.31908753834728854
+    },
+    {
+      "feature": "lstp_r",
+      "importance": 0.0267332960192889,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0267332960192889,
+      "combined_importance_norm": 0.2901054567288801
+    },
+    {
+      "feature": "txnomcsd",
+      "importance": 0.0241744227239417,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0241744227239417,
+      "combined_importance_norm": 0.2623369726062186
+    },
+    {
+      "feature": "txbcdc",
+      "importance": 0.0238550638141203,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0238550638141203,
+      "combined_importance_norm": 0.25887134074670803
+    },
+    {
+      "feature": "bmi_txpl",
+      "importance": 0.0230598394686929,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0230598394686929,
+      "combined_importance_norm": 0.25024169321781053
+    },
+    {
+      "feature": "lpace",
+      "importance": 0.0224175296698949,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0224175296698949,
+      "combined_importance_norm": 0.24327144991495406
+    },
+    {
+      "feature": "lsalt",
+      "importance": 0.0207205099509803,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0207205099509803,
+      "combined_importance_norm": 0.22485566308947563
+    },
+    {
+      "feature": "anxinj",
+      "importance": 0.0202492145403721,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0202492145403721,
+      "combined_importance_norm": 0.21974124060112754
+    },
+    {
+      "feature": "lbnp",
+      "importance": 0.0197884833580505,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0197884833580505,
+      "combined_importance_norm": 0.21474145943010384
+    },
+    {
+      "feature": "egfr_tx",
+      "importance": 0.0185603071484248,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0185603071484248,
+      "combined_importance_norm": 0.20141348745164195
+    },
+    {
+      "feature": "txast",
+      "importance": 0.0176970034016335,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0176970034016335,
+      "combined_importance_norm": 0.19204505313744677
+    },
+    {
+      "feature": "drisk",
+      "importance": 0.0175849987317895,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0175849987317895,
+      "combined_importance_norm": 0.19082959635735441
+    },
+    {
+      "feature": "durcarst",
+      "importance": 0.0170106697299527,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0170106697299527,
+      "combined_importance_norm": 0.1845970698005734
+    },
+    {
+      "feature": "hxhep",
+      "importance": 0.0167637656155636,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0167637656155636,
+      "combined_importance_norm": 0.1819177058036533
+    },
+    {
+      "feature": "lldl_r",
+      "importance": 0.0166655774531187,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0166655774531187,
+      "combined_importance_norm": 0.1808521835541374
+    },
+    {
+      "feature": "txbnp",
+      "importance": 0.0161325457924466,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0161325457924466,
+      "combined_importance_norm": 0.17506780914483677
+    },
+    {
+      "feature": "lssab_r",
+      "importance": 0.0156833835950735,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0156833835950735,
+      "combined_importance_norm": 0.17019357274988375
+    },
+    {
+      "feature": "lcreat_r",
+      "importance": 0.015645220533815,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.015645220533815,
+      "combined_importance_norm": 0.16977943330712364
+    },
+    {
+      "feature": "lsast",
+      "importance": 0.0152768091427207,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0152768091427207,
+      "combined_importance_norm": 0.16578149175886045
+    },
+    {
+      "feature": "chd_papvr",
+      "importance": 0.0150019863297704,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0150019863297704,
+      "combined_importance_norm": 0.16279915850624033
+    },
+    {
+      "feature": "txbun_r_high",
+      "importance": 0.0145267988193296,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0145267988193296,
+      "combined_importance_norm": 0.15764249957242157
+    },
+    {
+      "feature": "txecmo",
+      "importance": 0.0142497246686213,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0142497246686213,
+      "combined_importance_norm": 0.15463573516218945
+    },
+    {
+      "feature": "lsbco",
+      "importance": 0.013431403628357,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.013431403628357,
+      "combined_importance_norm": 0.14575544599150747
+    },
+    {
+      "feature": "lbun_r",
+      "importance": 0.013264430704481,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.013264430704481,
+      "combined_importance_norm": 0.143943482501953
+    },
+    {
+      "feature": "lchol_r",
+      "importance": 0.0129238031499282,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0129238031499282,
+      "combined_importance_norm": 0.14024704670830146
+    },
+    {
+      "feature": "txsa_r",
+      "importance": 0.0121393007057587,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0121393007057587,
+      "combined_importance_norm": 0.13173375153861855
+    },
+    {
+      "feature": "txicu",
+      "importance": 0.0120398678582249,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0120398678582249,
+      "combined_importance_norm": 0.13065472216540422
+    },
+    {
+      "feature": "lsbpam",
+      "importance": 0.0117603629725163,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0117603629725163,
+      "combined_importance_norm": 0.12762157980735228
+    },
+    {
+      "feature": "lsbrs",
+      "importance": 0.011640371147734,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.011640371147734,
+      "combined_importance_norm": 0.12631944769812473
+    },
+    {
+      "feature": "ecmo_combined",
+      "importance": 0.0115467550381578,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0115467550381578,
+      "combined_importance_norm": 0.12530354063577864
+    },
+    {
+      "feature": "lsbrp",
+      "importance": 0.0115011668427058,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0115011668427058,
+      "combined_importance_norm": 0.12480882482320148
+    },
+    {
+      "feature": "esteject",
+      "importance": 0.0110210081020602,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0110210081020602,
+      "combined_importance_norm": 0.1195982188935455
+    },
+    {
+      "feature": "egfr_listing",
+      "importance": 0.0105364095230307,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0105364095230307,
+      "combined_importance_norm": 0.1143394325471824
+    },
+    {
+      "feature": "lscntry",
+      "importance": 0.0105057344204861,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0105057344204861,
+      "combined_importance_norm": 0.11400655123589606
+    },
+    {
+      "feature": "txalt",
+      "importance": 0.0104448544928051,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0104448544928051,
+      "combined_importance_norm": 0.11334589198861231
+    },
+    {
+      "feature": "txbili_t_r",
+      "importance": 0.0104221593998959,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0104221593998959,
+      "combined_importance_norm": 0.1130996084667758
+    },
+    {
+      "feature": "hxplyspl",
+      "importance": 0.010279476525244,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.010279476525244,
+      "combined_importance_norm": 0.1115512367101315
+    },
+    {
+      "feature": "donisch",
+      "importance": 0.0101643999927841,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0101643999927841,
+      "combined_importance_norm": 0.1103024445677796
+    },
+    {
+      "feature": "height_donor",
+      "importance": 0.010089818847914,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.010089818847914,
+      "combined_importance_norm": 0.10949310190085623
+    },
+    {
+      "feature": "spschool",
+      "importance": 0.0100301292471936,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0100301292471936,
+      "combined_importance_norm": 0.10884535989154835
+    },
+    {
+      "feature": "txmilrin",
+      "importance": 0.0098302632274195,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0098302632274195,
+      "combined_importance_norm": 0.10667644578124515
+    },
+    {
+      "feature": "fracshor",
+      "importance": 0.0098264328875125,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0098264328875125,
+      "combined_importance_norm": 0.10663487954461853
+    },
+    {
+      "feature": "txbrs",
+      "importance": 0.0096938495654541,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0096938495654541,
+      "combined_importance_norm": 0.10519610651892682
+    },
+    {
+      "feature": "chd_anom",
+      "importance": 0.0096511844664853,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0096511844664853,
+      "combined_importance_norm": 0.10473311168230826
+    },
+    {
+      "feature": "height_listing",
+      "importance": 0.0094108571459803,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0094108571459803,
+      "combined_importance_norm": 0.10212511800172261
+    },
+    {
+      "feature": "slicu",
+      "importance": 0.0091145717310479,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0091145717310479,
+      "combined_importance_norm": 0.09890987602186904
+    },
+    {
+      "feature": "txidtsys",
+      "importance": 0.0091062286558231,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0091062286558231,
+      "combined_importance_norm": 0.09881933830265673
+    },
+    {
+      "feature": "egfr_change",
+      "importance": 0.0090591151177633,
+      "cohort": "CHD",
+      "model": "XGBoost",
+      "combined_importance": 0.0090591151177633,
+      "combined_importance_norm": 0.0983080697158319
+    }
+  ],
+  "notes": {
+    "model_json_used": "XGBoost (CatBoost JSON not used due to categorical hashing)",
+    "shap_filtering": "XGBoost SHAP only (simplified pipeline)",
+    "rule_extraction": "XGBoost model JSON",
+    "rule_filtering": "XGBoost SHAP importance (simplified pipeline)",
+    "pipeline_type": "simplified (XGBoost only)"
+  }
+}

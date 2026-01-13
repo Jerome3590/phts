@@ -1,0 +1,62 @@
+# Docker ignore file for PHTS Lambda container
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+
+# Old lambda directories
+lambda_dir/
+lambda_deploy/
+
+# Documentation
+*.md
+!README_DOCKER_DEPLOY.md
+
+# Scripts (not needed in container)
+*.sh
+prepare_*.py
+deploy_*.sh
+
+# Old files
+lambda_function.py
+lambda_api_template.py
+index.html
+dashboard_index_template.html
+
+# Test files
+test_*.py
+*_test.py
+
+# Git
+.git/
+.gitignore
+
+# AWS
+.aws/
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+.DS_Store
