@@ -21,6 +21,7 @@ docs/
 - **[Ready to Run](cohort_analysis/README_ready_to_run.md)** - Step-by-step execution instructions
 - **[MC-CV Parallel EC2](cohort_analysis/README_mc_cv_parallel_ec2.md)** - EC2 deployment and parallel processing guide
 - **[Original vs Updated Study](cohort_analysis/README_original_vs_updated_study.md)** - Methodology comparison with original study
+- **[Features](cohort_analysis/README_features.md)** - Clinical features documentation and definitions
 - **[Validation & Leakage](shared/README_validation_concordance_variables_leakage.md)** - Validation procedures and leakage prevention (shared)
 
 ### Global Feature Importance (`docs/feature_importance/`)
