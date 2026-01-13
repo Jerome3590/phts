@@ -24,12 +24,12 @@ project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from py_helpers.common_imports import *
-from py_helpers.constants import AGE_BANDS, COHORT_NAMES, EVENT_YEARS, S3_BUCKET
-from py_helpers.logging_utils import setup_r_logging, save_logs_to_s3_r, check_memory_usage_r
-from py_helpers.model_utils import calculate_recall, calculate_logloss
-from py_helpers.mc_cv_utils import run_mc_cv_method
-from py_helpers.feature_importance_model_utils import (
+from .common_imports import *
+from .constants import AGE_BANDS, COHORT_NAMES, EVENT_YEARS, S3_BUCKET
+from .logging_utils import setup_r_logging, save_logs_to_s3_r, check_memory_usage_r
+from .model_utils import calculate_recall, calculate_logloss
+from .mc_cv_utils import run_mc_cv_method
+from .feature_importance_model_utils import (
     train_xgboost,
     get_importance_xgboost,
     get_permutation_importance,
@@ -39,12 +39,12 @@ from py_helpers.feature_importance_model_utils import (
     predict_catboost,
     predict_proba_catboost,
 )
-from py_helpers.s3_utils import check_feature_importance_results_exist, check_cohort_file_exists
-from py_helpers.aws_utils import send_status_email_ses
+from .s3_utils import check_feature_importance_results_exist, check_cohort_file_exists
+from .aws_utils import send_status_email_ses
 
 # S3 client for uploading results
 try:
-    from py_helpers.common_imports import s3_client
+    from .common_imports import s3_client
 except ImportError:
     import boto3
     s3_client = boto3.client('s3')
@@ -1096,7 +1096,7 @@ def run_cohort_analysis(
                         len(rare_cols),
                     )
 
-                    from py_helpers.model_utils import calculate_recall, calculate_logloss
+                    from .model_utils import calculate_recall, calculate_logloss
 
                     # ------------------------------------------------------
                     # XGBoost rare-variant scan
@@ -1375,7 +1375,7 @@ def upload_csv_to_s3(local_file_path: str, s3_key: str, bucket: str = None) -> b
         True if successful, False otherwise
     """
     if bucket is None:
-        from py_helpers.constants import S3_BUCKET
+        from .constants import S3_BUCKET
         bucket = S3_BUCKET
     try:
         s3_client.upload_file(local_file_path, bucket, s3_key)

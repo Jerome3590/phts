@@ -23,8 +23,8 @@ project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from py_helpers.common_imports import *
-from py_helpers.feature_importance_model_utils import (
+from .common_imports import *
+from .feature_importance_model_utils import (
     train_catboost,
     train_xgboost,
     train_xgboost_rf,
@@ -35,7 +35,7 @@ from py_helpers.feature_importance_model_utils import (
     get_importance_catboost,
     get_importance_xgboost,
 )
-from py_helpers.model_utils import calculate_recall, calculate_logloss
+from .model_utils import calculate_recall, calculate_logloss
 
 
 logger = logging.getLogger(__name__)

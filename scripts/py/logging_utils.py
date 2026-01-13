@@ -16,7 +16,7 @@ if project_root not in sys.path:
 
 # Import s3_client directly to avoid circular import
 try:
-    from py_helpers.common_imports import s3_client
+    from .common_imports import s3_client
 except ImportError:
     # Fallback for when common_imports is not available
     import boto3
@@ -518,7 +518,7 @@ def save_logs_to_s3_r(log_file_path: str, cohort_name: str, age_band: str, event
         return
     
     try:
-        from py_helpers.constants import S3_BUCKET
+        from .constants import S3_BUCKET
         s3_key = f"logs/feature_importance/cohort_name={cohort_name}/age_band={age_band}/event_year={event_year}/{os.path.basename(log_file_path)}"
         
         with open(log_file_path, 'rb') as f:

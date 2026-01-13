@@ -40,8 +40,8 @@ project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from py_helpers.common_imports import *
-from py_helpers.env_utils import get_xgb_cpu_nthread
+from .common_imports import *
+from .env_utils import get_xgb_cpu_nthread
 
 logger = logging.getLogger(__name__)
 

@@ -212,7 +212,7 @@ def get_shared_duckdb_connection(worker_id: Optional[str] = None, logger=None):
         if f"duckdb_{worker_key}" not in _connection_pool:
             try:
                 # Create new DuckDB connection using standardized function
-                from py_helpers.duckdb_utils import get_shared_duckdb_connection
+                from .duckdb_utils import get_shared_duckdb_connection
                 conn = get_shared_duckdb_connection(worker_key, logger)
                 
                 _connection_pool[f"duckdb_{worker_key}"] = conn

@@ -7,8 +7,8 @@ This package is the canonical home for shared code used across:
 
 Import helpers using module-style imports, for example:
 
-    from py_helpers.s3_utils import get_output_paths
-    from py_helpers.logging_utils import setup_logging
+    from .s3_utils import get_output_paths
+    from .logging_utils import setup_logging
 """
 
 __all__ = [

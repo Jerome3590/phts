@@ -10,7 +10,7 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if project_root not in sys.path:
     sys.path.append(project_root)
 
-from py_helpers.common_imports import *
+from .common_imports import *
 
 
 def analyze_drug_importance(model: Any, feature_name: str) -> Dict[str, float]:
