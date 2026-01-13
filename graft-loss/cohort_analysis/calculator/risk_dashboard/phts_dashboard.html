@@ -1045,7 +1045,7 @@
                                      'chd_', 'sec_dx', 'prim_dx', 'ecmo_', 'lvad', 'mcsd', 'cpr', 'vent'];
         const knownNumericPatterns = ['age', 'weight', 'height', 'bmi', 'egfr', 'bun', 'creat', 'albumin', 
                                      'ast', 'alt', 'bili', 'chol', 'hdl', 'ldl', 'tg', 'tp', 'brp', 'bram',
-                                     'donisch', 'durcarst', 'bnp', 'sa', 'palb', 'tcd', 'tcdsxm'];
+                                     'donisch', 'durcarst', 'bnp', 'sa', 'palb', 'tcd', 'tcdsxm', 'listing', 'txpl'];
         
         const featureNameLower = featureName.toLowerCase();
         const isKnownBinary = knownBinaryPatterns.some(pattern => featureNameLower.includes(pattern));
@@ -1058,11 +1058,12 @@
         if (isKnownBinary) {
           isBinary = true;
         } else if (isKnownNumeric) {
-          isBinary = false;
+          isBinary = false;  // Explicitly set to false for numeric features
         } else {
           // Fallback: only treat as binary if value is exactly 0 or 1 AND feature name doesn't suggest numeric
-          isBinary = typeof currentValue === 'number' && (currentValue === 0 || currentValue === 1) && 
-                    !knownNumericPatterns.some(pattern => featureNameLower.includes(pattern));
+          // Check numeric patterns again in fallback to be safe
+          const hasNumericPattern = knownNumericPatterns.some(pattern => featureNameLower.includes(pattern));
+          isBinary = typeof currentValue === 'number' && (currentValue === 0 || currentValue === 1) && !hasNumericPattern;
         }
         
         const isNumeric = typeof currentValue === 'number' && !isBinary;
