@@ -536,9 +536,17 @@ def predict_risk_survival(
         
         # Predict
         if best_model_type == 'catboost':
-            # Model was loaded with logging_level='Silent' which overrides everything
-            # No need to pass verbose parameters to predict()
-            risk_score = model.predict(feature_vector.reshape(1, -1))[0]
+            # Model was saved with conflicting verbose parameters (logging_level='Silent' + verbose=100 in fit())
+            # Use workaround to bypass parameter validation
+            try:
+                from catboost import Pool
+                pool = Pool(feature_vector.reshape(1, -1))
+                # Use internal prediction method that bypasses parameter validation
+                risk_score = model._calc_oblivious_trees_for_pool(pool)[0]
+            except Exception as e:
+                # Fallback to normal predict if workaround fails
+                logger.warning(f"CatBoost workaround failed, trying normal predict: {e}")
+                risk_score = model.predict(feature_vector.reshape(1, -1))[0]
         else:  # XGBoost
             # Create DMatrix without logging parameters - logging is controlled globally
             dmatrix = xgb.DMatrix(feature_vector.reshape(1, -1), feature_names=feature_names)
