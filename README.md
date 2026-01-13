@@ -9,6 +9,7 @@ The PHTS Graft Loss Prediction Pipeline is a complete end-to-end analytical fram
 - **Feature selection** using multiple methods (RSF, CatBoost, AORSF)
 - **Survival model fitting** with multiple algorithms
 - **Model evaluation** using dual C-index calculations (time-dependent and time-independent)
+- **Interactive risk calculator** with web-based dashboard and causal analysis
 - **Comprehensive reporting** with tables, figures, and documentation
 
 ## Project Structure
@@ -33,6 +34,14 @@ graph TB
     GL --> GL_cohort[cohort_analysis: Clinical Cohort Analysis]
     GL_cohort --> GL_cohort_nb[graft_loss_clinical_cohort_analysis.ipynb]
     GL_cohort --> GL_cohort_outputs[cohort outputs: survival + classification]
+    
+    GL_cohort --> GL_calc[calculator: Interactive Risk Calculator]
+    GL_calc --> GL_calc_train[train_python_models.py]
+    GL_calc --> GL_calc_shap[run_shap_ffa_workflow.py]
+    GL_calc --> GL_calc_dash[risk_dashboard: Web Dashboard]
+    GL_calc_dash --> GL_calc_html[phts_dashboard.html]
+    GL_calc_dash --> GL_calc_lambda[Lambda Function + Docker]
+    GL_calc_dash --> GL_calc_deploy[AWS: S3 + Lambda + API Gateway]
 ```
 
 **File Organization:**
@@ -51,6 +60,7 @@ graph TB
 
     B --> C1[1. Global Feature Importance]
     B --> C2[2. Clinical Cohort Analysis]
+    B --> C3[3. Interactive Risk Calculator]
 
     C1 --> C1a[MC-CV: RSF/CatBoost/AORSF]
     C1 --> C1b[3 Time Periods]
@@ -60,6 +70,12 @@ graph TB
     C2 --> C2b[CHD vs MyoCardio]
     C2 --> C2c[Modifiable Clinical Features]
     C2 --> C2d[Dynamic Mode Selection]
+
+    C3 --> C3a[Web Dashboard: S3 Hosted]
+    C3 --> C3b[Lambda API: Docker Container]
+    C3 --> C3c[Risk Prediction: Real-time]
+    C3 --> C3d[Causal Analysis: Interactive]
+    C3 --> C3e[SHAP + FFA: Feature Attribution]
 ```
 
 ## Analysis Pipelines Summary
@@ -68,6 +84,7 @@ graph TB
 |----------|----------|------|---------|--------------|
 | **1. Global Feature Importance** | `graft-loss/feature_importance/` | MC-CV Notebook | RSF, CatBoost, AORSF | 3 time periods, 100-1000 splits, global feature rankings |
 | **2. Clinical Cohort Analysis** | `graft-loss/cohort_analysis/` | MC-CV Notebook (Dynamic) | **Survival**: RSF, AORSF, CatBoost-Cox, XGBoost-Cox<br>**Classification**: CatBoost, CatBoost RF, Traditional RF, XGBoost, XGBoost RF | CHD vs MyoCardio, modifiable clinical features |
+| **3. Interactive Risk Calculator** | `graft-loss/cohort_analysis/calculator/` | Web Dashboard + Lambda API | CatBoost-Cox, XGBoost-Cox, XGBoost-Cox RF | Real-time risk prediction, causal analysis, SHAP/FFA attribution, AWS deployment |
 
 ## Key Components
 
@@ -148,7 +165,61 @@ Comprehensive Monte Carlo cross-validation feature-importance workflow replicati
   - See `graft-loss/cohort_analysis/README.md` for quick start
   - Detailed docs in `docs/cohort_analysis/`
 
-### 3. Concordance Index Implementation (`concordance_index/`)
+### 3. Interactive Risk Calculator (`graft-loss/cohort_analysis/calculator/`) ⭐ **PRODUCTION DEPLOYMENT**
+
+**Production-ready web-based risk calculator** with interactive dashboard and causal analysis capabilities:
+
+- **Web Dashboard** (`risk_dashboard/phts_dashboard.html`):
+  - **Risk Calculator Tab**: Real-time risk prediction for CHD, Combined, and Myocardio cohorts
+  - **Causal Analysis Tab**: Interactive exploration of causal factors with dynamic visualizations
+  - **Documentation Tab**: Comprehensive documentation and model details
+  - Hosted on AWS S3: `s3://jerome-dixon.io/uva/phts-risk-calculator/`
+
+- **Lambda API** (`risk_dashboard/phts_lambda_function.py`):
+  - Serverless backend deployed as Docker container on AWS Lambda
+  - REST API endpoints: `/risk`, `/causal`, `/metadata`, `/model_features`
+  - Model caching for fast inference
+  - Risk score normalization (percentile-based, 0-100 scale)
+
+- **Model Training** (`train_python_models.py`):
+  - Trains CatBoost-Cox, XGBoost-Cox, and XGBoost-Cox RF models
+  - 25 Monte Carlo Cross-Validation splits
+  - Best model selection per cohort based on C-index
+  - Excludes non-modifiable features (e.g., `lscntry`, `prim_dx`)
+
+- **SHAP + FFA Analysis** (`run_shap_ffa_workflow.py`):
+  - SHAP (SHapley Additive exPlanations) for feature importance
+  - FFA (Formal Feature Attribution) for causal analysis
+  - Extracts top K causal factors with importance and responsibility scores
+  - Generates dashboard data with feature metadata
+
+- **Deployment**:
+  - **Frontend**: S3 static website hosting
+  - **Backend**: Lambda function with Docker container (ECR)
+  - **API Gateway**: REST API with CORS enabled
+  - **Models**: Baked into Docker image for fast loading
+
+- **Key Features**:
+  - **Real-time Risk Prediction**: Instant risk scores with percentile normalization
+  - **Causal Analysis**: Interactive factor adjustment with real-time risk updates
+  - **Feature Metadata**: Automatic detection of binary vs numeric features
+  - **Risk Bands**: Low/Medium/High/Very High risk classification
+  - **Multiple Cohorts**: CHD, Combined, Myocardio with cohort-specific models
+
+- **Outputs** (`graft-loss/cohort_analysis/calculator/outputs/`):
+  - `models/` - Trained models (CatBoost, XGBoost, XGBoost RF)
+  - `shap_ffa/` - SHAP values, FFA rules, causal factors, dashboard data
+  - `risk_distributions/` - Risk score distributions for normalization
+
+- **Documentation:**
+  - See `graft-loss/cohort_analysis/calculator/README.md` for overview
+  - `risk_dashboard/README_MODELS.md` - Model performance and risk calculation
+  - `risk_dashboard/README_CAUSAL_ANALYSIS.md` - Causal analysis workflow
+  - `risk_dashboard/README_DEPLOYMENT.md` - AWS deployment guide
+  - `risk_dashboard/README_ARCHITECTURE.md` - System architecture
+  - `README_SHAP_FFA.md` - SHAP and FFA integration details
+
+### 4. Concordance Index Implementation (`concordance_index/`)
 
 Robust C-index calculation with manual implementation:
 
@@ -327,6 +398,30 @@ The pipeline supports analysis across multiple time periods:
 5. Run notebook from top to bottom
 6. Results saved to `outputs/` directory
 
+### Interactive Risk Calculator
+
+1. **Train Models**: Navigate to `graft-loss/cohort_analysis/calculator/` and run:
+   ```bash
+   python train_python_models.py --cohort Combined
+   python train_python_models.py --cohort CHD
+   python train_python_models.py --cohort Myocardio
+   ```
+
+2. **Run SHAP/FFA Analysis**: Generate causal factors and dashboard data:
+   ```bash
+   python run_shap_ffa_workflow.py --cohort Combined --top-k 20
+   ```
+
+3. **Deploy Dashboard**: 
+   - Prepare Lambda directory: `python risk_dashboard/prepare_lambda_dir_phts.py`
+   - Build Docker image: `bash risk_dashboard/docker_build_phts.sh`
+   - Upload HTML to S3: `aws s3 cp risk_dashboard/phts_dashboard.html s3://jerome-dixon.io/uva/phts-risk-calculator/index.html`
+   - Update Lambda: `aws lambda update-function-code --function-name phts-risk-calculator --image-uri <ECR_URI>`
+
+4. **Access Dashboard**: Visit `https://jerome-dixon.io/uva/phts-risk-calculator/`
+
+See `graft-loss/cohort_analysis/calculator/risk_dashboard/README_DEPLOYMENT.md` for detailed deployment instructions.
+
 ## Output Structure
 
 ### Global Feature Importance (`graft-loss/feature_importance/outputs/`)
@@ -343,6 +438,13 @@ The pipeline supports analysis across multiple time periods:
   - `plots/cohort_clinical_feature_sankey.html` - Sankey diagram of cohort → clinical features
 - **Classification Mode**:
   - `classification_mc_cv/cohort_classification_metrics_mc_cv.csv` - Classification metrics (AUC, Brier, Accuracy, Precision, Recall, F1) per cohort × model
+
+### Interactive Risk Calculator (`graft-loss/cohort_analysis/calculator/outputs/`)
+
+- `models/` - Trained models (CatBoost `.cbm`, XGBoost `.ubj`, JSON models)
+- `shap_ffa/` - SHAP values, FFA rules, causal factors, dashboard data (`dashboard_data.json`, `top_causal_factors.csv`)
+- `risk_distributions/` - Risk score distributions for normalization (`risk_distributions.json`)
+- `lambda_dir_phts/` - Prepared Lambda deployment directory (models, dashboard data, feature metadata)
 
 ### Documentation (`docs/`)
 
