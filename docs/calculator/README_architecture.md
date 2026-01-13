@@ -8,17 +8,17 @@ The PHTS Risk Calculator uses a **serverless architecture** with static frontend
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    User's Browser                            │
-│                                                              │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │  phts_dashboard.html (S3 Static Website)             │  │
-│  │                                                       │  │
-│  │  Features:                                            │  │
-│  │  - Risk Calculator Tab                                │  │
-│  │  - Causal Analysis Tab (with Chart.js)               │  │
-│  │  - Real-time risk updates                             │  │
-│  │  - Interactive factor controls                        │  │
-│  └──────────────────────────────────────────────────────┘  │
+│                    User's Browser                           │
+│                                                             │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  phts_dashboard.html (S3 Static Website)             │   │
+│  │                                                      │   │
+│  │  Features:                                           │   │
+│  │  - Risk Calculator Tab                               │   │
+│  │  - Causal Analysis Tab (with Chart.js)               │   │
+│  │  - Real-time risk updates                            │   │
+│  │  - Interactive factor controls                       │   │
+│  └──────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
                           │
                           │ HTTPS (CORS enabled)
@@ -26,13 +26,13 @@ The PHTS Risk Calculator uses a **serverless architecture** with static frontend
                           ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                  API Gateway (REST API)                     │
-│                                                              │
-│  Endpoints:                                                  │
-│  - GET  /metadata  → Returns cohorts & causal factors      │
+│                                                             │
+│  Endpoints:                                                 │
+│  - GET  /metadata  → Returns cohorts & causal factors       │
 │  - POST /risk      → Calculates risk score                  │
-│  - POST /causal    → Returns causal factor explanations    │
+│  - POST /causal    → Returns causal factor explanations     │
 │  - OPTIONS /*      → CORS preflight                         │
-│                                                              │
+│                                                             │
 │  Features:                                                  │
 │  - Lambda proxy integration                                 │
 │  - CORS handling                                            │
@@ -43,15 +43,15 @@ The PHTS Risk Calculator uses a **serverless architecture** with static frontend
                           ▼
 ┌─────────────────────────────────────────────────────────────┐
 │              Lambda Function (Container)                    │
-│                                                              │
-│  Container Contents:                                         │
+│                                                             │
+│  Container Contents:                                        │
 │  - Python 3.11 runtime                                      │
-│  - Model libraries (CatBoost, XGBoost, NumPy, Pandas)     │
-│  - Lambda function code (phts_lambda_function.py)          │
-│  - Models (baked in at /var/task/models/)                  │
-│  - Dashboard data (baked in at /var/task/dashboard_data/)  │
-│  - Risk distributions (baked in at /var/task/risk_distributions/) │
-│                                                              │
+│  - Model libraries (CatBoost, XGBoost, NumPy, Pandas)       │
+│  - Lambda function code (phts_lambda_function.py)           │
+│  - Models (baked in at /var/task/models/)                   │
+│  - Dashboard data (baked in at /var/task/dashboard_data/)   │
+│  - Risk distributions (/var/task/risk_distributions/)       │
+│                                                             │
 │  Configuration:                                             │
 │  - Memory: 3008 MB                                          │
 │  - Timeout: 60 seconds                                      │
@@ -61,13 +61,13 @@ The PHTS Risk Calculator uses a **serverless architecture** with static frontend
                           │ (Fallback)
                           ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                    S3 Bucket                                 │
-│                                                              │
-│  Storage:                                                    │
-│  - Static HTML (jerome-dixon.io/uva/phts-risk-calculator/) │
-│  - Models (fallback: models/{cohort}/)                     │
-│  - Dashboard data (fallback: dashboard_data/{cohort}/)     │
-│  - Risk distributions (fallback: risk_distributions/)     │
+│                    S3 Bucket                                │
+│                                                             │
+│  Storage:                                                   │
+│  - Static HTML (jerome-dixon.io/uva/phts-risk-calculator/)  │
+│  - Models (fallback: models/{cohort}/)                      │
+│  - Dashboard data (fallback: dashboard_data/{cohort}/)      │
+│  - Risk distributions (fallback: risk_distributions/)       │
 └─────────────────────────────────────────────────────────────┘
 ```
 
