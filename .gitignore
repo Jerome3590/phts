@@ -8,6 +8,13 @@
 **/.vscode/
 .cursorrules
 
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
 *.txt
 *.zip
 
