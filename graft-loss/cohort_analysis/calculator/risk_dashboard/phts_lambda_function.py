@@ -365,10 +365,8 @@ def load_model(cohort: str, model_type: str) -> Any:
         model_path = container_model_path / "catboost_model.cbm"
         if model_path.exists():
             logger.info(f"Loading CatBoost model from container: {model_path}")
-            # Safe pattern: Use BOTH verbose=False AND logging_level='Silent'
-            # logging_level='Silent' overrides everything and is safest
-            # verbose=False and verbose=0 are identical (use boolean False)
-            model = CatBoostRegressor(verbose=False, logging_level='Silent')
+            # Use only logging_level='Silent' - it overrides everything and is safest
+            model = CatBoostRegressor(logging_level='Silent')
             model.load_model(str(model_path))
             _model_cache[cache_key] = {'model': model, 'type': 'catboost'}
             _cache_timestamps[cache_key] = time.time()
@@ -394,9 +392,8 @@ def load_model(cohort: str, model_type: str) -> Any:
             s3_client.download_fileobj(S3_BUCKET, s3_key, f)
         
         if model_type == 'catboost':
-            # Safe pattern: Use BOTH verbose=False AND logging_level='Silent'
-            # logging_level='Silent' overrides everything and is safest
-            model = CatBoostRegressor(verbose=False, logging_level='Silent')
+            # Use only logging_level='Silent' - it overrides everything and is safest
+            model = CatBoostRegressor(logging_level='Silent')
             model.load_model(f"/tmp/catboost_model.cbm")
         else:
             # Create Booster without parameters - logging is controlled globally
