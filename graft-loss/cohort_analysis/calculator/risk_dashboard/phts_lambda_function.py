@@ -178,9 +178,23 @@ def get_feature_metadata(cohort: str) -> Dict[str, str]:
                             col_data = df_prepared[feature_name].dropna()
                             
                             if len(col_data) > 0:
+                                # Known numeric features (calculated/continuous) - always numeric
+                                known_numeric = ['bmi', 'egfr', 'age', 'weight', 'height', 'creat', 'bun', 
+                                               'albumin', 'ast', 'alt', 'bili', 'chol', 'hdl', 'ldl', 'tg', 
+                                               'tp', 'brp', 'bram', 'donisch', 'durcarst', 'bnp', 'sa', 'palb']
+                                
+                                # Check if feature name suggests it's numeric (even if data looks binary)
+                                is_known_numeric = any(pattern in feature_name.lower() for pattern in known_numeric)
+                                
                                 # Check if binary: only contains 0 and/or 1
                                 unique_vals = set(col_data.unique())
-                                if unique_vals.issubset({0, 1, 0.0, 1.0}):
+                                is_binary_vals = unique_vals.issubset({0, 1, 0.0, 1.0})
+                                
+                                # If known numeric feature, always treat as numeric
+                                # Otherwise, use value-based detection
+                                if is_known_numeric:
+                                    feature_metadata[feature_name] = 'numeric'
+                                elif is_binary_vals:
                                     feature_metadata[feature_name] = 'binary'
                                 else:
                                     feature_metadata[feature_name] = 'numeric'
