@@ -508,8 +508,7 @@ def predict_risk_survival(
         
         # Predict
         if best_model_type == 'catboost':
-            # Model was loaded with verbose=False and logging_level='Silent'
-            # logging_level='Silent' overrides everything, so predict() should work
+            # Model was loaded with logging_level='Silent' which overrides everything
             # No need to pass verbose parameters to predict()
             risk_score = model.predict(feature_vector.reshape(1, -1))[0]
         else:  # XGBoost
