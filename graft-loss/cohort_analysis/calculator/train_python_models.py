@@ -244,7 +244,7 @@ def train_catboost_survival(
     model.fit(
         train_pool,
         eval_set=test_pool,
-        verbose=100,  # Use verbose instead of verbose_eval
+        # Don't use verbose parameter - logging_level='Silent' in params handles it
         use_best_model=True
     )
     
