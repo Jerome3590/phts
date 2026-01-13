@@ -40,6 +40,7 @@ library(rsample)
 library(furrr)
 library(future)
 library(progressr)
+library(jsonlite)  # For saving XGBoost JSON
 # Note: Using survival models, not classification - no pROC needed
 
 # Source helper functions
@@ -1349,6 +1350,152 @@ main <- function() {
   
   write_csv(best_models, file.path(output_dir, "best_models_by_cohort.csv"))
   cat("\n✓ Saved best models to best_models_by_cohort.csv\n")
+  
+  # Refit and save models for SHAP and FFA analysis
+  cat("\n========================================\n")
+  cat("Refitting and Saving Models for SHAP/FFA\n")
+  cat("========================================\n")
+  
+  for (cohort_name in names(cohorts)) {
+    cat(sprintf("\nProcessing cohort: %s\n", cohort_name))
+    
+    # Get best model for this cohort
+    cohort_best <- best_models %>% filter(Cohort == cohort_name)
+    if (nrow(cohort_best) == 0) {
+      cat(sprintf("  No best model found for %s, skipping...\n", cohort_name))
+      next
+    }
+    
+    best_model_name <- cohort_best$Model[1]
+    cat(sprintf("  Best model: %s\n", best_model_name))
+    
+    # Prepare full dataset for refitting
+    cohort_data <- cohorts[[cohort_name]]
+    cohort_data <- prepare_calculator_features(cohort_data)
+    
+    # Ensure time and status columns exist (rename from ev_time/ev_type if needed)
+    if (!"time" %in% names(cohort_data) && "ev_time" %in% names(cohort_data)) {
+      cohort_data <- cohort_data %>% mutate(time = ev_time)
+    }
+    if (!"status" %in% names(cohort_data) && "ev_type" %in% names(cohort_data)) {
+      cohort_data <- cohort_data %>% mutate(status = ev_type)
+    }
+    
+    # Verify required columns exist
+    if (!"time" %in% names(cohort_data) || !"status" %in% names(cohort_data)) {
+      cat(sprintf("    ✗ Error: Missing time/status columns. Available columns: %s\n", 
+                  paste(head(names(cohort_data), 10), collapse=", ")))
+      next
+    }
+    
+    # Create models directory
+    models_dir <- file.path(output_dir, "models", cohort_name)
+    dir.create(models_dir, recursive = TRUE, showWarnings = FALSE)
+    json_dir <- file.path(models_dir, "final_model_json")
+    dir.create(json_dir, recursive = TRUE, showWarnings = FALSE)
+    
+    # Refit and save CatBoost if it's one of the best models
+    if (best_model_name == "CatBoost" || TRUE) {  # Save both for SHAP
+      tryCatch({
+        cat("  Refitting CatBoost on full dataset...\n")
+        # Use full dataset as both train and test for final model
+        res <- run_catboost_cox(
+          train_df = cohort_data,
+          test_df = cohort_data,
+          time_col = "time",
+          status_col = "status",
+          cohort_name = cohort_name,
+          model_name = "CatBoost"
+        )
+        
+        # Save CatBoost binary (.cbm) for SHAP
+        cb_binary_path <- file.path(models_dir, "catboost_model.cbm")
+        catboost::catboost.save_model(res$model, cb_binary_path)
+        cat(sprintf("    ✓ Saved CatBoost binary: %s\n", cb_binary_path))
+      }, error = function(e) {
+        cat(sprintf("    ✗ Error saving CatBoost: %s\n", conditionMessage(e)))
+      })
+    }
+    
+    # Refit and save XGBoost if it's one of the best models
+    if (best_model_name == "XGBoost" || TRUE) {  # Save both for SHAP
+      tryCatch({
+        cat("  Refitting XGBoost on full dataset...\n")
+        # Use full dataset as both train and test for final model
+        res <- run_xgb_cox(
+          train_df = cohort_data,
+          test_df = cohort_data,
+          time_col = "time",
+          status_col = "status",
+          cohort_name = cohort_name,
+          model_name = "XGBoost"
+        )
+        
+        # Save XGBoost binary (.ubj) for SHAP
+        xgb_binary_path <- file.path(models_dir, "xgboost_model.ubj")
+        xgboost::xgb.save(res$model, xgb_binary_path)
+        cat(sprintf("    ✓ Saved XGBoost binary: %s\n", xgb_binary_path))
+        
+        # Save XGBoost JSON for FFA
+        xgb_json_path <- file.path(json_dir, sprintf("%s_final_model_xgboost.json", cohort_name))
+        # Export tree dumps as JSON (FFA expects list of tree strings)
+        tree_dumps <- xgboost::xgb.dump(res$model, with_stats = TRUE)
+        
+        # Extract feature names from the model's booster object
+        # XGBoost R models store feature names in the booster
+        feature_names <- character(0)
+        tryCatch({
+          # Try to get feature names from booster
+          booster <- res$model$booster
+          if (!is.null(booster)) {
+            # Get feature names from booster (if available)
+            if (exists("get.feature.names", envir = asNamespace("xgboost"))) {
+              feature_names <- xgboost::xgb.importance(model = res$model)$Feature
+            } else {
+              # Alternative: extract from training data columns
+              # The model was trained on cohort_data, so get feature columns
+              feature_cols <- setdiff(names(cohort_data), c("time", "status", "ev_time", "ev_type", 
+                                                           "outcome", "outcome_int_graft_loss", "outcome_graft_loss"))
+              feature_names <- feature_cols
+            }
+          }
+        }, error = function(e) {
+          # Fallback: use training data column names (excluding time/status)
+          feature_cols <- setdiff(names(cohort_data), c("time", "status", "ev_time", "ev_type", 
+                                                       "outcome", "outcome_int_graft_loss", "outcome_graft_loss"))
+          feature_names <<- feature_cols
+        })
+        
+        # If still empty, try to get from importance
+        if (length(feature_names) == 0) {
+          tryCatch({
+            imp <- xgboost::xgb.importance(model = res$model)
+            if (!is.null(imp) && "Feature" %in% names(imp)) {
+              feature_names <- imp$Feature
+            }
+          }, error = function(e) {
+            # Last resort: use training data columns
+            feature_cols <- setdiff(names(cohort_data), c("time", "status", "ev_time", "ev_type", 
+                                                         "outcome", "outcome_int_graft_loss", "outcome_graft_loss"))
+            feature_names <<- feature_cols
+          })
+        }
+        
+        # Convert to list format expected by FFA explainer
+        model_json <- list(
+          model_type = "xgboost",
+          trees = as.list(tree_dumps),  # List of tree strings
+          feature_names = feature_names
+        )
+        jsonlite::write_json(model_json, xgb_json_path, pretty = TRUE, auto_unbox = TRUE)
+        cat(sprintf("    ✓ Saved XGBoost JSON: %s (with %d feature names)\n", xgb_json_path, length(feature_names)))
+      }, error = function(e) {
+        cat(sprintf("    ✗ Error saving XGBoost: %s\n", conditionMessage(e)))
+      })
+    }
+  }
+  
+  cat("\n✓ Model saving complete\n")
   
   plan(sequential)
 }

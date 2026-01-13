@@ -239,9 +239,19 @@ The Simple Calculator (logistic regression) is compared against:
 - `outputs/importance_[COHORT]_[MODEL].csv` - Feature importance for each model and cohort
 
 ### Code Files
-- `calculator_models.R` - Main implementation script
-- `run_calculator.R` - Simple runner script
+
+**Python Workflow (Recommended):**
+- `train_python_models.py` - Python model training (replaces R script)
+- `run_shap_ffa_workflow.py` - SHAP + FFA analysis workflow
+
+**R Implementation (Legacy):**
+- `calculator_models.R` - R implementation script (still available)
+- `run_calculator.R` - Simple R runner script
+
+**Documentation:**
 - `README.md` - General documentation
+- `README_SHAP_FFA.md` - SHAP/FFA workflow documentation
+- `INTEGRATION_SUMMARY.md` - Integration details
 - `IMPLEMENTATION_SUMMARY.md` - Implementation details
 - `IMPROVEMENTS.md` - Description of improvements made
 

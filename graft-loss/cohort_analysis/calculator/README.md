@@ -1,5 +1,11 @@
 # Calculator Models
 
+> **🚀 Python Workflow Available**: For a fully Python-based workflow (training + SHAP/FFA), see:
+> - **Training**: `python train_python_models.py --cohort Combined`
+> - **SHAP/FFA**: `python run_shap_ffa_workflow.py --cohort Combined --top-k 10`
+> 
+> The R implementation (`calculator_models.R`) is still available for users who prefer R.
+
 This directory contains three calculator models for pediatric heart transplant graft loss prediction:
 
 > **📋 For detailed variable documentation and final results, see [README_FINAL_MODELS.md](README_FINAL_MODELS.md)**

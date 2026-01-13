@@ -20,6 +20,44 @@ This guide provides step-by-step instructions for deploying the PHTS Risk Calcul
 4. **Dashboard data generated** in `calculator/outputs/shap_ffa/`
 5. **Risk distributions computed** in `calculator/outputs/risk_distributions/`
 
+## Quick Start
+
+For experienced users, here's the fastest path to deployment:
+
+```bash
+cd graft-loss/cohort_analysis/calculator/risk_dashboard
+
+# 1. Prepare models and data
+python prepare_lambda_dir_phts.py
+
+# 2. Build and push Docker image
+./docker_build_phts.sh
+
+# 3. Update Lambda (get ECR URI from step 2 output)
+AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+ECR_URI="${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com/phts-risk-calculator:latest"
+aws lambda update-function-code \
+    --function-name phts-risk-calculator \
+    --image-uri ${ECR_URI} \
+    --region us-east-1
+
+# 4. Set up API Gateway
+./setup_api_gateway.sh
+
+# 5. Upload HTML to S3
+aws s3 cp phts_dashboard.html \
+    s3://jerome-dixon.io/uva/phts-risk-calculator/index.html \
+    --content-type "text/html" \
+    --cache-control "no-cache" \
+    --region us-east-1
+```
+
+**Verification:**
+```bash
+# Test API
+curl "https://YOUR_API_ID.execute-api.us-east-1.amazonaws.com/prod/metadata?cohort=Combined"
+```
+
 ## Deployment Workflow
 
 ### Step 1: Prepare Lambda Directory
@@ -152,6 +190,77 @@ API_GATEWAY_URL='https://YOUR_API_ID.execute-api.REGION.amazonaws.com/prod' \
 - `PHTS_BUCKET`: `jerome-dixon.io`
 - `S3_PREFIX`: `uva/phts-risk-calculator`
 - `RISK_DISTRIBUTION_PATH`: `/var/task/risk_distributions`
+
+### Environment Variables Management
+
+The Lambda function uses environment variables for configuration. These can be set during Lambda creation or updated later.
+
+#### Required Variables
+
+- **`API_GATEWAY_URL`**: The API Gateway endpoint URL
+  - Format: `https://API_ID.execute-api.REGION.amazonaws.com/STAGE`
+  - Used by: Lambda returns this in `/metadata` endpoint for frontend discovery
+  - **Note**: Automatically set by `setup_api_gateway.sh`
+
+- **`PHTS_BUCKET`**: S3 bucket name
+  - Default: `jerome-dixon.io`
+  - Used by: Lambda for S3 fallback (if models not in container)
+
+- **`S3_PREFIX`**: S3 prefix path
+  - Default: `uva/phts-risk-calculator`
+  - Used by: Lambda for constructing S3 paths
+
+#### Optional Variables
+
+- **`MODEL_BASE_PATH`**: Path to models in container
+  - Default: `/var/task/models`
+  - Used by: Lambda to load models from container filesystem
+
+- **`DASHBOARD_DATA_PATH`**: Path to dashboard data in container
+  - Default: `/var/task/dashboard_data`
+  - Used by: Lambda to load causal factors data
+
+- **`RISK_DISTRIBUTION_PATH`**: Path to risk distributions in container
+  - Default: `/var/task/risk_distributions`
+  - Used by: Lambda for risk score normalization
+
+#### Setting Environment Variables
+
+**Method 1: Using update_lambda_env.sh (Recommended)**
+
+```bash
+API_GATEWAY_URL='https://YOUR_API_ID.execute-api.REGION.amazonaws.com/prod' \
+  ./update_lambda_env.sh
+```
+
+**Method 2: Using AWS CLI Directly**
+
+```bash
+aws lambda update-function-configuration \
+    --function-name phts-risk-calculator \
+    --environment Variables="{
+        \"API_GATEWAY_URL\":\"https://API_ID.execute-api.REGION.amazonaws.com/prod\",
+        \"PHTS_BUCKET\":\"jerome-dixon.io\",
+        \"S3_PREFIX\":\"uva/phts-risk-calculator\",
+        \"RISK_DISTRIBUTION_PATH\":\"/var/task/risk_distributions\"
+    }" \
+    --region us-east-1
+```
+
+**Method 3: View Current Variables**
+
+```bash
+aws lambda get-function-configuration \
+    --function-name phts-risk-calculator \
+    --query 'Environment.Variables' \
+    --output json | jq '.'
+```
+
+#### Dynamic API URL Discovery
+
+The HTML page can discover the API URL dynamically:
+1. **From Lambda Metadata Endpoint**: HTML calls `/metadata`, Lambda returns `api_url`
+2. **From Window Variable**: Deployment script injects `window.LAMBDA_API_URL`
 
 ---
 

@@ -1,0 +1,594 @@
+{
+  "cohort": "Myocardio",
+  "timestamp": "2026-01-13T02:36:58.915145",
+  "ffa_method": "xgboost_json_with_combined_shap_filtering",
+  "top_causal_factors": [
+    {
+      "feature": "prim_dx",
+      "importance": 8.403450655731467,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 5.046684395769451,
+      "importance_xgb": 0.0115350058264284,
+      "causal_responsibility": 1.0,
+      "shap_importance": 1.0,
+      "rule_frequency": 0,
+      "total_rules": 0
+    },
+    {
+      "feature": "txicu",
+      "importance": 5.468736633272253,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 3.282432942786256,
+      "importance_xgb": 0.0029774070572612,
+      "causal_responsibility": 0.6504137539367161,
+      "shap_importance": 0.6504137539367161,
+      "rule_frequency": 0,
+      "total_rules": 0
+    },
+    {
+      "feature": "lldl_r",
+      "importance": 4.565680197133925,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 2.7436008308414404,
+      "importance_xgb": 0.0104817814027138,
+      "causal_responsibility": 0.5436442257299374,
+      "shap_importance": 0.5436442257299374,
+      "rule_frequency": 0,
+      "total_rules": 0
+    },
+    {
+      "feature": "egfr_tx_cat",
+      "importance": 3.6642038433464057,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 2.1993967541150785,
+      "importance_xgb": 0.0021861202680888,
+      "causal_responsibility": 0.43581024324778367,
+      "shap_importance": 0.43581024324778367,
+      "rule_frequency": 0,
+      "total_rules": 0
+    },
+    {
+      "feature": "rdobdose",
+      "importance": 3.619994228308842,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 2.1728161664701715,
+      "importance_xgb": 0.0020490737121654,
+      "causal_responsibility": 0.4305433025080003,
+      "shap_importance": 0.4305433025080003,
+      "rule_frequency": 0,
+      "total_rules": 0
+    },
+    {
+      "feature": "donor_age",
+      "importance": 3.469872087162648,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 2.084033262958038,
+      "importance_xgb": 0.0052750266511221,
+      "causal_responsibility": 0.41295097920231494,
+      "shap_importance": 0.41295097920231494,
+      "rule_frequency": 0,
+      "total_rules": 0
+    },
+    {
+      "feature": "txvad",
+      "importance": 3.4464974943812354,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 2.069837031083748,
+      "importance_xgb": 0.0048463361375174,
+      "causal_responsibility": 0.41013799729954525,
+      "shap_importance": 0.41013799729954525,
+      "rule_frequency": 0,
+      "total_rules": 0
+    },
+    {
+      "feature": "egfr_tx",
+      "importance": 3.288398762890424,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.9777596258247845,
+      "importance_xgb": 0.0118009202263251,
+      "causal_responsibility": 0.39189286880762875,
+      "shap_importance": 0.39189286880762875,
+      "rule_frequency": 0,
+      "total_rules": 0
+    },
+    {
+      "feature": "txnomcsd",
+      "importance": 2.878997495277741,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.7647692524309484,
+      "importance_xgb": 0.0934268881607598,
+      "causal_responsibility": 0.34968884797121935,
+      "shap_importance": 0.34968884797121935,
+      "rule_frequency": 0,
+      "total_rules": 0
+    },
+    {
+      "feature": "don_epi",
+      "importance": 2.819048696412041,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.6930138369114,
+      "importance_xgb": 0.0039615476604389,
+      "causal_responsibility": 0.33547051968033204,
+      "shap_importance": 0.33547051968033204,
+      "rule_frequency": 0,
+      "total_rules": 0
+    }
+  ],
+  "summary": {
+    "total_features": 309,
+    "top_k": 10,
+    "mean_importance": 0.10723681744876844,
+    "max_importance": 1.0,
+    "top_feature": "prim_dx",
+    "top_feature_importance": 1.0
+  },
+  "feature_importance": [
+    {
+      "feature": "prim_dx",
+      "importance": 8.403450655731467,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 5.046684395769451,
+      "importance_xgb": 0.0115350058264284,
+      "combined_importance_norm": 1.0
+    },
+    {
+      "feature": "txicu",
+      "importance": 5.468736633272253,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 3.282432942786256,
+      "importance_xgb": 0.0029774070572612,
+      "combined_importance_norm": 0.6504137539367161
+    },
+    {
+      "feature": "lldl_r",
+      "importance": 4.565680197133925,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 2.7436008308414404,
+      "importance_xgb": 0.0104817814027138,
+      "combined_importance_norm": 0.5436442257299374
+    },
+    {
+      "feature": "egfr_tx_cat",
+      "importance": 3.6642038433464057,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 2.1993967541150785,
+      "importance_xgb": 0.0021861202680888,
+      "combined_importance_norm": 0.43581024324778367
+    },
+    {
+      "feature": "rdobdose",
+      "importance": 3.619994228308842,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 2.1728161664701715,
+      "importance_xgb": 0.0020490737121654,
+      "combined_importance_norm": 0.4305433025080003
+    },
+    {
+      "feature": "donor_age",
+      "importance": 3.469872087162648,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 2.084033262958038,
+      "importance_xgb": 0.0052750266511221,
+      "combined_importance_norm": 0.41295097920231494
+    },
+    {
+      "feature": "txvad",
+      "importance": 3.4464974943812354,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 2.069837031083748,
+      "importance_xgb": 0.0048463361375174,
+      "combined_importance_norm": 0.41013799729954525
+    },
+    {
+      "feature": "egfr_tx",
+      "importance": 3.288398762890424,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.9777596258247845,
+      "importance_xgb": 0.0118009202263251,
+      "combined_importance_norm": 0.39189286880762875
+    },
+    {
+      "feature": "txnomcsd",
+      "importance": 2.878997495277741,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.7647692524309484,
+      "importance_xgb": 0.0934268881607598,
+      "combined_importance_norm": 0.34968884797121935
+    },
+    {
+      "feature": "don_epi",
+      "importance": 2.819048696412041,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.6930138369114,
+      "importance_xgb": 0.0039615476604389,
+      "combined_importance_norm": 0.33547051968033204
+    },
+    {
+      "feature": "lcreat_r",
+      "importance": 2.8010309486797382,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.6853669295658114,
+      "importance_xgb": 0.0118709008949216,
+      "combined_importance_norm": 0.3339552857671515
+    },
+    {
+      "feature": "drpr",
+      "importance": 2.793713634459347,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.6769959761005826,
+      "importance_xgb": 0.0019194885624359,
+      "combined_importance_norm": 0.3322965821889674
+    },
+    {
+      "feature": "lvldl_r",
+      "importance": 2.731703316484108,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.6397030414893885,
+      "importance_xgb": 0.0017026289973097,
+      "combined_importance_norm": 0.32490699098678005
+    },
+    {
+      "feature": "weight_txpl",
+      "importance": 2.5776334983655302,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.548194685694035,
+      "importance_xgb": 0.004036466686792,
+      "combined_importance_norm": 0.30677461958823105
+    },
+    {
+      "feature": "txchol_r",
+      "importance": 2.524642654653741,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.5166139538793615,
+      "importance_xgb": 0.0045709027177918,
+      "combined_importance_norm": 0.30051690078949916
+    },
+    {
+      "feature": "lbun_r",
+      "importance": 2.486332536945675,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.497022536409702,
+      "importance_xgb": 0.0130575356057426,
+      "combined_importance_norm": 0.2966348634094556
+    },
+    {
+      "feature": "txtdsxm",
+      "importance": 2.479261116643688,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.4881395990834054,
+      "importance_xgb": 0.0014573227429813,
+      "combined_importance_norm": 0.29487471028124673
+    },
+    {
+      "feature": "txvasopr",
+      "importance": 2.4462437057723427,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.4677462234634056,
+      "importance_xgb": 0.0,
+      "combined_importance_norm": 0.29083376497523644
+    },
+    {
+      "feature": "hxmarfns",
+      "importance": 2.4005562395968782,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.440450805404557,
+      "importance_xgb": 0.00029265411607515046,
+      "combined_importance_norm": 0.28542518066159683
+    },
+    {
+      "feature": "txtcdc",
+      "importance": 2.396511117655312,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.439211810863333,
+      "importance_xgb": 0.0032628506753647,
+      "combined_importance_norm": 0.28517967401920347
+    },
+    {
+      "feature": "txbdsxn",
+      "importance": 2.377240101419902,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.4268710596439462,
+      "importance_xgb": 0.0013174969800129,
+      "combined_importance_norm": 0.2827343554195836
+    },
+    {
+      "feature": "height_txpl",
+      "importance": 2.3681504370067814,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.4230830148765812,
+      "importance_xgb": 0.0054818816812806,
+      "combined_importance_norm": 0.2819837547340046
+    },
+    {
+      "feature": "weight_listing",
+      "importance": 2.341560930489471,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.4121969902686322,
+      "importance_xgb": 0.0181510799373741,
+      "combined_importance_norm": 0.27982669006456057
+    },
+    {
+      "feature": "txbun_r",
+      "importance": 2.229690504347889,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.3433987647188887,
+      "importance_xgb": 0.0139611552753888,
+      "combined_importance_norm": 0.26619432866557635
+    },
+    {
+      "feature": "lschool",
+      "importance": 2.187853713813148,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.3133998715129116,
+      "importance_xgb": 0.0017191080625568,
+      "combined_importance_norm": 0.2602500510263555
+    },
+    {
+      "feature": "lsrhfcl",
+      "importance": 2.160240045714934,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.2979275792547065,
+      "importance_xgb": 0.0044588795643651,
+      "combined_importance_norm": 0.2571842178882311
+    },
+    {
+      "feature": "ltg_r",
+      "importance": 2.147164360110397,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.2926334347218338,
+      "importance_xgb": 0.0108370466389892,
+      "combined_importance_norm": 0.2561351836872197
+    },
+    {
+      "feature": "hcab",
+      "importance": 2.092703304014229,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.2557984180857378,
+      "importance_xgb": 0.000441089193000834,
+      "combined_importance_norm": 0.24883632888524831
+    },
+    {
+      "feature": "roprdsc1",
+      "importance": 2.0656578280587885,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.2402625424069635,
+      "importance_xgb": 0.0021696139292262,
+      "combined_importance_norm": 0.24575789669880177
+    },
+    {
+      "feature": "txsa_r",
+      "importance": 2.0054292483252687,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.211977495802187,
+      "importance_xgb": 0.0217998670175644,
+      "combined_importance_norm": 0.24015321758938737
+    },
+    {
+      "feature": "rpr",
+      "importance": 2.014942765662381,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.209352444359081,
+      "importance_xgb": 0.0009669624041316096,
+      "combined_importance_norm": 0.23963306391278608
+    },
+    {
+      "feature": "hxmit",
+      "importance": 2.008842766035218,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.2053056596211307,
+      "importance_xgb": 0.0,
+      "combined_importance_norm": 0.23883119392833793
+    },
+    {
+      "feature": "toxo",
+      "importance": 1.9880349937848605,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.1946812719862152,
+      "importance_xgb": 0.0046506892882473,
+      "combined_importance_norm": 0.2367259725985037
+    },
+    {
+      "feature": "lsalt",
+      "importance": 1.9315339436529448,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.1668681467673756,
+      "importance_xgb": 0.0198694514390221,
+      "combined_importance_norm": 0.23121480466373945
+    },
+    {
+      "feature": "lsnyha",
+      "importance": 1.928732091973444,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.1580944860236828,
+      "importance_xgb": 0.0021380770990409,
+      "combined_importance_norm": 0.22947630467926497
+    },
+    {
+      "feature": "lhdl_r",
+      "importance": 1.9243510434812985,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.1559695796449607,
+      "importance_xgb": 0.0033973838904544,
+      "combined_importance_norm": 0.22905525469632898
+    },
+    {
+      "feature": "slivino",
+      "importance": 1.827724651944484,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.0988619211517625,
+      "importance_xgb": 0.0055678249626802,
+      "combined_importance_norm": 0.21773937797119225
+    },
+    {
+      "feature": "lsbco",
+      "importance": 1.8252515047179376,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.0984573618148301,
+      "importance_xgb": 0.0082661474601694,
+      "combined_importance_norm": 0.21765921457970466
+    },
+    {
+      "feature": "lsbrp",
+      "importance": 1.822038624032728,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.0943855012702117,
+      "importance_xgb": 0.0029058171264375,
+      "combined_importance_norm": 0.21685237582671432
+    },
+    {
+      "feature": "egfr_listing",
+      "importance": 1.802050622563368,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.0842718463447543,
+      "importance_xgb": 0.0076036820168338,
+      "combined_importance_norm": 0.21484835613134057
+    },
+    {
+      "feature": "lssvcsat",
+      "importance": 1.779426890798718,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.07136389289716,
+      "importance_xgb": 0.0092693960448233,
+      "combined_importance_norm": 0.21229064646786036
+    },
+    {
+      "feature": "lsbci",
+      "importance": 1.7450224942220558,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.0508976506042218,
+      "importance_xgb": 0.0097103851774713,
+      "combined_importance_norm": 0.20823526263801465
+    },
+    {
+      "feature": "durcarst",
+      "importance": 1.717446634823537,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.0425415368832898,
+      "importance_xgb": 0.0301838899729188,
+      "combined_importance_norm": 0.20657949955365437
+    },
+    {
+      "feature": "txcreat_r",
+      "importance": 1.7291412609308952,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.0411148387358122,
+      "importance_xgb": 0.0090752054431879,
+      "combined_importance_norm": 0.206296799460763
+    },
+    {
+      "feature": "height_listing",
+      "importance": 1.701564236255807,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.026142082486553,
+      "importance_xgb": 0.0130088518326719,
+      "combined_importance_norm": 0.20332994933203083
+    },
+    {
+      "feature": "txbili_d_r",
+      "importance": 1.698312027080631,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 1.020848286233674,
+      "importance_xgb": 0.0046526749632394,
+      "combined_importance_norm": 0.20228098414266477
+    },
+    {
+      "feature": "hemdilut",
+      "importance": 1.6382885494671977,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 0.9848163944328424,
+      "importance_xgb": 0.0046081618813097,
+      "combined_importance_norm": 0.1951412684451592
+    },
+    {
+      "feature": "txldl_r",
+      "importance": 1.63772815880869,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 0.9846328282522476,
+      "importance_xgb": 0.0049898324175839,
+      "combined_importance_norm": 0.1951048948251348
+    },
+    {
+      "feature": "lcmvpcr",
+      "importance": 1.6054232376768405,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 0.964126189460598,
+      "importance_xgb": 0.0021806171362347,
+      "combined_importance_norm": 0.1910415064331759
+    },
+    {
+      "feature": "txtg_r",
+      "importance": 1.5665385753936456,
+      "cohort": "Myocardio",
+      "model": "CatBoost",
+      "combined_importance": 0.9421576655258994,
+      "importance_xgb": 0.00558630072428,
+      "combined_importance_norm": 0.1866884456487301
+    }
+  ],
+  "notes": {
+    "model_json_used": "XGBoost (CatBoost JSON not used due to categorical hashing)",
+    "shap_filtering": "Combined SHAP from both XGBoost and CatBoost",
+    "rule_extraction": "XGBoost model JSON",
+    "rule_filtering": "Combined SHAP importance (XGBoost + CatBoost)",
+    "pipeline_type": "combined (XGBoost + CatBoost)"
+  }
+}

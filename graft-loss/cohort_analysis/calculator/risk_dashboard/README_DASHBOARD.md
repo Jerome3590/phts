@@ -26,24 +26,28 @@ Calculate patient-specific graft loss risk scores based on clinical features.
 
 ### Clinical Features
 
-#### Kidney Function
-- **eGFR at Transplant** (mL/min/1.73m²): Normal range 60-120
-- **BUN at Transplant** (mg/dL): Normal range 7-20
-- **Creatinine at Transplant** (mg/dL): Normal range 0.5-1.2
+The dashboard accepts the following clinical features:
 
-#### Cardiac Support
-- **LVAD**: Yes/No (binary)
-- **ECMO at Transplant**: Yes/No (binary)
-- **Mechanical Circulatory Support Device**: Yes/No (binary)
+### Kidney Function
+- **eGFR at Transplant** (`egfr_tx`): mL/min/1.73m², Normal range 60-120
+- **BUN at Transplant** (`txbun_r`): mg/dL, Normal range 7-20
+- **Creatinine at Transplant** (`txcreat_r`): mg/dL, Normal range 0.5-1.2
 
-#### Diagnosis & Demographics
-- **CHD: Partial Anomalous Pulmonary Venous Return**: Yes/No (binary)
-- **CHD: Anomaly**: Yes/No (binary)
-- **Donor Ischemic Time** (hours): Typical range 2-6
+### Cardiac Support
+- **LVAD** (`ltxtrach`): Yes/No (binary)
+- **ECMO at Transplant** (`txecmo`): Yes/No (binary)
+- **Mechanical Circulatory Support Device** (`txnomcsd`): Yes/No (binary)
 
-#### Lab Values
-- **Serum Albumin at Transplant** (g/dL): Normal range 3.5-5.0
-- **AST at Transplant** (U/L): Normal range 10-40
+### Diagnosis & Demographics
+- **CHD: Partial Anomalous Pulmonary Venous Return** (`chd_papvr`): Yes/No (binary)
+- **CHD: Anomaly** (`chd_anom`): Yes/No (binary)
+- **Donor Ischemic Time** (`donisch`): hours, Typical range 2-6
+
+### Lab Values
+- **Serum Albumin at Transplant** (`txsa_r`): g/dL, Normal range 3.5-5.0
+- **AST at Transplant** (`txast`): U/L, Normal range 10-40
+
+**Note**: See `README_FINAL_MODELS.md` in the calculator directory for the complete feature list.
 
 ### Baseline Values
 
