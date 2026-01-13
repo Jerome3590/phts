@@ -6,6 +6,7 @@
 .vs/
 .vscode/
 **/.vscode/
+.cursorrules
 
 *.txt
 *.zip
