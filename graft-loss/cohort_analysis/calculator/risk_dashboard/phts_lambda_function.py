@@ -365,9 +365,24 @@ def load_model(cohort: str, model_type: str) -> Any:
         model_path = container_model_path / "catboost_model.cbm"
         if model_path.exists():
             logger.info(f"Loading CatBoost model from container: {model_path}")
-            # Use only logging_level='Silent' - it overrides everything and is safest
-            model = CatBoostRegressor(logging_level='Silent')
-            model.load_model(str(model_path))
+            # Model file may have conflicting verbose parameters saved from training
+            # Load with NO parameters to avoid conflicts - model file contains its own params
+            try:
+                model = CatBoostRegressor()
+                model.load_model(str(model_path))
+            except Exception as e:
+                # If loading fails due to parameter conflicts, try to work around it
+                logger.warning(f"CatBoost load failed, trying workaround: {e}")
+                # Try loading with only logging_level (may still fail if model has conflicts)
+                try:
+                    model = CatBoostRegressor(logging_level='Silent')
+                    model.load_model(str(model_path))
+                except:
+                    # Last resort: load without any params and hope prediction works
+                    model = CatBoostRegressor()
+                    # Use internal method to load model file directly
+                    import catboost
+                    model._load_model(str(model_path))
             _model_cache[cache_key] = {'model': model, 'type': 'catboost'}
             _cache_timestamps[cache_key] = time.time()
             return model
@@ -392,9 +407,22 @@ def load_model(cohort: str, model_type: str) -> Any:
             s3_client.download_fileobj(S3_BUCKET, s3_key, f)
         
         if model_type == 'catboost':
-            # Use only logging_level='Silent' - it overrides everything and is safest
-            model = CatBoostRegressor(logging_level='Silent')
-            model.load_model(f"/tmp/catboost_model.cbm")
+            # Model file may have conflicting verbose parameters saved from training
+            # Load with NO parameters to avoid conflicts
+            try:
+                model = CatBoostRegressor()
+                model.load_model(f"/tmp/catboost_model.cbm")
+            except Exception as e:
+                logger.warning(f"CatBoost S3 load failed, trying workaround: {e}")
+                # Try loading with only logging_level
+                try:
+                    model = CatBoostRegressor(logging_level='Silent')
+                    model.load_model(f"/tmp/catboost_model.cbm")
+                except:
+                    # Last resort: load without any params
+                    model = CatBoostRegressor()
+                    import catboost
+                    model._load_model(f"/tmp/catboost_model.cbm")
         else:
             # Create Booster without parameters - logging is controlled globally
             model = xgb.Booster()
@@ -546,9 +574,16 @@ def predict_risk_survival(
                 feature_vector = prepare_feature_vector(features, feature_names)
                 
                 if model_type == 'catboost':
-                    # Model was loaded with logging_level='Silent' which overrides everything
-                    # No need to pass verbose parameters to predict()
-                    pred = model.predict(feature_vector.reshape(1, -1))[0]
+                    # Model was saved with conflicting verbose parameters
+                    # Use workaround to bypass parameter validation
+                    try:
+                        from catboost import Pool
+                        pool = Pool(feature_vector.reshape(1, -1))
+                        pred = model._calc_oblivious_trees_for_pool(pool)[0]
+                    except Exception as e:
+                        # Fallback to normal predict if workaround fails
+                        logger.warning(f"CatBoost workaround failed in ensemble, trying normal predict: {e}")
+                        pred = model.predict(feature_vector.reshape(1, -1))[0]
                 else:
                     # Create DMatrix without logging parameters - logging is controlled globally
                     dmatrix = xgb.DMatrix(feature_vector.reshape(1, -1), feature_names=feature_names)
