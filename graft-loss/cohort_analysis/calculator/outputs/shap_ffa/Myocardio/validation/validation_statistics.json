@@ -1,0 +1,10 @@
+{
+  "pearson_correlation": 0.9999999999999998,
+  "pearson_p_value": 0.0,
+  "spearman_correlation": 1.0,
+  "spearman_p_value": 0.0,
+  "mean_absolute_difference": 3.027418685702223e-17,
+  "median_absolute_difference": 3.469446951953614e-18,
+  "mean_relative_difference": 2.1914701073927766e-16,
+  "n_features": 113
+}

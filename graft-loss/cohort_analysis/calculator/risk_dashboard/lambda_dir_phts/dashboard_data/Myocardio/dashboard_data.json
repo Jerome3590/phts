@@ -1,136 +1,156 @@
 {
   "cohort": "Myocardio",
-  "timestamp": "2026-01-13T02:36:58.915145",
+  "timestamp": "2026-01-13T05:18:30.800943",
   "ffa_method": "xgboost_json_with_combined_shap_filtering",
   "top_causal_factors": [
     {
-      "feature": "prim_dx",
-      "importance": 8.403450655731467,
-      "cohort": "Myocardio",
-      "model": "CatBoost",
-      "combined_importance": 5.046684395769451,
-      "importance_xgb": 0.0115350058264284,
-      "causal_responsibility": 1.0,
-      "shap_importance": 1.0,
-      "rule_frequency": 0,
-      "total_rules": 0
-    },
-    {
-      "feature": "txicu",
-      "importance": 5.468736633272253,
-      "cohort": "Myocardio",
-      "model": "CatBoost",
-      "combined_importance": 3.282432942786256,
-      "importance_xgb": 0.0029774070572612,
-      "causal_responsibility": 0.6504137539367161,
-      "shap_importance": 0.6504137539367161,
-      "rule_frequency": 0,
-      "total_rules": 0
+      "feature": "donor_age",
+      "causal_responsibility": 0.021204150407330206,
+      "shap_importance": 0.4000278795332463,
+      "rule_frequency": 119,
+      "total_rules": 2245
     },
     {
       "feature": "lldl_r",
-      "importance": 4.565680197133925,
-      "cohort": "Myocardio",
-      "model": "CatBoost",
-      "combined_importance": 2.7436008308414404,
-      "importance_xgb": 0.0104817814027138,
-      "causal_responsibility": 0.5436442257299374,
-      "shap_importance": 0.5436442257299374,
-      "rule_frequency": 0,
-      "total_rules": 0
+      "causal_responsibility": 0.021099858557537637,
+      "shap_importance": 0.7765439747815082,
+      "rule_frequency": 61,
+      "total_rules": 2245
     },
     {
-      "feature": "egfr_tx_cat",
-      "importance": 3.6642038433464057,
-      "cohort": "Myocardio",
-      "model": "CatBoost",
-      "combined_importance": 2.1993967541150785,
-      "importance_xgb": 0.0021861202680888,
-      "causal_responsibility": 0.43581024324778367,
-      "shap_importance": 0.43581024324778367,
-      "rule_frequency": 0,
-      "total_rules": 0
-    },
-    {
-      "feature": "rdobdose",
-      "importance": 3.619994228308842,
-      "cohort": "Myocardio",
-      "model": "CatBoost",
-      "combined_importance": 2.1728161664701715,
-      "importance_xgb": 0.0020490737121654,
-      "causal_responsibility": 0.4305433025080003,
-      "shap_importance": 0.4305433025080003,
-      "rule_frequency": 0,
-      "total_rules": 0
-    },
-    {
-      "feature": "donor_age",
-      "importance": 3.469872087162648,
-      "cohort": "Myocardio",
-      "model": "CatBoost",
-      "combined_importance": 2.084033262958038,
-      "importance_xgb": 0.0052750266511221,
-      "causal_responsibility": 0.41295097920231494,
-      "shap_importance": 0.41295097920231494,
-      "rule_frequency": 0,
-      "total_rules": 0
-    },
-    {
-      "feature": "txvad",
-      "importance": 3.4464974943812354,
-      "cohort": "Myocardio",
-      "model": "CatBoost",
-      "combined_importance": 2.069837031083748,
-      "importance_xgb": 0.0048463361375174,
-      "causal_responsibility": 0.41013799729954525,
-      "shap_importance": 0.41013799729954525,
-      "rule_frequency": 0,
-      "total_rules": 0
+      "feature": "txicu",
+      "causal_responsibility": 0.009512167201290314,
+      "shap_importance": 0.7118271788965586,
+      "rule_frequency": 30,
+      "total_rules": 2245
     },
     {
       "feature": "egfr_tx",
-      "importance": 3.288398762890424,
-      "cohort": "Myocardio",
-      "model": "CatBoost",
-      "combined_importance": 1.9777596258247845,
-      "importance_xgb": 0.0118009202263251,
-      "causal_responsibility": 0.39189286880762875,
-      "shap_importance": 0.39189286880762875,
-      "rule_frequency": 0,
-      "total_rules": 0
+      "causal_responsibility": 0.007393532614567777,
+      "shap_importance": 0.158080768759092,
+      "rule_frequency": 105,
+      "total_rules": 2245
     },
     {
-      "feature": "txnomcsd",
-      "importance": 2.878997495277741,
-      "cohort": "Myocardio",
-      "model": "CatBoost",
-      "combined_importance": 1.7647692524309484,
-      "importance_xgb": 0.0934268881607598,
-      "causal_responsibility": 0.34968884797121935,
-      "shap_importance": 0.34968884797121935,
-      "rule_frequency": 0,
-      "total_rules": 0
+      "feature": "sec_dx",
+      "causal_responsibility": 0.006172110082216842,
+      "shap_importance": 0.374496949583157,
+      "rule_frequency": 37,
+      "total_rules": 2245
     },
     {
-      "feature": "don_epi",
-      "importance": 2.819048696412041,
-      "cohort": "Myocardio",
-      "model": "CatBoost",
-      "combined_importance": 1.6930138369114,
-      "importance_xgb": 0.0039615476604389,
-      "causal_responsibility": 0.33547051968033204,
-      "shap_importance": 0.33547051968033204,
-      "rule_frequency": 0,
-      "total_rules": 0
+      "feature": "weight_txpl",
+      "causal_responsibility": 0.005505770301329519,
+      "shap_importance": 0.2168500759032416,
+      "rule_frequency": 57,
+      "total_rules": 2245
+    },
+    {
+      "feature": "lbun_r",
+      "causal_responsibility": 0.005411612815791898,
+      "shap_importance": 0.1735581538778973,
+      "rule_frequency": 70,
+      "total_rules": 2245
+    },
+    {
+      "feature": "ltg_r",
+      "causal_responsibility": 0.004068300135767523,
+      "shap_importance": 0.14051282776612445,
+      "rule_frequency": 65,
+      "total_rules": 2245
+    },
+    {
+      "feature": "txtp_r",
+      "causal_responsibility": 0.003334050945564656,
+      "shap_importance": 0.08805816909167827,
+      "rule_frequency": 85,
+      "total_rules": 2245
+    },
+    {
+      "feature": "lsbram",
+      "causal_responsibility": 0.0033307428505773397,
+      "shap_importance": 0.10104753648035307,
+      "rule_frequency": 74,
+      "total_rules": 2245
+    },
+    {
+      "feature": "durcarst",
+      "causal_responsibility": 0.0030641896906783346,
+      "shap_importance": 0.12979445010514834,
+      "rule_frequency": 53,
+      "total_rules": 2245
+    },
+    {
+      "feature": "txbun_r",
+      "causal_responsibility": 0.0029095648268986493,
+      "shap_importance": 0.11459601818223628,
+      "rule_frequency": 57,
+      "total_rules": 2245
+    },
+    {
+      "feature": "lchol_r",
+      "causal_responsibility": 0.0022037881841967593,
+      "shap_importance": 0.08995462679130409,
+      "rule_frequency": 55,
+      "total_rules": 2245
+    },
+    {
+      "feature": "txtg_r",
+      "causal_responsibility": 0.002131283491957365,
+      "shap_importance": 0.090277951687628,
+      "rule_frequency": 53,
+      "total_rules": 2245
+    },
+    {
+      "feature": "weight_listing",
+      "causal_responsibility": 0.001965372757441046,
+      "shap_importance": 0.06685245212810831,
+      "rule_frequency": 66,
+      "total_rules": 2245
+    },
+    {
+      "feature": "egfr_change",
+      "causal_responsibility": 0.0016434012817978468,
+      "shap_importance": 0.10248432993433795,
+      "rule_frequency": 36,
+      "total_rules": 2245
+    },
+    {
+      "feature": "lbnp",
+      "causal_responsibility": 0.0013673386796072338,
+      "shap_importance": 0.06018971246506352,
+      "rule_frequency": 51,
+      "total_rules": 2245
+    },
+    {
+      "feature": "txcreat_r",
+      "causal_responsibility": 0.0013483149220617685,
+      "shap_importance": 0.06726593333397045,
+      "rule_frequency": 45,
+      "total_rules": 2245
+    },
+    {
+      "feature": "txbram",
+      "causal_responsibility": 0.0012766258342658751,
+      "shap_importance": 0.10235803564024606,
+      "rule_frequency": 28,
+      "total_rules": 2245
+    },
+    {
+      "feature": "txtdsxm",
+      "causal_responsibility": 0.0012564236154276472,
+      "shap_importance": 0.0705167754158767,
+      "rule_frequency": 40,
+      "total_rules": 2245
     }
   ],
   "summary": {
     "total_features": 309,
-    "top_k": 10,
+    "top_k": 20,
     "mean_importance": 0.10723681744876844,
     "max_importance": 1.0,
-    "top_feature": "prim_dx",
-    "top_feature_importance": 1.0
+    "top_feature": "donor_age",
+    "top_feature_importance": 0.021204150407330206
   },
   "feature_importance": [
     {

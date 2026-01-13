@@ -40,9 +40,13 @@ warnings.filterwarnings("ignore")
 # Add project paths
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 CALCULATOR_DIR = Path(__file__).parent
+FFA_ANALYSIS_DIR = CALCULATOR_DIR / "ffa_analysis"
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(CALCULATOR_DIR))
-sys.path.insert(0, str(CALCULATOR_DIR / "ffa_analysis"))
+sys.path.insert(0, str(FFA_ANALYSIS_DIR))
+# Also add ffa_analysis as a module path
+if str(FFA_ANALYSIS_DIR) not in sys.path:
+    sys.path.insert(0, str(FFA_ANALYSIS_DIR))
 
 # Setup logging
 logging.basicConfig(
@@ -52,13 +56,39 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Import FFA analysis components
+FFA_AVAILABLE = False
 try:
+    # Try absolute import first
     from ffa_analysis.ffa_utils import load_model_json, extract_feature_mappings
     from ffa_analysis.xgboost_axp_explainer import XGBoostSymbolicExplainer, PathConfig
     FFA_AVAILABLE = True
-except ImportError as e:
-    FFA_AVAILABLE = False
-    logger.warning(f"FFA analysis modules not available: {e}")
+except ImportError as e1:
+    try:
+        # Try importing from the ffa_analysis directory directly
+        import importlib.util
+        ffa_utils_path = FFA_ANALYSIS_DIR / "ffa_utils.py"
+        xgboost_explainer_path = FFA_ANALYSIS_DIR / "xgboost_axp_explainer.py"
+        
+        if ffa_utils_path.exists() and xgboost_explainer_path.exists():
+            spec_utils = importlib.util.spec_from_file_location("ffa_utils", ffa_utils_path)
+            ffa_utils = importlib.util.module_from_spec(spec_utils)
+            spec_utils.loader.exec_module(ffa_utils)
+            
+            spec_explainer = importlib.util.spec_from_file_location("xgboost_axp_explainer", xgboost_explainer_path)
+            xgboost_explainer = importlib.util.module_from_spec(spec_explainer)
+            spec_explainer.loader.exec_module(xgboost_explainer)
+            
+            load_model_json = ffa_utils.load_model_json
+            extract_feature_mappings = ffa_utils.extract_feature_mappings
+            XGBoostSymbolicExplainer = xgboost_explainer.XGBoostSymbolicExplainer
+            PathConfig = xgboost_explainer.PathConfig
+            FFA_AVAILABLE = True
+            logger.info("FFA modules loaded using direct file import")
+        else:
+            raise ImportError(f"FFA module files not found: {e1}")
+    except Exception as e2:
+        FFA_AVAILABLE = False
+        logger.warning(f"FFA analysis modules not available: {e1} (also tried direct import: {e2})")
 
 # Import leakage removal function
 try:
