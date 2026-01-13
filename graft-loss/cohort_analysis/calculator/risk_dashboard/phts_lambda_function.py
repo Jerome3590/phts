@@ -511,19 +511,10 @@ def predict_risk_survival(
         
         # Predict
         if best_model_type == 'catboost':
-            # CatBoost model may have conflicting verbose parameters saved
-            # Try prediction without any verbose parameters first
-            try:
-                risk_score = model.predict(feature_vector.reshape(1, -1))[0]
-            except Exception as e:
-                if 'verbose' in str(e).lower() or 'logging_level' in str(e).lower():
-                    # Model has conflicting verbose parameters - use internal prediction method
-                    logger.warning(f"CatBoost verbose conflict detected, using workaround: {e}")
-                    from catboost import Pool
-                    pool = Pool(feature_vector.reshape(1, -1))
-                    risk_score = model._calc_oblivious_trees_for_pool(pool)[0]
-                else:
-                    raise
+            # Model was loaded with verbose=False and logging_level='Silent'
+            # logging_level='Silent' overrides everything, so predict() should work
+            # No need to pass verbose parameters to predict()
+            risk_score = model.predict(feature_vector.reshape(1, -1))[0]
         else:  # XGBoost
             # Create DMatrix without logging parameters - logging is controlled globally
             dmatrix = xgb.DMatrix(feature_vector.reshape(1, -1), feature_names=feature_names)
