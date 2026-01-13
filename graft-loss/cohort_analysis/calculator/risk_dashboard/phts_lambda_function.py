@@ -360,8 +360,9 @@ def load_model(cohort: str, model_type: str) -> Any:
         model_path = container_model_path / "catboost_model.cbm"
         if model_path.exists():
             logger.info(f"Loading CatBoost model from container: {model_path}")
-            # Create CatBoost model with logging disabled to avoid parameter conflicts
-            model = CatBoostRegressor(verbose=False, logging_level='Silent')
+            # Create CatBoost model with only logging_level (not verbose) to avoid parameter conflicts
+            # The model file may have conflicting verbose parameters saved, so we use only logging_level
+            model = CatBoostRegressor(logging_level='Silent')
             model.load_model(str(model_path))
             _model_cache[cache_key] = {'model': model, 'type': 'catboost'}
             _cache_timestamps[cache_key] = time.time()
@@ -387,8 +388,8 @@ def load_model(cohort: str, model_type: str) -> Any:
             s3_client.download_fileobj(S3_BUCKET, s3_key, f)
         
         if model_type == 'catboost':
-            # Create CatBoost model with logging disabled to avoid parameter conflicts
-            model = CatBoostRegressor(verbose=False, logging_level='Silent')
+            # Create CatBoost model with only logging_level (not verbose) to avoid parameter conflicts
+            model = CatBoostRegressor(logging_level='Silent')
             model.load_model(f"/tmp/catboost_model.cbm")
         else:
             # Create Booster without parameters - logging is controlled globally
@@ -503,8 +504,9 @@ def predict_risk_survival(
         
         # Predict
         if best_model_type == 'catboost':
-            # Predict with logging disabled to avoid parameter conflicts
-            risk_score = model.predict(feature_vector.reshape(1, -1), verbose=False)[0]
+            # Don't pass verbose parameter - model was loaded with logging_level='Silent'
+            # Passing verbose=False conflicts with logging_level in the saved model
+            risk_score = model.predict(feature_vector.reshape(1, -1))[0]
         else:  # XGBoost
             # Create DMatrix without logging parameters - logging is controlled globally
             dmatrix = xgb.DMatrix(feature_vector.reshape(1, -1), feature_names=feature_names)
@@ -540,8 +542,9 @@ def predict_risk_survival(
                 feature_vector = prepare_feature_vector(features, feature_names)
                 
                 if model_type == 'catboost':
-                    # Predict with logging disabled to avoid parameter conflicts
-                    pred = model.predict(feature_vector.reshape(1, -1), verbose=False)[0]
+                    # Don't pass verbose parameter - model was loaded with logging_level='Silent'
+                    # Passing verbose=False conflicts with logging_level in the saved model
+                    pred = model.predict(feature_vector.reshape(1, -1))[0]
                 else:
                     # Create DMatrix without logging parameters - logging is controlled globally
                     dmatrix = xgb.DMatrix(feature_vector.reshape(1, -1), feature_names=feature_names)
