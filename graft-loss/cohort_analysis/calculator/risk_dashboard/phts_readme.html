@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PHTS Risk Calculator - Documentation</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #1e293b;
+            background: #f8fafc;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        header {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            color: white;
+            padding: 2rem 0;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        header p {
+            font-size: 1.125rem;
+            opacity: 0.9;
+        }
+        .back-link {
+            display: inline-block;
+            margin-bottom: 1rem;
+            color: #3b82f6;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        section {
+            background: white;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        h2 {
+            color: #1e40af;
+            font-size: 2rem;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid #e2e8f0;
+        }
+        h3 {
+            color: #1e40af;
+            font-size: 1.5rem;
+            margin-top: 2rem;
+            margin-bottom: 1rem;
+        }
+        h4 {
+            color: #334155;
+            font-size: 1.25rem;
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+        }
+        p {
+            margin-bottom: 1rem;
+        }
+        ul, ol {
+            margin-left: 2rem;
+            margin-bottom: 1rem;
+        }
+        li {
+            margin-bottom: 0.5rem;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1.5rem 0;
+            font-size: 0.95rem;
+        }
+        th {
+            background: #f1f5f9;
+            padding: 0.75rem;
+            text-align: left;
+            font-weight: 600;
+            color: #1e293b;
+            border-bottom: 2px solid #cbd5e1;
+        }
+        td {
+            padding: 0.75rem;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        tr:hover {
+            background: #f8fafc;
+        }
+        .highlight {
+            background: #fef3c7;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+        }
+        .info-box {
+            background: #dbeafe;
+            border-left: 4px solid #3b82f6;
+            padding: 1rem;
+            margin: 1.5rem 0;
+            border-radius: 0.25rem;
+        }
+        .warning-box {
+            background: #fef3c7;
+            border-left: 4px solid #f59e0b;
+            padding: 1rem;
+            margin: 1.5rem 0;
+            border-radius: 0.25rem;
+        }
+        code {
+            background: #f1f5f9;
+            padding: 0.125rem 0.375rem;
+            border-radius: 0.25rem;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        pre {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            overflow-x: auto;
+            margin: 1rem 0;
+        }
+        pre code {
+            background: transparent;
+            padding: 0;
+            color: inherit;
+        }
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }
+        .metric-card {
+            background: #f8fafc;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            border-left: 4px solid #3b82f6;
+        }
+        .metric-card h4 {
+            margin-top: 0;
+            color: #3b82f6;
+        }
+        .metric-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #1e40af;
+        }
+        footer {
+            text-align: center;
+            padding: 2rem 0;
+            color: #64748b;
+            font-size: 0.875rem;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>PHTS Risk Calculator</h1>
+            <p>Pediatric Heart Transplant Survival Risk Prediction - Documentation</p>
+        </div>
+    </header>
+
+    <div class="container">
+        <a href="index.html" class="back-link">← Back to Risk Calculator</a>
+
+        <!-- Overview Section -->
+        <section id="overview">
+            <h2>Overview</h2>
+            <p>
+                The PHTS (Pediatric Heart Transplant Survival) Risk Calculator uses machine learning models to predict graft loss risk for pediatric heart transplant patients. The calculator supports three diagnostic cohorts and provides both risk prediction and causal analysis capabilities.
+            </p>
+
+            <h3>Cohorts</h3>
+            <p>The calculator supports three diagnostic cohorts:</p>
+            <ul>
+                <li><strong>CHD (Congenital Heart Disease)</strong>: Patients with congenital heart disease</li>
+                <li><strong>Combined</strong>: All primary diagnoses (includes <code>primary_etiology</code> as a feature)</li>
+                <li><strong>Myocardio</strong>: Cardiomyopathy and Myocarditis cohort</li>
+            </ul>
+
+            <h3>Clinical Features</h3>
+            <p>The calculator uses <strong>modifiable clinical features</strong> that can be influenced by clinical intervention:</p>
+            <ul>
+                <li><strong>Kidney Function</strong>: eGFR, BUN, Creatinine</li>
+                <li><strong>Liver Function</strong>: AST, ALT, Bilirubin</li>
+                <li><strong>Nutrition</strong>: Albumin, Pre-albumin, Total Protein, BMI</li>
+                <li><strong>Cardiac Support</strong>: LVAD, ECMO, MCSD</li>
+                <li><strong>Respiratory</strong>: Ventilation, Tracheostomy</li>
+                <li><strong>Immunology</strong>: PRA, HLA pre-sensitization</li>
+                <li><strong>Demographics</strong>: Age, Height, Weight</li>
+            </ul>
+
+            <div class="info-box">
+                <strong>Note:</strong> The calculator focuses on modifiable features that clinicians can influence through intervention, rather than fixed demographic or diagnostic variables.
+            </div>
+        </section>
+
+        <!-- Models and Results Section -->
+        <section id="models">
+            <h2>Models and Results</h2>
+
+            <h3>Model Types</h3>
+            <p>The calculator uses three types of survival models:</p>
+            <ol>
+                <li><strong>CatBoost-Cox</strong>: Gradient boosting with native categorical support</li>
+                <li><strong>XGBoost-Cox</strong>: Extreme gradient boosting for survival analysis</li>
+                <li><strong>XGBoost-Cox RF</strong>: XGBoost with random forest base learners</li>
+            </ol>
+
+            <h3>Best Model Selection</h3>
+            <p>Each cohort uses the <strong>best-performing model</strong> based on evaluation metrics. The best model is automatically selected for each cohort.</p>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Cohort</th>
+                        <th>Best Model (Deployed)</th>
+                        <th>C-Index (Single Eval)</th>
+                        <th>C-Index (MC-CV Mean)</th>
+                        <th>95% CI (MC-CV)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>CHD</strong></td>
+                        <td>XGBoost</td>
+                        <td>0.645</td>
+                        <td>0.472</td>
+                        <td>0.429 - 0.538</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Combined</strong></td>
+                        <td>XGBoost</td>
+                        <td>0.677</td>
+                        <td>0.434</td>
+                        <td>0.404 - 0.469</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Myocardio</strong></td>
+                        <td>CatBoost</td>
+                        <td>0.599</td>
+                        <td>0.567</td>
+                        <td>0.483 - 0.639</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="info-box">
+                <strong>Note:</strong> The deployed models are selected based on single evaluation performance. MC-CV results show CatBoost performs best on average across all cohorts, but the deployed models may differ based on specific evaluation criteria.
+            </div>
+
+            <h3>Model Performance by Cohort</h3>
+
+            <h4>CHD Cohort</h4>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Model</th>
+                        <th>C-Index Mean</th>
+                        <th>C-Index SD</th>
+                        <th>95% CI Lower</th>
+                        <th>95% CI Upper</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>CatBoost</strong> ⭐</td>
+                        <td><strong>0.577</strong></td>
+                        <td>0.024</td>
+                        <td>0.534</td>
+                        <td>0.621</td>
+                    </tr>
+                    <tr>
+                        <td>XGBoost</td>
+                        <td>0.472</td>
+                        <td>0.032</td>
+                        <td>0.429</td>
+                        <td>0.538</td>
+                    </tr>
+                    <tr>
+                        <td>Simple Calculator</td>
+                        <td>0.417</td>
+                        <td>0.027</td>
+                        <td>0.375</td>
+                        <td>0.461</td>
+                    </tr>
+                </tbody>
+            </table>
+            <p><strong>Deployed Model:</strong> XGBoost (C-index: 0.645 from single evaluation)<br>
+            <strong>MC-CV Performance:</strong> CatBoost has highest average C-index (0.577) across 25 splits</p>
+
+            <h4>Combined Cohort</h4>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Model</th>
+                        <th>C-Index Mean</th>
+                        <th>C-Index SD</th>
+                        <th>95% CI Lower</th>
+                        <th>95% CI Upper</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>CatBoost</strong> ⭐</td>
+                        <td><strong>0.567</strong></td>
+                        <td>0.064</td>
+                        <td>0.430</td>
+                        <td>0.647</td>
+                    </tr>
+                    <tr>
+                        <td>XGBoost</td>
+                        <td>0.434</td>
+                        <td>0.020</td>
+                        <td>0.404</td>
+                        <td>0.469</td>
+                    </tr>
+                    <tr>
+                        <td>Simple Calculator</td>
+                        <td>0.349</td>
+                        <td>0.025</td>
+                        <td>0.311</td>
+                        <td>0.393</td>
+                    </tr>
+                </tbody>
+            </table>
+            <p><strong>Deployed Model:</strong> XGBoost (C-index: 0.677 from single evaluation)<br>
+            <strong>MC-CV Performance:</strong> CatBoost has highest average C-index (0.567) across 25 splits</p>
+
+            <h4>Myocardio Cohort</h4>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Model</th>
+                        <th>C-Index Mean</th>
+                        <th>C-Index SD</th>
+                        <th>95% CI Lower</th>
+                        <th>95% CI Upper</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>CatBoost</strong> ⭐</td>
+                        <td><strong>0.567</strong></td>
+                        <td>0.042</td>
+                        <td>0.483</td>
+                        <td>0.639</td>
+                    </tr>
+                    <tr>
+                        <td>XGBoost</td>
+                        <td>0.478</td>
+                        <td>0.040</td>
+                        <td>0.402</td>
+                        <td>0.535</td>
+                    </tr>
+                    <tr>
+                        <td>Simple Calculator</td>
+                        <td>0.438</td>
+                        <td>0.033</td>
+                        <td>0.374</td>
+                        <td>0.494</td>
+                    </tr>
+                </tbody>
+            </table>
+            <p><strong>Deployed Model:</strong> CatBoost (C-index: 0.599 from single evaluation)<br>
+            <strong>MC-CV Performance:</strong> CatBoost has highest average C-index (0.567) across 25 splits</p>
+
+            <h3>C-Index Interpretation</h3>
+            <p>The <strong>C-index (Concordance Index)</strong> measures the model's ability to correctly rank patients by risk:</p>
+            <ul>
+                <li><strong>C-index = 0.5</strong>: Random guessing (no predictive ability)</li>
+                <li><strong>C-index = 1.0</strong>: Perfect prediction</li>
+                <li><strong>C-index > 0.7</strong>: Good discrimination</li>
+                <li><strong>C-index > 0.6</strong>: Moderate discrimination</li>
+                <li><strong>C-index < 0.6</strong>: Poor discrimination</li>
+            </ul>
+            <p><strong>Our Models:</strong> All cohorts achieve C-index > 0.56, indicating <strong>moderate to good discrimination</strong> for graft loss risk prediction.</p>
+
+            <h3>Risk Score Calculation</h3>
+            <p>By default, the calculator uses <strong>only the best model</strong> for each cohort:</p>
+            <ol>
+                <li><strong>Load Best Model</strong>: The best-performing model is loaded</li>
+                <li><strong>Prepare Features</strong>: User-provided clinical features are converted to a feature vector</li>
+                <li><strong>Predict</strong>: The model generates a raw prediction score</li>
+                <li><strong>Normalize</strong>: Raw score is converted to percentile (0-100) based on training data distribution</li>
+            </ol>
+
+            <h3>Risk Score Normalization</h3>
+            <p>Raw risk scores from models have different scales across cohorts and models. The calculator <strong>normalizes risk scores to percentiles (0-100)</strong> for consistent interpretation:</p>
+            <ul>
+                <li><strong>Percentile 0-100</strong>: Represents where the patient's risk falls relative to the training population</li>
+                <li><strong>Percentile 50</strong> = Median risk (50% of patients have lower risk)</li>
+                <li><strong>Percentile 75</strong> = 75th percentile (75% of patients have lower risk)</li>
+                <li><strong>Percentile 90</strong> = 90th percentile (90% of patients have lower risk)</li>
+            </ul>
+
+            <h4>Risk Bands</h4>
+            <ul>
+                <li><strong>Low Risk</strong>: < 25th percentile</li>
+                <li><strong>Medium Risk</strong>: 25th-75th percentile</li>
+                <li><strong>High Risk</strong>: 75th-90th percentile</li>
+                <li><strong>Very High Risk</strong>: ≥ 90th percentile</li>
+            </ul>
+
+            <h3>Model Training</h3>
+            <p>Models are trained using:</p>
+            <ul>
+                <li><strong>Data Split</strong>: 25 Monte Carlo Cross-Validation splits</li>
+                <li><strong>Feature Engineering</strong>: Clinical features are prepared and standardized</li>
+                <li><strong>Evaluation Metric</strong>: C-index (Concordance Index) for survival analysis</li>
+                <li><strong>Selection</strong>: Best model (highest C-index) is selected for each cohort</li>
+            </ul>
+        </section>
+
+        <!-- Causal Analysis Section -->
+        <section id="causal-analysis">
+            <h2>Causal Analysis</h2>
+
+            <h3>Overview</h3>
+            <p>
+                The Causal Analysis feature provides an interactive interface for exploring how causal factors affect patient risk in real-time. This allows clinicians and researchers to:
+            </p>
+            <ul>
+                <li>Visualize the importance and causal responsibility of top factors</li>
+                <li>Experiment with different factor values to see their impact on risk</li>
+                <li>Understand which factors have the greatest influence on graft loss risk</li>
+            </ul>
+
+            <h3>What is Causal Analysis?</h3>
+            <p>
+                Causal analysis identifies which clinical features have <strong>causal responsibility</strong> for graft loss risk, not just correlation. It combines:
+            </p>
+            <ol>
+                <li><strong>Rule-Based Analysis</strong>: Extracts symbolic rules from trained models (XGBoost JSON)</li>
+                <li><strong>SHAP Importance</strong>: Uses SHAP values to filter and prioritize rules</li>
+                <li><strong>Causal Responsibility</strong>: Calculates how much each feature contributes causally to the outcome</li>
+            </ol>
+
+            <h3>Causal Responsibility Calculation</h3>
+            <p>For each feature, causal responsibility is computed as:</p>
+            <pre><code>causal_responsibility = (rule_frequency / total_rules) × SHAP_importance</code></pre>
+            <p>Where:</p>
+            <ul>
+                <li><strong>rule_frequency</strong>: Number of rules containing the feature</li>
+                <li><strong>total_rules</strong>: Total number of extracted rules</li>
+                <li><strong>SHAP_importance</strong>: Combined SHAP importance from CatBoost and XGBoost</li>
+            </ul>
+
+            <h3>Why Causal Analysis Matters</h3>
+            <ul>
+                <li><strong>Clinical Interpretability</strong>: Identifies which features clinicians can actually modify to affect outcomes</li>
+                <li><strong>Intervention Guidance</strong>: Shows which interventions might reduce graft loss risk</li>
+                <li><strong>Feature Prioritization</strong>: Ranks features by causal impact, not just correlation</li>
+                <li><strong>Model Transparency</strong>: Provides explainable AI for clinical decision-making</li>
+            </ul>
+
+            <h3>Features</h3>
+
+            <h4>1. Visualizations</h4>
+            <ul>
+                <li><strong>Importance Chart</strong>: Bar chart showing the top 10 causal factors by importance score</li>
+                <li><strong>Causal Responsibility Chart</strong>: Bar chart showing causal responsibility scores (0-1 scale)</li>
+            </ul>
+
+            <h4>2. Interactive Controls</h4>
+            <p>The dashboard provides interactive controls for the <strong>top 15 causal factors</strong>:</p>
+            <ul>
+                <li><strong>Numeric Features</strong>: Range slider and number input for easy adjustment</li>
+                <li><strong>Binary Features</strong>: Dropdown menu (Yes/No or 0/1)</li>
+            </ul>
+
+            <h4>3. Real-Time Risk Recalculation</h4>
+            <p>When you adjust any causal factor:</p>
+            <ol>
+                <li>The dashboard automatically calls the <code>/risk</code> API endpoint</li>
+                <li>Risk is recalculated with the updated feature values</li>
+                <li>Results update immediately without page refresh</li>
+                <li>Risk comparison panel shows the impact of changes</li>
+            </ol>
+
+            <h4>4. Risk Comparison Panel</h4>
+            <p>Shows three key metrics:</p>
+            <ul>
+                <li><strong>Baseline Risk</strong>: Risk score calculated from current form values (or baseline defaults)</li>
+                <li><strong>Current Risk</strong>: Risk score after modifying causal factors</li>
+                <li><strong>Risk Change</strong>: Absolute difference and percentage change, color-coded (Green = decrease, Red = increase)</li>
+            </ul>
+
+            <h3>Causal Factor Metrics</h3>
+
+            <h4>Importance Score</h4>
+            <ul>
+                <li>Combined importance from multiple sources (SHAP, FFA, model-based)</li>
+                <li>Higher values indicate greater influence on risk prediction</li>
+                <li>Normalized across all factors</li>
+            </ul>
+
+            <h4>Causal Responsibility</h4>
+            <ul>
+                <li>Measures <strong>causal contribution</strong> to the outcome</li>
+                <li>Range: 0.0 to 1.0</li>
+                <li>Values closer to 1.0 indicate stronger causal relationships</li>
+                <li>Based on counterfactual analysis</li>
+            </ul>
+
+            <h4>SHAP Importance</h4>
+            <ul>
+                <li><strong>SHapley Additive exPlanations</strong> importance</li>
+                <li>Measures average marginal contribution across all feature combinations</li>
+                <li>Provides model-agnostic feature importance</li>
+            </ul>
+
+            <h3>Best Practices</h3>
+            <ol>
+                <li><strong>Start with Baseline</strong>: Use baseline/default values to establish a reference point</li>
+                <li><strong>Adjust One Factor at a Time</strong>: Isolate the impact of individual factors</li>
+                <li><strong>Compare Scenarios</strong>: Use the comparison panel to see how interventions might affect risk</li>
+                <li><strong>Consider Clinical Context</strong>: Factor values should be clinically realistic</li>
+                <li><strong>Review Multiple Factors</strong>: Some factors may interact, so consider combinations</li>
+            </ol>
+
+            <h3>Limitations</h3>
+            <ul>
+                <li><strong>Top 15 Factors Only</strong>: Controls are provided for top 15 factors; all factors are shown in charts</li>
+                <li><strong>Real-Time Calculation</strong>: Each adjustment triggers an API call; rapid changes may cause delays</li>
+                <li><strong>Feature Availability</strong>: Not all causal factors may have corresponding form inputs</li>
+                <li><strong>Model Limitations</strong>: Risk predictions are based on trained models and may not capture all clinical scenarios</li>
+            </ul>
+        </section>
+
+        <footer>
+            <p><strong>PHTS Risk Calculator</strong> - Last Updated: 2026-01-13</p>
+            <p>Pediatric Heart Transplant Survival Risk Prediction System</p>
+        </footer>
+    </div>
+</body>
+</html>
