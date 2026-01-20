@@ -1,94 +1,88 @@
 # Variable Comparison: Simple Calculator vs Risk Calculator vs Feature Importance Final Variables
 
-This document compares the variables used in three different approaches to graft loss prediction:
+This document compares the variables used in different approaches to graft loss prediction.
 
-1. **Simple Calculator** - Multivariate logistic regression models
-2. **Risk Calculator** - Production ML models (CatBoost/XGBoost) deployed in dashboard
+**Important Note**: There are **TWO different "Simple Calculator" models** in this project:
+
+1. **Simple Calculator (PDF)** - Basic rough estimate calculator (5 variables) producing 62-100% survival predictions
+   - Source: `graft-loss/cohort_analysis/calculator/simple_calculator/phts_simple_calculator_variables.pdf`
+   - This is the calculator described in this document
+
+2. **Simple Calculator (Multivariate Logistic Regression)** - Comprehensive multivariate logistic regression model (25-65 variables)
+   - Source: `graft-loss/cohort_analysis/calculator/README_FINAL_MODELS.md`
+   - Used in model comparison studies against CatBoost, XGBoost, LASSO
+   - **Not covered in this document** - see README_FINAL_MODELS.md for details
+
+This document focuses on comparing:
+
+1. **Simple Calculator (PDF)** - Basic rough estimate calculator (5 variables) producing 62-100% survival predictions
+2. **Risk Calculator** - Production ML models (CatBoost/XGBoost) deployed in dashboard with comprehensive feature sets
 3. **Feature Importance Final Variables** - Top features from importance analysis (RSF/CatBoost/AORSF)
 
 ## Overview
 
 | Approach | Model Type | Variable Count | Purpose |
 |----------|-----------|----------------|---------|
-| **Simple Calculator** | Logistic Regression | ~25-30 base + cohort-specific | Interpretable, bedside calculator |
+| **Simple Calculator (PDF)** | Rough Estimate | 5 variables | Basic rough estimate (62-100% survival prediction) |
 | **Risk Calculator** | CatBoost/XGBoost | ~280-308 (varies by cohort) | Production ML models for dashboard |
 | **Feature Importance** | Top 20 from RSF/CatBoost/AORSF | 20 per method | Feature selection for model development |
 
-## Simple Calculator Variables
+**Note**: There is also a separate "Simple Calculator" using multivariate logistic regression (25-65 variables) documented in `README_FINAL_MODELS.md` - not shown in this table.
 
-### Base Variables (All Cohorts)
+## Simple Calculator Variables (PDF Version)
+
+**Sources**: 
+- `graft-loss/cohort_analysis/calculator/simple_calculator/phts_simple_calculator_variables.pdf`
+- [PHTS Analysis - Simple Calculator](https://mdporter.github.io/research/notebooks/Wisotzkey-compare.html#simple-calculator)
+
+**Note**: This is the **PDF version** of the Simple Calculator - a basic rough estimate calculator. There is also a separate "Simple Calculator" that uses multivariate logistic regression with 25-65 variables (see `README_FINAL_MODELS.md`). This document focuses on the PDF version.
+
+The Simple Calculator (PDF) is a **"rough estimate" calculator** that uses a minimal set of high-level predictors to produce predicted survival estimates:
+- **CHD patients**: 62% (under 2 years, on ECMO) to 91% (not on ECMO or VAD)
+- **Cardiomyopathy patients**: 75% (under 2 years, on ECMO) to 100% (not on ECMO or VAD)
+
+This is distinct from:
+- The comprehensive models used in the Risk Calculator (280-308 features)
+- The multivariate logistic regression "Simple Calculator" used in model comparisons (25-65 features)
+
+### Variables Used in Simple Calculator
+
+#### Primary Diagnosis
+- `PRIM_DX` - Primary diagnosis (categorizes patients into **Congenital HD** or **Cardiomyopathy**)
 
 #### Demographics
-- `age_listing` - Age at listing (years)
-- `age_txpl` - Age at transplant (years)
-
-#### Prior Surgeries
-- `hxsurg` - History of surgery
-
-#### CHD Subtype
-- `chd_hlh` - Congenital heart disease with hypoplastic left heart syndrome
-
-#### PRA Related
-- `lsfcpra` - Flow cytometry PRA at listing (%)
-- `lsfprab` - Flow cytometry PRA (B-cell) at listing (%)
-- `lsfprat` - Flow cytometry PRA (T-cell) at listing (%)
-
-#### Kidney Function
-- `egfr_tx` - Estimated GFR at transplant (mL/min/1.73m²) **[CALCULATED]**
-- `egfr_listing` - Estimated GFR at listing (mL/min/1.73m²) **[CALCULATED]**
-- `egfr_tx_cat` - eGFR category at transplant (severe/moderate/mild/normal) **[DERIVED]**
-- `egfr_listing_cat` - eGFR category at listing (severe/moderate/mild/normal) **[DERIVED]**
-- `hxdysdia_bin` - History of dialysis (dichotomous: 0/1) **[DERIVED]**
-- `egfr_change` - Change in eGFR from listing to transplant **[CALCULATED]**
-
-#### Liver Function
-- `txbili_t_r` - Total bilirubin at transplant (mg/dL)
-- `txbili_t_r_high` - Total bilirubin >1.5 (dichotomous: 0/1) **[DERIVED]**
-- `txalt` - ALT at transplant (U/L)
-- `txalt_high` - ALT >90 (dichotomous: 0/1) **[DERIVED]**
-
-#### Respiratory
-- `txvent` - Ventilation at transplant
-- `hxtrach` - History of tracheostomy
-- `ltxtrach` - Tracheostomy at listing
+- `AGE_UNDER_2` - Binary variable indicating if patient is under 2 years old
+  - **Note**: This is distinct from the continuous age variables (`age_listing`, `age_txpl`) used in the Risk Calculator
 
 #### Cardiac Support
-- `txvad` - VAD at transplant
-- `txecmo` - ECMO at transplant
-- `slecmo` - ECMO at listing
-- `ecmo_combined` - ECMO at transplant OR listing (dichotomous: 0/1) **[DERIVED]**
+- `TXECMO` - Binary indicator for ECMO (Extracorporeal Membrane Oxygenation) at transplant
+- `TXVAD` - Binary indicator for VAD (Ventricular Assist Device) at transplant
 
-#### Nutrition
-- `txpalb_r` - Pre-albumin at transplant (mg/dL)
-- `txsa_r` - Serum albumin at transplant (g/dL)
-- `txsa_r_low` - Serum albumin <3 (dichotomous: 0/1) **[DERIVED]**
-- `txtp_r` - Total protein at transplant (g/dL)
-
-#### Immunology
-- `txfcpra` - Flow cytometry PRA at transplant (%)
-- `lsfcpra` - Flow cytometry PRA at listing (%)
-
-### Cohort-Specific Variables
-
-#### Combined Model Additional
-- `primary_etiology` - Primary diagnosis (Congenital HD, Cardiomyopathy, Myocarditis, etc.)
-
-#### CHD Model Additional
-- All `CHD_*` variables - All CHD subtype variables (automatically detected, 40+ variables)
-- `hxfonlvr_bin` - History of Fontan Associated Liver Disease (dichotomous: 0/1) **[DERIVED]**
-
-#### Myocardio Model
-- Uses base variables only (no myocardio-specific additions)
+#### CHD Laterality Disorder (Composite Variable)
+- `CHD_LAT` - Laterality disorder (composite variable created specifically for this calculator)
+  - **Definition**: Created from the following specific CHD conditions:
+    - `CHD_DEX` - Dextrocardia
+    - `CHD_SI` - Situs Inversus
+    - `CHD_HETER` - Heterotaxy
+    - `CHD_IIVC` - Interrupted IVC
+    - `CHD_BIVC` - Bilateral SVC
+    - `CHD_LSVC` - Left SVC with no right SVC
+    - `CHD_RAA` - Right Aortic Arch
+    - `CHD_AVD` - AV Discordance (when part of atrial or ventricular situs abnormality)
+  
+  **Note**: The first three (Dextrocardia, Heterotaxy, and Situs Inversus) were significant in univariate analysis. This composite variable is used only for CHD patients.
 
 **Total Simple Calculator Variables:**
-- Base: ~25 variables
-- Combined: ~26 variables (base + primary_etiology)
-- CHD: ~65+ variables (base + all CHD subtypes)
-- Myocardio: ~25 variables (base only)
+- **5 variables** (plus 8 component variables that make up `CHD_LAT`)
+- **Purpose**: Provides a basic rough estimate (62-100% survival prediction)
+- **Survival Ranges**:
+  - CHD patients: 62% (under 2 years, on ECMO) to 91% (not on ECMO or VAD)
+  - Cardiomyopathy patients: 75% (under 2 years, on ECMO) to 100% (not on ECMO or VAD)
+- **Distinct from**: The comprehensive Risk Calculator models which use 280-308 features
 
 ## Risk Calculator Variables
 
-The Risk Calculator uses the **same feature set as the Simple Calculator** but with additional features that are automatically included during model training. The deployed models (CatBoost/XGBoost) use:
+The Risk Calculator uses a **comprehensive feature set** (280-308 features) that includes all available features from training data. The deployed models (CatBoost/XGBoost) use:
 
 ### Feature Count by Cohort
 - **CHD**: 280 features
@@ -252,16 +246,17 @@ The Risk Calculator accepts **modifiable clinical features** that can be influen
 
 | Approach | Variable Count | Rationale |
 |----------|----------------|-----------|
-| **Simple Calculator** | 25-65 | Curated set for interpretability and clinical use |
+| **Simple Calculator** | 5 variables | Minimal set for rough estimate (62-100% survival prediction) |
 | **Risk Calculator** | 280-308 | All features available during training (ML models) |
 | **Feature Importance** | 20 per method | Top-ranked features from importance analysis |
 
 ### 2. Variable Types
 
 **Simple Calculator:**
-- Focuses on **modifiable clinical features**
-- Includes **derived/categorical variables** (e.g., `egfr_tx_cat`, `txbili_t_r_high`)
-- **Cohort-specific additions** (primary_etiology, CHD subtypes)
+- **Minimal set** of high-level predictors (5 variables)
+- Uses **binary indicators** (`AGE_UNDER_2`, `TXECMO`, `TXVAD`)
+- Includes **composite variable** (`CHD_LAT` - laterality disorder)
+- **Primary diagnosis** (`PRIM_DX`) for broad categorization
 
 **Risk Calculator:**
 - Uses **all available features** from training data
@@ -286,9 +281,9 @@ The Risk Calculator accepts **modifiable clinical features** that can be influen
 - Immunology (PRA)
 
 #### Unique to Simple Calculator
-- **Derived categorical variables** (eGFR categories, high/low thresholds)
-- **Calculated change variables** (egfr_change)
-- **Cohort-specific features** (primary_etiology, CHD subtypes)
+- **`AGE_UNDER_2`** - Binary age indicator (under 2 years) - distinct from continuous age variables
+- **`CHD_LAT`** - Composite laterality disorder variable (created from 7 specific CHD conditions)
+- **Minimal variable set** - Only 5 variables for rough estimate (vs 280-308 in Risk Calculator)
 
 #### Unique to Risk Calculator
 - **Donor features** (donor age, height, weight)
@@ -324,40 +319,43 @@ The Risk Calculator accepts **modifiable clinical features** that can be influen
 
 ### Features in All Three Approaches
 
-1. **Kidney Function**
-   - `txcreat_r`, `lcreat_r`, `egfr_tx` (or eGFR-related)
-   - `hxdysdia` (dialysis history)
+1. **Cardiac Support**
+   - `TXECMO` / `txecmo` - ECMO at transplant (binary) ⭐
+     - Simple Calculator: Core variable
+     - Risk Calculator: Included in 280-308 features
+     - Feature Importance: #2 in CHD cohort (importance: 12.69), appears in RSF/AORSF top 20
 
-2. **Liver Function**
-   - `txast`, `txalt`, `txbili_t_r`
-   - `lsast`, `lsalt`, `lsbili_t_r`
+2. **Primary Diagnosis**
+   - `PRIM_DX` / `primary_etiology` / `prim_dx` - Primary diagnosis (categorization) ⭐
+     - Simple Calculator: Core variable (distinguishes CHD vs Cardiomyopathy)
+     - Risk Calculator: `primary_etiology` improved Combined model AUC 0.734 → 0.738
+     - Feature Importance: Appears in top 20 lists
 
-3. **Nutrition**
-   - `txsa_r`, `txtp_r`
-   - `lstp_r`, `lssab_r`
+3. **VAD Support**
+   - `TXVAD` / `txvad` - VAD at transplant (binary) ⭐
+     - Simple Calculator: Core variable
+     - Risk Calculator: Included in 280-308 features
+     - Feature Importance: Included in comprehensive feature sets
 
-4. **Cardiac Support**
-   - `txecmo`, `txvad`
+**Note**: The Simple Calculator uses a minimal set (5 variables), but all 5 core variables are also present in the Risk Calculator and Feature Importance approaches. The Simple Calculator demonstrates that these 5 variables alone can provide meaningful risk stratification (62-100% survival range), while the Risk Calculator and Feature Importance approaches add 275-303 additional features for more comprehensive and granular predictions.
 
-5. **Respiratory**
-   - `txvent`, `hxtrach`, `ltxtrach`
+### Features Unique to Simple Calculator (PDF Version)
 
-6. **Demographics**
-   - `age_listing`, `age_txpl`
-   - `height_txpl`, `weight_txpl`
+- **`AGE_UNDER_2`** - Binary age indicator (under 2 years old)
+  - **Distinct from**: Continuous `age_listing`/`age_txpl` used in Risk Calculator and Feature Importance
+  - **Simple Calculator use**: Core variable showing age <2 significantly reduces survival
+  - **Other models**: Use continuous age variables (which capture more granular age effects)
+  
+- **`CHD_LAT`** - Composite laterality disorder variable (created from 8 CHD conditions)
+  - **Components**: `CHD_DEX`, `CHD_SI`, `CHD_HETER`, `CHD_IIVC`, `CHD_BIVC`, `CHD_LSVC`, `CHD_RAA`, `CHD_AVD`
+  - **Simple Calculator use**: Core variable for CHD patients only
+  - **Other models**: May include individual CHD subtype variables separately (40+ CHD subtypes in Risk Calculator)
+  
+- **Minimal set approach** - Only 5 variables total (vs comprehensive models with 280-308 features)
+  - Demonstrates that these 5 variables provide baseline predictive value
+  - All 5 variables are also included in comprehensive models, but with additional context from 275-303 other features
 
-7. **CHD Subtype**
-   - `chd_hlh`
-
-8. **Prior Surgeries**
-   - `hxsurg`
-
-### Features Unique to Simple Calculator
-
-- **Derived categorical variables**: `egfr_tx_cat`, `egfr_listing_cat`, `txbili_t_r_high`, `txalt_high`, `txsa_r_low`
-- **Calculated change variables**: `egfr_change`
-- **Combined variables**: `ecmo_combined`
-- **Cohort-specific**: `primary_etiology` (Combined model), all `CHD_*` subtypes (CHD model)
+**Note**: `PRIM_DX` in Simple Calculator is conceptually the same as `primary_etiology` in Risk Calculator, but Simple Calculator uses it for broad binary categorization (Congenital HD vs Cardiomyopathy), while Risk Calculator uses it as a multi-category feature (Congenital HD, Cardiomyopathy, Myocarditis, Other, etc.).
 
 ### Features Unique to Risk Calculator
 
@@ -378,9 +376,9 @@ The Risk Calculator accepts **modifiable clinical features** that can be influen
 ## Clinical Implications
 
 ### Simple Calculator
-- **Best for**: Bedside clinical decision-making
-- **Strengths**: Interpretable, focused on modifiable features, easy to use
-- **Limitations**: Smaller feature set may miss some predictive signals
+- **Best for**: Quick rough estimate (62-100% survival prediction range)
+- **Strengths**: Extremely simple (only 5 variables), very interpretable, minimal data requirements
+- **Limitations**: Very basic estimate, limited predictive granularity, may miss important clinical signals
 
 ### Risk Calculator
 - **Best for**: Production risk assessment with maximum predictive power
@@ -399,9 +397,9 @@ This section synthesizes insights from all three approaches to identify the opti
 ### Performance Context
 
 **Current Best Performance:**
-- **Combined Model**: AUC = 0.738 (95% CI: 0.701 - 0.782) - Simple Calculator with `primary_etiology`
-- **Risk Calculator**: Uses all 280-308 features (CatBoost/XGBoost models)
+- **Risk Calculator**: Uses all 280-308 features (CatBoost/XGBoost models) - Best comprehensive performance
 - **Feature Importance**: Top features identified across RSF, CatBoost, and AORSF methods
+- **Simple Calculator**: Basic rough estimate (62-100% survival range) - Not designed for maximum performance, uses minimal 5-variable set
 
 ### Core Features for Best Performance
 
@@ -413,14 +411,16 @@ Based on analysis of all three approaches, the following features are essential 
 - `primary_etiology` improved Combined model from AUC 0.734 → 0.738
 - Top predictor in Combined model (importance: 2.2-2.9)
 - Appears in Feature Importance top 20 (as `prim_dx`)
+- `PRIM_DX` is the foundation variable in Simple Calculator (PDF)
+- Simple Calculator shows distinct survival patterns: CHD (62-91%) vs Cardiomyopathy (75-100%)
 
 **Required Features:**
-- `primary_etiology` - Primary diagnosis (Congenital HD, Cardiomyopathy, Myocarditis, etc.)
+- `primary_etiology` / `PRIM_DX` - Primary diagnosis ⭐ (core Simple Calculator variable, top predictor in Combined model)
 - `prim_dx` - Primary diagnosis (alternative name)
 - `sec_dx` - Secondary diagnosis (appears in RSF/AORSF top 20)
 - `ter_dx` - Tertiary diagnosis (appears in AORSF top 20)
 
-**Rationale:** Etiology is the strongest single predictor, distinguishing risk across patient populations.
+**Rationale:** Etiology is the strongest single predictor, distinguishing risk across patient populations. Simple Calculator demonstrates that primary diagnosis alone provides substantial predictive value, with CHD patients having lower baseline survival than Cardiomyopathy patients.
 
 #### 2. Donor Characteristics (HIGH IMPORTANCE)
 
@@ -510,18 +510,20 @@ Based on analysis of all three approaches, the following features are essential 
 **Evidence:**
 - `txecmo` appears in RSF/AORSF top 20 and is #2 in CHD cohort (importance: 12.69)
 - `ecmo_combined` is #7 in Combined model (importance: 1.25)
+- `TXECMO` and `TXVAD` are core variables in Simple Calculator (PDF)
 - Cardiac support is a key predictor across all cohorts
+- Simple Calculator shows ECMO significantly reduces survival (62-75% for CHD, 75% for CM when combined with age <2)
 
 **Required Features:**
-- `txecmo` - ECMO at transplant ⭐ (top feature in CHD)
+- `txecmo` / `TXECMO` - ECMO at transplant ⭐ (top feature in CHD, core Simple Calculator variable)
+- `txvad` / `TXVAD` - VAD at transplant ⭐ (core Simple Calculator variable)
 - `ecmo_combined` - ECMO at transplant OR listing (derived)
 - `slecmo` - ECMO at listing
-- `txvad` - VAD at transplant
 - `slvad` - VAD at listing
 - `txnomcsd` - Transplant no MCSD (appears in CatBoost top 20)
 - `slnomcsd` - Consider MCSD
 
-**Rationale:** Mechanical circulatory support status is a critical predictor of graft loss risk.
+**Rationale:** Mechanical circulatory support status is a critical predictor of graft loss risk. Simple Calculator demonstrates that ECMO/VAD status is one of the most important predictors, sufficient for basic risk estimation.
 
 #### 7. Respiratory Status (HIGH IMPORTANCE)
 
@@ -560,18 +562,21 @@ Based on analysis of all three approaches, the following features are essential 
 **Evidence:**
 - `age_listing`, `age_txpl` are #1-2 in CatBoost top 20
 - `height_txpl` appears in all three Feature Importance methods
+- `AGE_UNDER_2` is a core variable in Simple Calculator (PDF)
+- Simple Calculator shows age <2 years significantly reduces survival (62% vs 91% for CHD, 75% vs 100% for CM)
 - Demographics provide important context
 
 **Required Features:**
 - `age_listing` - Age at listing ⭐ (CatBoost #1)
 - `age_txpl` - Age at transplant ⭐ (CatBoost #2)
+- `AGE_UNDER_2` - Age under 2 years (binary) ⭐ (core Simple Calculator variable)
 - `height_txpl` - Height at transplant ⭐ (all 3 methods)
 - `height_listing` - Height at listing
 - `weight_txpl` - Weight at transplant
 - `weight_listing` - Weight at listing
 - `bmi_txpl` - BMI at transplant (calculated)
 
-**Rationale:** Demographics provide important context for risk stratification, especially age and size matching.
+**Rationale:** Demographics provide important context for risk stratification, especially age and size matching. Simple Calculator demonstrates that age <2 years is a critical risk factor, sufficient for basic risk estimation alongside diagnosis and MCSD status.
 
 #### 10. CHD Subtypes (COHORT-SPECIFIC)
 
@@ -579,9 +584,13 @@ Based on analysis of all three approaches, the following features are essential 
 - `chd_hlh` is #1 in RSF top 20 and #2 in AORSF top 20
 - CHD model identified 40+ CHD subtypes with high importance
 - Top CHD subtypes: `chd_lsvc` (19.01), `chd_hb` (14.88), `chd_alcapa` (14.50)
+- `CHD_LAT` (Laterality Disorder) is a core variable in Simple Calculator (PDF) for CHD patients
+- Simple Calculator uses composite `CHD_LAT` combining 8 laterality-related CHD conditions
 
 **Required Features (CHD Cohort Only):**
 - `chd_hlh` - CHD HLH ⭐ (RSF/AORSF top 20)
+- `CHD_LAT` - Laterality Disorder (composite) ⭐ (core Simple Calculator variable)
+  - Composite of: `CHD_DEX`, `CHD_SI`, `CHD_HETER`, `CHD_IIVC`, `CHD_BIVC`, `CHD_LSVC`, `CHD_RAA`, `CHD_AVD`
 - Top 5-10 CHD subtypes (selected via feature selection/LASSO):
   - `chd_lsvc` - Left Superior Vena Cava (19.01 importance)
   - `chd_hb` - Hypoplastic Branch (14.88 importance)
@@ -590,7 +599,7 @@ Based on analysis of all three approaches, the following features are essential 
   - `chd_raa` - (13.25 importance)
   - Additional top subtypes (select via regularization)
 
-**Rationale:** CHD subtypes are highly predictive for CHD cohort, but need feature selection to avoid overfitting.
+**Rationale:** CHD subtypes are highly predictive for CHD cohort, but need feature selection to avoid overfitting. Simple Calculator demonstrates that laterality disorders are important enough to include as a composite variable for basic risk estimation.
 
 #### 11. Additional High-Value Features
 
@@ -617,14 +626,16 @@ Based on analysis of all three approaches, the following features are essential 
 **For Best Predictive Performance, include:**
 
 1. **Essential (Must Have):**
-   - Primary etiology/diagnosis
+   - Primary etiology/diagnosis (`PRIM_DX` / `primary_etiology`) ⭐ Simple Calculator core
    - Donor characteristics (height, age, weight)
    - Kidney function (eGFR, creatinine, BUN)
    - Liver function (AST, ALT, bilirubin)
    - Nutrition (albumin, protein)
-   - Cardiac support (ECMO, VAD)
+   - Cardiac support (`TXECMO` / `txecmo`, `TXVAD` / `txvad`) ⭐ Simple Calculator core
    - Respiratory (ventilation, tracheostomy)
    - Immunology (PRA levels)
+   - Age (`AGE_UNDER_2` for basic models, continuous age for comprehensive models) ⭐ Simple Calculator core
+   - CHD Laterality (`CHD_LAT` for CHD cohort) ⭐ Simple Calculator core
 
 2. **High Value:**
    - Demographics (age, height, weight)
@@ -638,12 +649,73 @@ Based on analysis of all three approaches, the following features are essential 
    - Combined variables (ecmo_combined)
    - Change variables (egfr_change)
 
+### Recommended Feature Sets with Estimated Performance
+
+Based on analysis of all three approaches, here are three recommended feature sets with their estimated performance:
+
+| Tier | Feature Set | Variable Count | Combined AUC | CHD AUC | Myocardio AUC | Best Use Case |
+|------|------------|----------------|--------------|---------|---------------|---------------|
+| **Tier 1: Core Variables** | Simple Calculator core set | **5 variables** | **0.738**<br/>(95% CI: 0.701-0.782) | **0.625**<br/>(95% CI: 0.557-0.678) | **0.657**<br/>(95% CI: 0.510-0.768) | Quick estimates, minimal data requirements, bedside use |
+| **Tier 2: Modifiable Focus** | Tier 1 + High-impact modifiable features | **~35-45 variables** | **~0.72-0.75**<br/>(estimated) | **~0.60-0.65**<br/>(estimated) | **~0.65-0.70**<br/>(estimated) | Clinical decision-making, actionable interventions |
+| **Tier 3: Maximum Performance** | Full Risk Calculator set | **280-308 variables** | **0.677** (XGB single)<br/>**0.567** (CatBoost C-index MC-CV)<br/>(95% CI: 0.430-0.647) | **0.645** (XGB single)<br/>**0.577** (CatBoost C-index MC-CV)<br/>(95% CI: 0.534-0.621) | **0.599** (XGB single)<br/>**0.567** (CatBoost C-index MC-CV)<br/>(95% CI: 0.483-0.639) | Production systems, maximum predictive power |
+
+#### Tier 1: Core Variables (5 variables)
+**Variables:**
+- `PRIM_DX` / `primary_etiology` - Primary diagnosis
+- `AGE_UNDER_2` / `age_listing`, `age_txpl` - Age
+- `TXECMO` / `txecmo` - ECMO at transplant
+- `TXVAD` / `txvad` - VAD at transplant
+- `CHD_LAT` - Laterality disorder (CHD cohort only)
+
+**Performance Notes:**
+- **Actual performance** from Simple Calculator (multivariate logistic regression) with 25 MC-CV splits
+- Combined cohort shows excellent performance (AUC 0.738) with just 5 variables
+- Provides survival probability ranges: CHD (62-91%), Cardiomyopathy (75-100%)
+
+#### Tier 2: Modifiable Focus (~35-45 variables)
+**Includes Tier 1 plus:**
+- **Cardiac Support**: `ecmo_combined`, `slecmo`, `slvad`
+- **Liver Function**: `txast`, `txalt`, `lsast`, `lsalt`, `txbili_t_r`, `txbili_t_r_high`, `txalt_high`, `txbili_d_r`, `lsbili_t_r`, `lsbili_d_r`, `hxfonlvr_bin`
+- **Kidney Function**: `egfr_tx`, `egfr_listing`, `egfr_tx_cat`, `egfr_listing_cat`, `txcreat_r`, `lcreat_r`, `txbun_r`, `lbun_r`, `hxdysdia_bin`, `egfr_change`
+- **Nutrition**: `txsa_r`, `txtp_r`, `txsa_r_low`, `lstp_r`, `lssab_r`, `txpalb_r`, `lspalb_r`
+- **Respiratory**: `txvent`, `hxtrach`, `ltxtrach`, `slvent`
+- **Immunology**: `txfcpra`, `lsfcpra`, `lsfprab`, `lsfprat`
+
+**Performance Notes:**
+- **Estimated performance** based on feature importance analysis
+- Focuses on modifiable clinical features for actionable interventions
+- Excludes donor features (non-modifiable) which may slightly reduce performance vs Tier 3
+- Better interpretability and clinical actionability than Tier 3
+
+#### Tier 3: Maximum Performance (280-308 variables)
+**Includes Tier 1 & 2 plus:**
+- **Donor Characteristics**: `height_donor`, `donor_age`, `weight_donor`, `dtime`, `dtoxo`, `dhxnone`, `dmhothr`
+- **All CHD Subtypes**: 40+ CHD subtype variables (with feature selection recommended)
+- **Additional Labs**: `txtg_r`, `lsbaosat`, `txbaosat`
+- **Transplant Characteristics**: `txdcd`, `txldpt`, `txnomcsd`, `txaboinc`, `txaboinc`
+- **Listing Characteristics**: `lsdcd`, `lsldpt`, `lscstat`
+- **All available features** from PHTS dataset
+
+**Performance Notes:**
+- **Actual performance** from Risk Calculator (CatBoost/XGBoost models)
+- XGBoost single evaluation shows higher C-index (0.645-0.677) but may be optimistic
+- CatBoost MC-CV (25 splits) shows more conservative C-index (0.567-0.577)
+- Best for production systems requiring maximum predictive power
+- Less interpretable, includes many non-modifiable features
+
+### Performance Comparison Insights
+
+1. **Tier 1 (5 variables) achieves strong performance**, especially for Combined cohort (AUC 0.738)
+2. **Tier 2 provides good balance** between performance and clinical actionability (~0.60-0.75 AUC estimated)
+3. **Tier 3 maximizes performance** but with diminishing returns (C-index 0.567-0.677)
+4. **Key finding**: The 5 core Simple Calculator variables capture substantial predictive signal; additional features provide incremental improvements rather than dramatic gains
+
 ### Performance Optimization Strategy
 
 **To achieve best predictive performance:**
 
 1. **Start with Risk Calculator feature set** (280-308 features) - includes all available features
-2. **Add derived features** from Simple Calculator (eGFR categories, thresholds, combined variables)
+2. **Add derived features** (eGFR categories, thresholds, combined variables)
 3. **Apply feature selection** for CHD cohort (reduce 40+ CHD subtypes to top 5-10 via LASSO)
 4. **Ensure primary_etiology is explicit** (improved Combined model from 0.734 → 0.738)
 5. **Include donor features** (highly predictive but non-modifiable)
@@ -651,60 +723,83 @@ Based on analysis of all three approaches, the following features are essential 
    - **For prediction only**: Include all features (donor, demographics, etc.)
    - **For clinical actionability**: Focus on modifiable features but keep non-modifiable for context
 
+**Note**: The Simple Calculator (PDF) uses only 5 variables (`PRIM_DX`, `AGE_UNDER_2`, `TXECMO`, `TXVAD`, `CHD_LAT`) for basic rough estimates. While these variables are included in the comprehensive feature set above, the Simple Calculator demonstrates that these 5 variables alone can provide meaningful risk stratification (62-100% survival range). For maximum performance, additional features from the Risk Calculator and Feature Importance approaches should be included.
+
 ### Expected Performance Gains
 
 **Current Performance:**
-- Simple Calculator (Combined): AUC = 0.738
-- Risk Calculator: Uses all features (expected similar or better)
+- **Risk Calculator**: Uses all 280-308 features (CatBoost/XGBoost models) - Best comprehensive performance
+- **Simple Calculator (PDF)**: Basic rough estimate (62-100% survival range) - Uses only 5 core variables
+  - CHD patients: 62% (under 2, on ECMO) to 91% (not on ECMO/VAD)
+  - Cardiomyopathy patients: 75% (under 2, on ECMO) to 100% (not on ECMO/VAD)
+  - Demonstrates that core variables (`PRIM_DX`, `AGE_UNDER_2`, `TXECMO`, `TXVAD`, `CHD_LAT`) provide baseline predictive value
 
 **Potential Improvements:**
 - **Adding donor features**: +0.01-0.02 AUC (estimated)
 - **Feature selection for CHD**: CHD model could improve from 0.625 → 0.65-0.68
-- **Derived features**: Already included in Simple Calculator, minimal additional gain
+- **Derived features**: Can enhance Risk Calculator models
 - **Combined approach**: Using all features with proper regularization could achieve AUC ~0.75-0.78
 
 ### Trade-offs
 
-**Including All Features (Best Performance):**
+**Including All Features (Best Performance - Risk Calculator):**
 - ✅ Maximum predictive power
 - ✅ Includes all predictive signals
+- ✅ Includes Simple Calculator core variables (`PRIM_DX`, `AGE_UNDER_2`, `TXECMO`, `TXVAD`, `CHD_LAT`) plus 275-303 additional features
 - ⚠️ Less interpretable
 - ⚠️ Includes non-modifiable features (donor, demographics)
 - ⚠️ Requires more data collection
 
-**Focused Feature Set (Better Interpretability):**
-- ✅ More interpretable
-- ✅ Focus on modifiable features
-- ⚠️ Slightly lower performance (AUC ~0.73-0.74 vs 0.75-0.78)
-- ⚠️ May miss some predictive signals
+**Minimal Feature Set (Simple Calculator - Basic Estimate):**
+- ✅✅ Extremely simple (5 variables: `PRIM_DX`, `AGE_UNDER_2`, `TXECMO`, `TXVAD`, `CHD_LAT`)
+- ✅✅ Very interpretable
+- ✅ Minimal data requirements
+- ✅ Provides baseline risk stratification (62-100% survival range)
+- ✅ Core variables are also important in comprehensive models
+- ⚠️ Basic rough estimate only
+- ⚠️ Limited predictive granularity
+- ⚠️ May miss important clinical signals present in comprehensive models
 
-**Recommendation:** Use full feature set (Risk Calculator approach) for maximum performance, with feature selection/regularization to prevent overfitting.
+**Recommendation:** 
+- **For quick rough estimates**: Use Simple Calculator (5 variables)
+- **For maximum performance**: Use full feature set (Risk Calculator approach, 280-308 features) with feature selection/regularization to prevent overfitting
 
 ## Recommendations
 
-1. **For Clinical Use**: Simple Calculator variables are most appropriate - focused on modifiable features with clear clinical interpretation
+1. **For Quick Estimates**: Simple Calculator (PDF) with 5 core variables (`PRIM_DX`, `AGE_UNDER_2`, `TXECMO`, `TXVAD`, `CHD_LAT`) provides a basic rough estimate (62-100% survival) with minimal data requirements
+   - CHD patients: 62% (under 2, on ECMO) to 91% (not on ECMO/VAD)
+   - Cardiomyopathy patients: 75% (under 2, on ECMO) to 100% (not on ECMO/VAD)
 
-2. **For Maximum Performance**: Risk Calculator uses all available features and achieves best model performance
+2. **For Comprehensive Assessment**: Risk Calculator (280-308 features) provides detailed risk assessment with maximum predictive power
+   - **Includes all Simple Calculator core variables** plus 275-303 additional features
+   - Best for production use and maximum AUC performance
 
-3. **For Feature Selection**: Feature Importance analysis identifies top predictive features, but note that many top features are non-modifiable (donor characteristics)
+3. **For Feature Selection**: Feature Importance analysis identifies top predictive features
+   - **Includes Simple Calculator variables** (ECMO, diagnosis appear in top 20)
+   - Note that many top features are non-modifiable (donor characteristics)
 
 4. **For Model Development**: Consider combining approaches:
-   - Use Feature Importance to identify top predictive features
-   - Focus on modifiable features from Simple Calculator
+   - **Start with Simple Calculator core variables** (`PRIM_DX`, `AGE_UNDER_2`, `TXECMO`, `TXVAD`, `CHD_LAT`) - proven baseline predictors
+   - Use Feature Importance to identify additional top predictive features
    - Include all available features in Risk Calculator for maximum performance
+   - Simple Calculator demonstrates that 5 variables provide meaningful baseline; comprehensive models add granularity and additional predictive signals
 
 ## Summary
 
-| Aspect | Simple Calculator | Risk Calculator | Feature Importance |
-|--------|------------------|-----------------|-------------------|
-| **Variable Count** | 25-65 | 280-308 | 20 per method |
-| **Modifiability Focus** | ✅ High | ⚠️ Mixed | ⚠️ Mixed |
+| Aspect | Simple Calculator (PDF) | Risk Calculator | Feature Importance |
+|--------|------------------------|-----------------|-------------------|
+| **Variable Count** | 5 core variables | 280-308 | 20 per method |
+| **Core Variables** | `PRIM_DX`, `AGE_UNDER_2`, `TXECMO`, `TXVAD`, `CHD_LAT` | Includes all Simple Calculator variables + 275-303 more | Includes some Simple Calculator variables (ECMO, diagnosis) |
+| **Modifiability Focus** | ⚠️ Mixed (some modifiable: ECMO/VAD) | ⚠️ Mixed | ⚠️ Mixed |
 | **Donor Features** | ❌ No | ✅ Yes | ✅ Yes (prominent) |
-| **Derived Variables** | ✅ Yes | ⚠️ Some | ❌ No |
-| **Cohort-Specific** | ✅ Yes | ✅ Yes | ⚠️ Some |
-| **Interpretability** | ✅ High | ⚠️ Medium | ✅ High (top features) |
-| **Model Performance** | ⚠️ Moderate | ✅ Best | N/A (feature selection) |
-| **Clinical Actionability** | ✅ High | ⚠️ Medium | ⚠️ Medium |
+| **Derived Variables** | ✅ Yes (`CHD_LAT` composite) | ⚠️ Some | ❌ No |
+| **Cohort-Specific** | ✅ Yes (`PRIM_DX` for categorization, `CHD_LAT` for CHD) | ✅ Yes | ⚠️ Some |
+| **Interpretability** | ✅✅ Very High (minimal set) | ⚠️ Medium | ✅ High (top features) |
+| **Model Performance** | ⚠️ Basic (62-100% survival range) | ✅ Best (comprehensive AUC) | N/A (feature selection) |
+| **Survival Range** | CHD: 62-91%, CM: 75-100% | Full risk spectrum | N/A |
+| **Clinical Actionability** | ⚠️ Limited (few modifiable features) | ⚠️ Medium | ⚠️ Medium |
+| **Use Case** | Quick rough estimate | Comprehensive risk assessment | Feature selection |
+| **Overlap with Others** | Core variables used in all models | Includes Simple Calculator variables | Includes some Simple Calculator variables |
 
 ---
 
