@@ -1817,7 +1817,13 @@ def main():
 
     args = parser.parse_args()
 
-    # Validate weights
+    # Set default weights if not provided (will be auto-determined later)
+    if args.weight_catboost is None:
+        args.weight_catboost = 0.6  # Temporary default, will be overridden
+    if args.weight_xgboost is None:
+        args.weight_xgboost = 0.4  # Temporary default, will be overridden
+    
+    # Normalize weights if they don't sum to 1.0
     if abs(args.weight_catboost + args.weight_xgboost - 1.0) > 0.01:
         logger.warning("Weights should sum to 1.0, normalizing...")
         total = args.weight_catboost + args.weight_xgboost
