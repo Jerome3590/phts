@@ -1,10 +1,10 @@
 #!/bin/bash
-# Clone Repository and Setup Environment for EC2
-# This script clones the PHTS repository and sets up the Python environment
+# Clone Repository and Setup Environment for EC2 (Full Clone)
+# This script clones the PHTS repository with full git history
 
 set -e
 
-echo "=== PHTS Repository Setup ==="
+echo "=== PHTS Repository Setup (Full Clone) ==="
 echo ""
 
 # Configuration
@@ -27,7 +27,7 @@ if ! command -v git &> /dev/null; then
     fi
 fi
 
-# Clone repository
+# Clone repository (FULL clone with complete history)
 if [ -d "$REPO_DIR" ]; then
     echo "Repository already exists at $REPO_DIR"
     echo "Pulling latest changes..."
@@ -35,17 +35,8 @@ if [ -d "$REPO_DIR" ]; then
     git pull
     cd ..
 else
-    echo "Cloning repository..."
-    # Use shallow clone (depth=1) to save space and time
-    # This only gets the latest commit, not full history
-    # Remove --depth 1 if you need full git history
-    if [ "${SHALLOW_CLONE:-true}" = "true" ]; then
-        echo "  Using shallow clone (latest commit only)..."
-        git clone --depth 1 "$REPO_URL" "$REPO_DIR"
-    else
-        echo "  Using full clone (complete history)..."
-        git clone "$REPO_URL" "$REPO_DIR"
-    fi
+    echo "Cloning repository (full history)..."
+    git clone "$REPO_URL" "$REPO_DIR"
     echo "✓ Repository cloned successfully"
 fi
 

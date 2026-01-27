@@ -6,17 +6,37 @@ This guide provides a complete setup for running the PHTS calculator workflow on
 
 ### 1. Clone Repository and Setup
 
+**Option A: Shallow Clone (Recommended - Faster, Saves Space)**
+
 ```bash
-# Download and run setup script
+# Download and run setup script (shallow clone by default)
 curl -O https://raw.githubusercontent.com/Jerome3590/phts/main/docs/clone_and_setup.sh
 chmod +x clone_and_setup.sh
 ./clone_and_setup.sh
 ```
 
-This script will:
-- Clone the repository
+This clones only the latest commit (saves ~50-70% space and time). Perfect for running the calculator workflow.
+
+**Option B: Full Clone (Complete Git History)**
+
+If you need full git history (for development, branching, etc.):
+
+```bash
+# Download and run full clone script
+curl -O https://raw.githubusercontent.com/Jerome3590/phts/main/docs/clone_and_setup_full.sh
+chmod +x clone_and_setup_full.sh
+./clone_and_setup_full.sh
+```
+
+Or manually:
+```bash
+SHALLOW_CLONE=false ./clone_and_setup.sh
+```
+
+**What the script does:**
+- Clone the repository (shallow or full)
 - Set up Python virtual environment
-- Install required dependencies
+- Install required dependencies (numpy, pandas, catboost, xgboost, shap, jupyter, etc.)
 
 ### 2. Configure GitHub Credentials
 

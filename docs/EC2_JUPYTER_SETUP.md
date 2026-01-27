@@ -6,11 +6,30 @@ This guide explains how to set up and run Jupyter notebooks on EC2 for the PHTS 
 
 ### 1. Clone Repository and Setup
 
+**Option A: Shallow Clone (Recommended - Faster, Saves Space)**
+
 ```bash
-# Download and run setup script
+# Download and run setup script (shallow clone by default)
 curl -O https://raw.githubusercontent.com/Jerome3590/phts/main/docs/clone_and_setup.sh
 chmod +x clone_and_setup.sh
 ./clone_and_setup.sh
+```
+
+This clones only the latest commit (saves ~50-70% space and time).
+
+**Option B: Full Clone (Complete Git History)**
+
+```bash
+# Download and run full clone script
+curl -O https://raw.githubusercontent.com/Jerome3590/phts/main/docs/clone_and_setup_full.sh
+chmod +x clone_and_setup_full.sh
+./clone_and_setup_full.sh
+```
+
+Or manually:
+```bash
+# Force full clone
+SHALLOW_CLONE=false ./clone_and_setup.sh
 ```
 
 ### 2. Setup GitHub Credentials
