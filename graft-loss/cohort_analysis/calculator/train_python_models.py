@@ -308,7 +308,8 @@ def train_catboost_survival(
     status_test: np.ndarray,
     feature_names: List[str],
     cohort_name: str,
-    output_dir: Path
+    output_dir: Path,
+    cat_feature_indices: List[int] = None  # Optional: pre-identified categorical feature indices
 ) -> Tuple[CatBoostRegressor, float]:
     """
     Train CatBoost survival model with Cox regression.
@@ -323,6 +324,7 @@ def train_catboost_survival(
         feature_names: List of feature names
         cohort_name: Name of cohort
         output_dir: Directory to save model
+        cat_feature_indices: Optional list of categorical feature indices (if features were pre-encoded)
         
     Returns:
         Tuple of (trained_model, c_index)
@@ -342,13 +344,18 @@ def train_catboost_survival(
     }
     
     # Identify categorical features
-    cat_features = []
-    for i, col in enumerate(X_train.columns):
-        if X_train[col].dtype == 'object' or X_train[col].dtype.name == 'category':
-            cat_features.append(i)
-    
-    if cat_features:
-        logger.info(f"  Found {len(cat_features)} categorical features")
+    # If cat_feature_indices provided, use those (for pre-encoded categoricals)
+    # Otherwise, check for object/category dtype
+    if cat_feature_indices is not None:
+        cat_features = cat_feature_indices
+        logger.info(f"  Using {len(cat_features)} pre-identified categorical features (indices: {cat_features[:10]}{'...' if len(cat_features) > 10 else ''})")
+    else:
+        cat_features = []
+        for i, col in enumerate(X_train.columns):
+            if X_train[col].dtype == 'object' or X_train[col].dtype.name == 'category':
+                cat_features.append(i)
+        if cat_features:
+            logger.info(f"  Found {len(cat_features)} categorical features by dtype check")
     
     # Create CatBoost pools
     train_pool = Pool(
@@ -650,6 +657,7 @@ def train_single_split_models(
     feature_names: List[str],
     cohort_name: str,
     output_dir: Path,
+    cat_feature_indices: List[int] = None,  # Optional: categorical feature indices
     time_horizon: float = 365.25  # Default: 1 year in days for AUC/AU-PRC
 ) -> Dict:
     """
@@ -681,6 +689,7 @@ def train_single_split_models(
     
     try:
         # Train CatBoost
+        # Pass categorical feature indices if provided
         cb_model, cb_cindex = train_catboost_survival(
             X_train=X_train,
             y_train=y_train,
@@ -690,7 +699,8 @@ def train_single_split_models(
             status_test=status_test,
             feature_names=feature_names,
             cohort_name=cohort_name,
-            output_dir=output_dir / f"split_{split_idx}"
+            output_dir=output_dir / f"split_{split_idx}",
+            cat_feature_indices=cat_feature_indices
         )
         results['catboost_cindex'] = cb_cindex
         
@@ -741,18 +751,24 @@ def train_single_split_models(
         
         # Get XGBoost feature importance
         # For survival models, we need to use a custom C-index scorer
-        # For now, use signed time labels - XGBoost permutation importance will work with this
+        # XGBoost Booster needs DMatrix, so we'll create a wrapper
         try:
-            # Create custom C-index scorer for survival
-            def cindex_scorer(model, X, y):
+            # Create custom C-index scorer for survival that handles XGBoost DMatrix
+            def cindex_scorer(model_or_pred, X_or_pred, y):
                 """Custom scorer using C-index for survival models."""
+                # Handle both XGBoost (model_or_pred is None, X_or_pred is predictions)
+                # and other models (model_or_pred is model, X_or_pred is X)
+                if model_or_pred is None:
+                    # XGBoost case: X_or_pred is already predictions
+                    risk_scores = X_or_pred
+                else:
+                    # Other models: need to predict
+                    risk_scores = model_or_pred.predict(X_or_pred)
+                
                 # y is signed time labels (+time for events, -time for censored)
                 # Extract time and status
                 time_vals = np.abs(y)
                 status_vals = (y > 0).astype(int)
-                
-                # Get risk predictions
-                risk_scores = model.predict(X)
                 
                 # Calculate C-index
                 c_index, _, _, _, _ = concordance_index_censored(
@@ -766,7 +782,8 @@ def train_single_split_models(
                 xgb_model,
                 feature_names,
                 X_test=X_test,
-                y_test=y_test  # Use signed time labels
+                y_test=y_test,  # Use signed time labels
+                scoring=cindex_scorer
             )
             # Extract importance column (may be 'importance' or 'gain_importance')
             if 'importance' in xgb_importance.columns:
@@ -804,11 +821,37 @@ def train_single_split_models(
         
         # Get XGBoost RF feature importance (same as XGBoost)
         try:
+            # Create custom C-index scorer for survival that handles XGBoost DMatrix
+            def cindex_scorer(model_or_pred, X_or_pred, y):
+                """Custom scorer using C-index for survival models."""
+                # Handle both XGBoost (model_or_pred is None, X_or_pred is predictions)
+                # and other models (model_or_pred is model, X_or_pred is X)
+                if model_or_pred is None:
+                    # XGBoost case: X_or_pred is already predictions
+                    risk_scores = X_or_pred
+                else:
+                    # Other models: need to predict
+                    risk_scores = model_or_pred.predict(X_or_pred)
+                
+                # y is signed time labels (+time for events, -time for censored)
+                # Extract time and status
+                time_vals = np.abs(y)
+                status_vals = (y > 0).astype(int)
+                
+                # Calculate C-index
+                c_index, _, _, _, _ = concordance_index_censored(
+                    status_vals.astype(bool),
+                    time_vals,
+                    risk_scores
+                )
+                return c_index
+            
             xgb_rf_importance = get_importance_xgboost(
                 xgb_rf_model,
                 feature_names,
                 X_test=X_test,
-                y_test=y_test  # Use signed time labels
+                y_test=y_test,  # Use signed time labels
+                scoring=cindex_scorer
             )
             # Extract importance column
             if 'importance' in xgb_rf_importance.columns:
@@ -977,18 +1020,38 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
     # Fill NaN values
     X = X.fillna(0)
     
-    # Convert categorical to numeric (simple encoding for now)
+    # Identify categorical features BEFORE converting to numeric
+    # Store which columns are categorical so we can pass them to CatBoost
+    categorical_cols = []
     for col in X.columns:
         if X[col].dtype == 'object':
+            categorical_cols.append(col)
+    
+    # Convert categorical to numeric (simple encoding for now)
+    # Store the mapping of column names to their categorical indices for CatBoost
+    cat_feature_indices = []
+    for i, col in enumerate(X.columns):
+        if col in categorical_cols:
             X[col] = pd.Categorical(X[col]).codes
+            cat_feature_indices.append(i)
     
     logger.info(f"Final feature matrix: {X.shape}")
+    if categorical_cols:
+        logger.info(f"  Identified {len(categorical_cols)} categorical features (converted to numeric codes): {categorical_cols[:5]}{'...' if len(categorical_cols) > 5 else ''}")
+        logger.info(f"  Categorical feature indices for CatBoost: {cat_feature_indices}")
     logger.info(f"Total features after leakage removal and constant column removal: {len(feature_cols)}")
     
     # Log feature categories for visibility
     derived_features = [f for f in feature_cols if any(x in f.lower() for x in ['combined', '_ratio', 'egfr_', 'bmi_', '_high', '_low', '_bin', '_cat', '_change'])]
     logger.info(f"  - Derived features (combined, ratios, calculated, dichotomous): {len(derived_features)}")
     logger.info(f"  - Original clinical features: {len(feature_cols) - len(derived_features)}")
+    
+    # Store categorical feature indices globally for use in train_single_split_models
+    # Map from original column names to indices in final feature list
+    cat_feature_indices_final = []
+    for i, col in enumerate(X.columns):
+        if col in categorical_cols:
+            cat_feature_indices_final.append(i)
     
     # Prepare signed time labels for full dataset (for MC CV splits)
     y_all = prepare_survival_labels(time, status)
@@ -1035,7 +1098,8 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
             status_test=status[split_indices[i]['test_idx']],
             feature_names=feature_cols,
             cohort_name=cohort,
-            output_dir=mc_cv_output_dir
+            output_dir=mc_cv_output_dir,
+            cat_feature_indices=cat_feature_indices_final
         )
         for i in range(len(split_indices))
     )

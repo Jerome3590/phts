@@ -56,7 +56,7 @@ def get_permutation_importance(model, X_test, y_test, feature_names, scoring='re
     This provides fair comparison across all model types.
     
     Args:
-        model: Trained model (any sklearn-compatible model, including CatBoost)
+        model: Trained model (any sklearn-compatible model, including CatBoost, XGBoost)
         X_test: Test features (DataFrame or array)
         y_test: Test labels (array)
         feature_names: List of feature names
@@ -69,6 +69,9 @@ def get_permutation_importance(model, X_test, y_test, feature_names, scoring='re
     """
     # Check if this is a CatBoost model
     is_catboost = isinstance(model, CatBoostClassifier)
+    
+    # Check if this is an XGBoost Booster model (needs DMatrix)
+    is_xgboost_booster = isinstance(model, xgb.Booster)
 
     if is_catboost:
         # Delegate to the CatBoost-specific helper, which correctly aligns
@@ -111,7 +114,10 @@ def get_permutation_importance(model, X_test, y_test, feature_names, scoring='re
             pass
 
         # Define scoring function
-        if scoring == 'recall':
+        if callable(scoring):
+            # Custom scorer provided (e.g., for survival C-index)
+            scorer = scoring
+        elif scoring == 'recall':
             from sklearn.metrics import recall_score, make_scorer
             scorer = make_scorer(recall_score, zero_division=0)
         elif scoring == 'log_loss':
@@ -133,7 +139,15 @@ def get_permutation_importance(model, X_test, y_test, feature_names, scoring='re
         rng = np.random.RandomState(random_state)
 
         # Baseline score on the (possibly downsampled) eval set.
-        baseline_score = scorer(model, X_perm, y_arr)
+        # Handle XGBoost Booster models that need DMatrix
+        if is_xgboost_booster:
+            # For XGBoost, create DMatrix and wrap predict
+            dmatrix = xgb.DMatrix(X_perm, feature_names=feature_names)
+            baseline_pred = model.predict(dmatrix)
+            # For survival models, scorer expects risk scores
+            baseline_score = scorer(None, baseline_pred, y_arr) if callable(scoring) else baseline_pred.mean()
+        else:
+            baseline_score = scorer(model, X_perm, y_arr)
 
         logger.info(
             "Permutation importance: baseline score=%.6f on %d rows × %d features",
