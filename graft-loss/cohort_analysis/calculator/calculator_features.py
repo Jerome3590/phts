@@ -198,4 +198,11 @@ def filter_to_calculator_features(df, feature_cols: List[str]) -> List[str]:
         if col.lower() in calculator_features_lower
     ]
     
+    # Also include any CHD subtype features (chd_* pattern) as they may be calculator inputs
+    # This ensures we don't miss any CHD subtypes
+    chd_features = [col for col in feature_cols if col.lower().startswith('chd_')]
+    for chd_feat in chd_features:
+        if chd_feat not in filtered:
+            filtered.append(chd_feat)
+    
     return filtered
