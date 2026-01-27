@@ -71,6 +71,34 @@ ssh -i your-key.pem -L 8888:localhost:8888 ec2-user@your-ec2-ip
 
 Then open in browser: `http://localhost:8888` (use token from Jupyter output)
 
+---
+
+## Install Docker (For Lambda Deployment)
+
+If you need to deploy the risk calculator to AWS Lambda, you'll need Docker installed:
+
+**Amazon Linux 2:**
+```bash
+sudo yum install docker -y
+sudo systemctl start docker
+sudo systemctl enable docker
+sudo usermod -a -G docker ec2-user
+newgrp docker  # Or log out and back in
+docker --version  # Verify
+```
+
+**Ubuntu:**
+```bash
+sudo apt-get install docker.io -y
+sudo systemctl start docker
+sudo systemctl enable docker
+sudo usermod -aG docker ubuntu
+newgrp docker  # Or log out and back in
+docker --version  # Verify
+```
+
+**For detailed Docker setup instructions, see:** `docs/EC2_DOCKER_SETUP.md`
+
 **Open Calculator Workflow Notebook:**
 - Navigate to `graft-loss/cohort_analysis/calculator/`
 - Open `calculator_workflow.ipynb`
