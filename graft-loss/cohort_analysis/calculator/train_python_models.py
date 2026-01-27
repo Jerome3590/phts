@@ -731,7 +731,9 @@ def train_single_split_models(
         results['xgboost_cindex'] = xgb_cindex
         
         # Calculate AUC, AU-PRC, and Recall for XGBoost
-        xgb_risk_scores = xgb_model.predict(xgb.DMatrix(X_test.values.astype(np.float32)))
+        xgb_test_dmatrix = xgb.DMatrix(X_test.values.astype(np.float32))
+        xgb_test_dmatrix.feature_names = feature_names
+        xgb_risk_scores = xgb_model.predict(xgb_test_dmatrix)
         xgb_auc, xgb_auprc, xgb_recall = calculate_survival_auc_auprc_recall(time_test, status_test, xgb_risk_scores)
         results['xgboost_auc'] = xgb_auc
         results['xgboost_auprc'] = xgb_auprc
@@ -792,7 +794,9 @@ def train_single_split_models(
         results['xgboost_rf_cindex'] = xgb_rf_cindex
         
         # Calculate AUC, AU-PRC, and Recall for XGBoost RF
-        xgb_rf_risk_scores = xgb_rf_model.predict(xgb.DMatrix(X_test.values.astype(np.float32)))
+        xgb_rf_test_dmatrix = xgb.DMatrix(X_test.values.astype(np.float32))
+        xgb_rf_test_dmatrix.feature_names = feature_names
+        xgb_rf_risk_scores = xgb_rf_model.predict(xgb_rf_test_dmatrix)
         xgb_rf_auc, xgb_rf_auprc, xgb_rf_recall = calculate_survival_auc_auprc_recall(time_test, status_test, xgb_rf_risk_scores)
         results['xgboost_rf_auc'] = xgb_rf_auc
         results['xgboost_rf_auprc'] = xgb_rf_auprc
@@ -970,6 +974,12 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
             X[col] = pd.Categorical(X[col]).codes
     
     logger.info(f"Final feature matrix: {X.shape}")
+    logger.info(f"Total features after leakage removal and constant column removal: {len(feature_cols)}")
+    
+    # Log feature categories for visibility
+    derived_features = [f for f in feature_cols if any(x in f.lower() for x in ['combined', '_ratio', 'egfr_', 'bmi_', '_high', '_low', '_bin', '_cat', '_change'])]
+    logger.info(f"  - Derived features (combined, ratios, calculated, dichotomous): {len(derived_features)}")
+    logger.info(f"  - Original clinical features: {len(feature_cols) - len(derived_features)}")
     
     # Prepare signed time labels for full dataset (for MC CV splits)
     y_all = prepare_survival_labels(time, status)
