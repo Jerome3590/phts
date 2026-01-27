@@ -947,7 +947,16 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
         df_clean['txpl_year'] = txpl_year_values
     
     # Extract features (exclude time/status columns and txpl_year)
-    feature_cols = [col for col in df_clean.columns if col not in ['time', 'status', 'txpl_year']]
+    all_feature_cols = [col for col in df_clean.columns if col not in ['time', 'status', 'txpl_year']]
+    
+    # Filter to only calculator features
+    from calculator_features import filter_to_calculator_features
+    feature_cols = filter_to_calculator_features(df_clean, all_feature_cols)
+    
+    logger.info(f"Filtered to calculator features: {len(feature_cols)} features (from {len(all_feature_cols)} total)")
+    if len(feature_cols) < len(all_feature_cols):
+        removed = set(all_feature_cols) - set(feature_cols)
+        logger.info(f"Removed {len(removed)} non-calculator features (e.g., {', '.join(list(removed)[:10])}...)")
     
     X = df_clean[feature_cols].copy()
     time = df_clean['time'].values
