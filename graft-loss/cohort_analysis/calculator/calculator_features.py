@@ -75,7 +75,8 @@ def get_calculator_base_features() -> List[str]:
         "height_donor",
         "donisch",
         
-        # CHD subtypes (for chd_lat composite)
+        # CHD subtypes (for chd_lat composite and individual CHD features)
+        # These are used to create chd_lat composite and may be used individually
         "chd_dex",
         "chd_si",
         "chd_heter",
@@ -84,6 +85,42 @@ def get_calculator_base_features() -> List[str]:
         "chd_lsvc",
         "chd_raa",
         "chd_avd",
+        # Additional CHD subtypes that may be calculator inputs
+        "chd_hlh",
+        "chd_hrh",
+        "chd_vsd",
+        "chd_ahih",
+        "chd_avsep",
+        "chd_ctga",
+        "chd_anom",
+        "chd_dilv",
+        "chd_ebst",
+        "chd_lvotoas",
+        "chd_mstn",
+        "chd_pa",
+        "chd_patr",
+        "chd_tapvr",
+        "chd_papvr",
+        "chd_tof",
+        "chd_tga",
+        "chd_triat",
+        "chd_tart",
+        "chd_unk",
+        "chd_aspl",
+        "chd_pspl",
+        "chd_sv",
+        "chd_patrd",
+        "chd_alcapa",
+        "chd_aa",
+        "chd_ar",
+        "chd_dolv",
+        "chd_hb",
+        "chd_mart",
+        "chd_ma",
+        "chd_mr",
+        "chd_ps",
+        "chd_shone",
+        "chd_tr",
     ]
 
 
