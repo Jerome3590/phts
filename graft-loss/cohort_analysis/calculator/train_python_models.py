@@ -850,7 +850,13 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
     """
     logger.info(f"\n{'='*80}")
     logger.info(f"Training models for cohort: {cohort}")
-    logger.info(f"{'='*80}\n")
+    logger.info(f"{'='*80}")
+    logger.info(f"MC-CV Configuration:")
+    logger.info(f"  - Number of splits: {n_mc_splits}")
+    logger.info(f"  - Training proportion: {train_prop:.1%}")
+    logger.info(f"  - Parallel jobs: {n_jobs}")
+    logger.info(f"  - Time horizon for AUC/AU-PRC/Recall: {time_horizon} days")
+    logger.info("")
     
     # Load and prepare data
     logger.info("Loading calculator data...")
