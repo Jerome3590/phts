@@ -171,7 +171,14 @@ def get_permutation_importance(model, X_test, y_test, feature_names, scoring='re
                 perm_idx = rng.permutation(n_rows)
                 X_perm[:, j] = original_col[perm_idx]
 
-                score_perm = scorer(model, X_perm, y_arr)
+                # Score with permuted feature
+                # Handle XGBoost Booster models that need DMatrix
+                if is_xgboost_booster:
+                    dmatrix = xgb.DMatrix(X_perm, feature_names=feature_names)
+                    perm_pred = model.predict(dmatrix)
+                    score_perm = scorer(None, perm_pred, y_arr) if callable(scoring) else perm_pred.mean()
+                else:
+                    score_perm = scorer(model, X_perm, y_arr)
                 scores.append(score_perm)
 
             # Restore original column
