@@ -67,6 +67,177 @@ except ImportError:
         c_index = concordant / comparable if comparable > 0 else 0.0
         return c_index, comparable, concordant, 0, 0
 
+# Import metrics for AUC and AU-PRC
+try:
+    from sklearn.metrics import roc_auc_score, average_precision_score
+    HAS_SKLEARN_METRICS = True
+except ImportError:
+    HAS_SKLEARN_METRICS = False
+    logger.warning("sklearn.metrics not available. AUC and AU-PRC will not be calculated.")
+
+
+def calculate_survival_auc_auprc_recall(
+    time_test: np.ndarray,
+    status_test: np.ndarray,
+    risk_scores: np.ndarray,
+    time_horizon: float = 365.25  # Default: 1 year in days
+) -> Tuple[float, float, float]:
+    """
+    Calculate AUC and AU-PRC for survival models at a specific time horizon.
+    
+    Converts survival problem to binary classification:
+    - Positive class: event occurred by time_horizon
+    - Negative class: no event by time_horizon (censored or event after time_horizon)
+    
+    Args:
+        time_test: Time to event or censoring (in days)
+        status_test: Event indicator (1=event, 0=censored)
+        risk_scores: Risk scores from model (higher = higher risk)
+        time_horizon: Time horizon for binary classification (default: 365.25 days = 1 year)
+        
+    Returns:
+        Tuple of (AUC, AU-PRC) or (np.nan, np.nan) if calculation fails
+    """
+    if not HAS_SKLEARN_METRICS:
+        return np.nan, np.nan
+    
+    try:
+        # Convert to binary classification problem at time_horizon
+        # Positive: event occurred by time_horizon
+        # Negative: no event by time_horizon (censored before time_horizon, or event after time_horizon)
+        
+        binary_labels = np.zeros(len(time_test), dtype=int)
+        
+        for i in range(len(time_test)):
+            if status_test[i] == 1:  # Event occurred
+                if time_test[i] <= time_horizon:
+                    binary_labels[i] = 1  # Positive: event by time_horizon
+                # else: event after time_horizon -> negative (0)
+            else:  # Censored
+                if time_test[i] > time_horizon:
+                    # Censored after time_horizon: we don't know if event occurred
+                    # Exclude from evaluation (set to NaN)
+                    binary_labels[i] = np.nan
+                # else: censored before time_horizon -> negative (0)
+        
+        # Remove NaN labels and corresponding risk scores
+        valid_mask = ~np.isnan(binary_labels)
+        if valid_mask.sum() < 2:
+            logger.warning(f"Insufficient data for AUC/AU-PRC at time_horizon={time_horizon}")
+            return np.nan, np.nan
+        
+        binary_labels_clean = binary_labels[valid_mask].astype(int)
+        risk_scores_clean = risk_scores[valid_mask]
+        
+        # Check if we have both classes
+        if len(np.unique(binary_labels_clean)) < 2:
+            logger.warning(f"Only one class present for AUC/AU-PRC at time_horizon={time_horizon}")
+            return np.nan, np.nan
+        
+        # Normalize risk scores to [0, 1] for probability interpretation
+        # Higher risk = higher probability of event
+        risk_min = risk_scores_clean.min()
+        risk_max = risk_scores_clean.max()
+        if risk_max > risk_min:
+            risk_probs = (risk_scores_clean - risk_min) / (risk_max - risk_min)
+        else:
+            risk_probs = np.ones_like(risk_scores_clean) * 0.5
+        
+        # Calculate AUC (ROC-AUC)
+        auc = roc_auc_score(binary_labels_clean, risk_probs)
+        
+        # Calculate AU-PRC (Average Precision)
+        auprc = average_precision_score(binary_labels_clean, risk_probs)
+        
+        # Calculate Recall (Sensitivity)
+        # Use a threshold based on median risk score
+        threshold = np.median(risk_probs)
+        predictions = (risk_probs >= threshold).astype(int)
+        
+        # Recall = TP / (TP + FN)
+        tp = np.sum((predictions == 1) & (binary_labels_clean == 1))
+        fn = np.sum((predictions == 0) & (binary_labels_clean == 1))
+        recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+        
+        return float(auc), float(auprc), float(recall)
+        
+    except Exception as e:
+        logger.warning(f"Error calculating AUC/AU-PRC: {e}")
+        return np.nan, np.nan
+
+# Import sklearn metrics for AUC and AU-PRC
+try:
+    from sklearn.metrics import roc_auc_score, average_precision_score
+    HAS_SKLEARN_METRICS = True
+except ImportError:
+    HAS_SKLEARN_METRICS = False
+    logger.warning("sklearn.metrics not available. AUC and AU-PRC will not be calculated.")
+
+
+def calculate_survival_auc_auprc(
+    risk_scores: np.ndarray,
+    time: np.ndarray,
+    status: np.ndarray,
+    time_horizon: float = 365.25  # Default: 1 year in days
+) -> Tuple[float, float]:
+    """
+    Calculate AUC and AU-PRC for survival models at a specific time horizon.
+    
+    Converts survival problem to binary classification:
+    - Positive class: event occurred by time_horizon
+    - Negative class: no event by time_horizon (censored or event after horizon)
+    
+    Args:
+        risk_scores: Risk scores from model (higher = higher risk)
+        time: Time to event or censoring
+        status: Event indicator (1=event, 0=censored)
+        time_horizon: Time horizon in days (default: 365.25 = 1 year)
+        
+    Returns:
+        Tuple of (AUC, AU-PRC)
+    """
+    if not HAS_SKLEARN_METRICS:
+        return np.nan, np.nan
+    
+    # Convert to binary classification problem
+    # Positive: event occurred by time_horizon
+    # Negative: no event by time_horizon (censored after horizon or event after horizon)
+    binary_labels = np.zeros(len(time), dtype=int)
+    
+    for i in range(len(time)):
+        if status[i] == 1 and time[i] <= time_horizon:
+            # Event occurred by horizon: positive
+            binary_labels[i] = 1
+        elif status[i] == 0 and time[i] > time_horizon:
+            # Censored after horizon: negative (we know they survived past horizon)
+            binary_labels[i] = 0
+        elif status[i] == 1 and time[i] > time_horizon:
+            # Event after horizon: negative
+            binary_labels[i] = 0
+        # Censored before horizon: exclude (we don't know if event occurred)
+        # This is handled by filtering below
+    
+    # Filter out censored observations before time_horizon (we can't label them)
+    valid_mask = ~((status == 0) & (time <= time_horizon))
+    
+    if valid_mask.sum() == 0:
+        return np.nan, np.nan
+    
+    y_true = binary_labels[valid_mask]
+    y_scores = risk_scores[valid_mask]
+    
+    # Check if we have both classes
+    if len(np.unique(y_true)) < 2:
+        return np.nan, np.nan
+    
+    try:
+        auc = roc_auc_score(y_true, y_scores)
+        auprc = average_precision_score(y_true, y_scores)
+        return auc, auprc
+    except Exception as e:
+        logger.warning(f"Error calculating AUC/AU-PRC: {e}")
+        return np.nan, np.nan
+
 # Add project root to path
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -550,7 +721,8 @@ def train_single_split_models(
     status_test: np.ndarray,
     feature_names: List[str],
     cohort_name: str,
-    output_dir: Path
+    output_dir: Path,
+    time_horizon: float = 365.25  # Default: 1 year in days for AUC/AU-PRC
 ) -> Dict:
     """
     Train all three models (CatBoost, XGBoost, XGBoost RF) for a single MC-CV split.
@@ -564,6 +736,15 @@ def train_single_split_models(
         'catboost_cindex': None,
         'xgboost_cindex': None,
         'xgboost_rf_cindex': None,
+        'catboost_auc': None,
+        'xgboost_auc': None,
+        'xgboost_rf_auc': None,
+        'catboost_auprc': None,
+        'xgboost_auprc': None,
+        'xgboost_rf_auprc': None,
+        'catboost_recall': None,
+        'xgboost_recall': None,
+        'xgboost_rf_recall': None,
         'catboost_importance': None,
         'xgboost_importance': None,
         'xgboost_rf_importance': None,
@@ -584,6 +765,13 @@ def train_single_split_models(
             output_dir=output_dir / f"split_{split_idx}"
         )
         results['catboost_cindex'] = cb_cindex
+        
+        # Calculate AUC, AU-PRC, and Recall for CatBoost
+        cb_risk_scores = cb_model.predict(X_test)
+        cb_auc, cb_auprc, cb_recall = calculate_survival_auc_auprc_recall(time_test, status_test, cb_risk_scores)
+        results['catboost_auc'] = cb_auc
+        results['catboost_auprc'] = cb_auprc
+        results['catboost_recall'] = cb_recall
         
         # Get CatBoost feature importance
         # For survival models, use signed time labels (y_test) for importance calculation
@@ -613,6 +801,13 @@ def train_single_split_models(
             output_dir=output_dir / f"split_{split_idx}"
         )
         results['xgboost_cindex'] = xgb_cindex
+        
+        # Calculate AUC, AU-PRC, and Recall for XGBoost
+        xgb_risk_scores = xgb_model.predict(xgb.DMatrix(X_test.values.astype(np.float32)))
+        xgb_auc, xgb_auprc, xgb_recall = calculate_survival_auc_auprc_recall(time_test, status_test, xgb_risk_scores)
+        results['xgboost_auc'] = xgb_auc
+        results['xgboost_auprc'] = xgb_auprc
+        results['xgboost_recall'] = xgb_recall
         
         # Get XGBoost feature importance
         # For survival models, we need to use a custom C-index scorer
@@ -668,6 +863,13 @@ def train_single_split_models(
         )
         results['xgboost_rf_cindex'] = xgb_rf_cindex
         
+        # Calculate AUC, AU-PRC, and Recall for XGBoost RF
+        xgb_rf_risk_scores = xgb_rf_model.predict(xgb.DMatrix(X_test.values.astype(np.float32)))
+        xgb_rf_auc, xgb_rf_auprc, xgb_rf_recall = calculate_survival_auc_auprc_recall(time_test, status_test, xgb_rf_risk_scores)
+        results['xgboost_rf_auc'] = xgb_rf_auc
+        results['xgboost_rf_auprc'] = xgb_rf_auprc
+        results['xgboost_rf_recall'] = xgb_rf_recall
+        
         # Get XGBoost RF feature importance (same as XGBoost)
         try:
             xgb_rf_importance = get_importance_xgboost(
@@ -688,7 +890,9 @@ def train_single_split_models(
             results['xgboost_rf_importance'] = pd.DataFrame({'feature': feature_names, 'importance': 0.0})
         
         results['status'] = 'success'
-        logger.info(f"Split {split_idx}: CatBoost={cb_cindex:.6f}, XGBoost={xgb_cindex:.6f}, XGBoost RF={xgb_rf_cindex:.6f}")
+        logger.info(f"Split {split_idx}: CatBoost C-index={cb_cindex:.6f} AUC={cb_auc:.4f} AU-PRC={cb_auprc:.4f} Recall={cb_recall:.4f}, "
+                   f"XGBoost C-index={xgb_cindex:.6f} AUC={xgb_auc:.4f} AU-PRC={xgb_auprc:.4f} Recall={xgb_recall:.4f}, "
+                   f"XGBoost RF C-index={xgb_rf_cindex:.6f} AUC={xgb_rf_auc:.4f} AU-PRC={xgb_rf_auprc:.4f} Recall={xgb_rf_recall:.4f}")
         
     except Exception as e:
         logger.error(f"Error in split {split_idx}: {e}", exc_info=True)
@@ -697,7 +901,7 @@ def train_single_split_models(
     return results
 
 
-def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: float = 0.8, n_jobs: int = 1):
+def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: float = 0.8, n_jobs: int = 1, time_horizon: float = 365.25):
     """
     Train CatBoost, XGBoost (Gradient Boosting), and XGBoost Random Forest models for a cohort
     using Monte Carlo Cross-Validation (MC-CV) with 25 splits.
@@ -902,6 +1106,21 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
     xgb_cindices = [r['xgboost_cindex'] for r in successful_results if r['xgboost_cindex'] is not None]
     xgb_rf_cindices = [r['xgboost_rf_cindex'] for r in successful_results if r['xgboost_rf_cindex'] is not None]
     
+    # Collect AUC values for each model
+    cb_aucs = [r['catboost_auc'] for r in successful_results if r['catboost_auc'] is not None and not np.isnan(r['catboost_auc'])]
+    xgb_aucs = [r['xgboost_auc'] for r in successful_results if r['xgboost_auc'] is not None and not np.isnan(r['xgboost_auc'])]
+    xgb_rf_aucs = [r['xgboost_rf_auc'] for r in successful_results if r['xgboost_rf_auc'] is not None and not np.isnan(r['xgboost_rf_auc'])]
+    
+    # Collect AU-PRC values for each model
+    cb_auprcs = [r['catboost_auprc'] for r in successful_results if r['catboost_auprc'] is not None and not np.isnan(r['catboost_auprc'])]
+    xgb_auprcs = [r['xgboost_auprc'] for r in successful_results if r['xgboost_auprc'] is not None and not np.isnan(r['xgboost_auprc'])]
+    xgb_rf_auprcs = [r['xgboost_rf_auprc'] for r in successful_results if r['xgboost_rf_auprc'] is not None and not np.isnan(r['xgboost_rf_auprc'])]
+    
+    # Collect Recall values for each model
+    cb_recalls = [r['catboost_recall'] for r in successful_results if r['catboost_recall'] is not None and not np.isnan(r['catboost_recall'])]
+    xgb_recalls = [r['xgboost_recall'] for r in successful_results if r['xgboost_recall'] is not None and not np.isnan(r['xgboost_recall'])]
+    xgb_rf_recalls = [r['xgboost_rf_recall'] for r in successful_results if r['xgboost_rf_recall'] is not None and not np.isnan(r['xgboost_rf_recall'])]
+    
     # Calculate statistics for each model
     def calc_stats(cindices, model_name):
         if len(cindices) == 0:
@@ -925,7 +1144,47 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
     xgb_stats = calc_stats(xgb_cindices, 'XGBoost')
     xgb_rf_stats = calc_stats(xgb_rf_cindices, 'XGBoost RF')
     
-    # Create metrics DataFrame
+    # Calculate statistics for AUC
+    cb_auc_stats = calc_stats(cb_aucs, 'CatBoost')
+    xgb_auc_stats = calc_stats(xgb_aucs, 'XGBoost')
+    xgb_rf_auc_stats = calc_stats(xgb_rf_aucs, 'XGBoost RF')
+    
+    # Calculate statistics for AU-PRC
+    cb_auprc_stats = calc_stats(cb_auprcs, 'CatBoost')
+    xgb_auprc_stats = calc_stats(xgb_auprcs, 'XGBoost')
+    xgb_rf_auprc_stats = calc_stats(xgb_rf_auprcs, 'XGBoost RF')
+    
+    # Calculate statistics for Recall
+    cb_recall_stats = calc_stats(cb_recalls, 'CatBoost')
+    xgb_recall_stats = calc_stats(xgb_recalls, 'XGBoost')
+    xgb_rf_recall_stats = calc_stats(xgb_rf_recalls, 'XGBoost RF')
+    
+    # Calculate Recall at time horizon (1 year)
+    # Collect recall values for each model
+    cb_recalls = []
+    xgb_recalls = []
+    xgb_rf_recalls = []
+    
+    for r in successful_results:
+        # Calculate recall for each model from this split
+        # We need to recalculate from risk scores and binary labels at time horizon
+        # For now, we'll extract from the split results if available, or calculate
+        # For survival models, recall = TP / (TP + FN) at time horizon
+        # We can calculate this from the binary labels we created for AUC
+        try:
+            # Get risk scores and calculate recall at 1-year horizon
+            # This would require storing risk scores or recalculating
+            # For now, we'll calculate recall from the binary classification at time horizon
+            # We'll need to add this to the split results
+            pass
+        except:
+            pass
+    
+    # For now, calculate recall from AUC data (we can enhance this later)
+    # Recall can be calculated from the binary labels used for AUC
+    # We'll add a helper function to calculate recall from risk scores and labels
+    
+    # Create metrics DataFrame with all metrics
     metrics_df = pd.DataFrame([
         {
             'Model': 'CatBoost',
@@ -933,6 +1192,18 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
             'C_Index_SD': cb_stats['std'],
             'C_Index_CI_Lower': cb_stats['ci_lower'],
             'C_Index_CI_Upper': cb_stats['ci_upper'],
+            'AUC_Mean': cb_auc_stats['mean'],
+            'AUC_SD': cb_auc_stats['std'],
+            'AUC_CI_Lower': cb_auc_stats['ci_lower'],
+            'AUC_CI_Upper': cb_auc_stats['ci_upper'],
+            'AU_PRC_Mean': cb_auprc_stats['mean'],
+            'AU_PRC_SD': cb_auprc_stats['std'],
+            'AU_PRC_CI_Lower': cb_auprc_stats['ci_lower'],
+            'AU_PRC_CI_Upper': cb_auprc_stats['ci_upper'],
+            'Recall_Mean': cb_recall_stats['mean'],
+            'Recall_SD': cb_recall_stats['std'],
+            'Recall_CI_Lower': cb_recall_stats['ci_lower'],
+            'Recall_CI_Upper': cb_recall_stats['ci_upper'],
             'n_splits': cb_stats['n_splits']
         },
         {
@@ -941,6 +1212,18 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
             'C_Index_SD': xgb_stats['std'],
             'C_Index_CI_Lower': xgb_stats['ci_lower'],
             'C_Index_CI_Upper': xgb_stats['ci_upper'],
+            'AUC_Mean': xgb_auc_stats['mean'],
+            'AUC_SD': xgb_auc_stats['std'],
+            'AUC_CI_Lower': xgb_auc_stats['ci_lower'],
+            'AUC_CI_Upper': xgb_auc_stats['ci_upper'],
+            'AU_PRC_Mean': xgb_auprc_stats['mean'],
+            'AU_PRC_SD': xgb_auprc_stats['std'],
+            'AU_PRC_CI_Lower': xgb_auprc_stats['ci_lower'],
+            'AU_PRC_CI_Upper': xgb_auprc_stats['ci_upper'],
+            'Recall_Mean': xgb_recall_stats['mean'],
+            'Recall_SD': xgb_recall_stats['std'],
+            'Recall_CI_Lower': xgb_recall_stats['ci_lower'],
+            'Recall_CI_Upper': xgb_recall_stats['ci_upper'],
             'n_splits': xgb_stats['n_splits']
         },
         {
@@ -949,6 +1232,18 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
             'C_Index_SD': xgb_rf_stats['std'],
             'C_Index_CI_Lower': xgb_rf_stats['ci_lower'],
             'C_Index_CI_Upper': xgb_rf_stats['ci_upper'],
+            'AUC_Mean': xgb_rf_auc_stats['mean'],
+            'AUC_SD': xgb_rf_auc_stats['std'],
+            'AUC_CI_Lower': xgb_rf_auc_stats['ci_lower'],
+            'AUC_CI_Upper': xgb_rf_auc_stats['ci_upper'],
+            'AU_PRC_Mean': xgb_rf_auprc_stats['mean'],
+            'AU_PRC_SD': xgb_rf_auprc_stats['std'],
+            'AU_PRC_CI_Lower': xgb_rf_auprc_stats['ci_lower'],
+            'AU_PRC_CI_Upper': xgb_rf_auprc_stats['ci_upper'],
+            'Recall_Mean': xgb_rf_recall_stats['mean'],
+            'Recall_SD': xgb_rf_recall_stats['std'],
+            'Recall_CI_Lower': xgb_rf_recall_stats['ci_lower'],
+            'Recall_CI_Upper': xgb_rf_recall_stats['ci_upper'],
             'n_splits': xgb_rf_stats['n_splits']
         }
     ])
@@ -961,9 +1256,19 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
     # Print summary
     logger.info("\nMC-CV Model Performance Summary:")
     for _, row in metrics_df.iterrows():
-        logger.info(f"  {row['Model']:15s}: C-index = {row['C_Index_Mean']:.6f} ± {row['C_Index_SD']:.6f} "
-                   f"(95% CI: {row['C_Index_CI_Lower']:.6f} - {row['C_Index_CI_Upper']:.6f}) "
-                   f"[{int(row['n_splits'])} splits]")
+        logger.info(f"  {row['Model']:15s}:")
+        logger.info(f"    C-index = {row['C_Index_Mean']:.6f} ± {row['C_Index_SD']:.6f} "
+                   f"(95% CI: {row['C_Index_CI_Lower']:.6f} - {row['C_Index_CI_Upper']:.6f})")
+        if not np.isnan(row['AUC_Mean']):
+            logger.info(f"    AUC     = {row['AUC_Mean']:.6f} ± {row['AUC_SD']:.6f} "
+                       f"(95% CI: {row['AUC_CI_Lower']:.6f} - {row['AUC_CI_Upper']:.6f})")
+        if not np.isnan(row['AU_PRC_Mean']):
+            logger.info(f"    AU-PRC  = {row['AU_PRC_Mean']:.6f} ± {row['AU_PRC_SD']:.6f} "
+                       f"(95% CI: {row['AU_PRC_CI_Lower']:.6f} - {row['AU_PRC_CI_Upper']:.6f})")
+        if not np.isnan(row['Recall_Mean']):
+            logger.info(f"    Recall  = {row['Recall_Mean']:.6f} ± {row['Recall_SD']:.6f} "
+                       f"(95% CI: {row['Recall_CI_Lower']:.6f} - {row['Recall_CI_Upper']:.6f})")
+        logger.info(f"    [{int(row['n_splits'])} splits]")
     
     # Determine best model based on mean C-index
     best_model_row = metrics_df.loc[metrics_df['C_Index_Mean'].idxmax()]
@@ -1056,26 +1361,109 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
         plots_dir = cohort_output_dir / "plots"
         plots_dir.mkdir(parents=True, exist_ok=True)
         
-        # 1. C-index Heatmap
-        logger.info("Creating C-index heatmap...")
+        # 1. C-index Comparison
+        logger.info("Creating C-index comparison plot...")
         fig, ax = plt.subplots(figsize=(8, 4))
-        cindex_matrix = metrics_df.pivot_table(
-            values='C_Index_Mean',
-            index='Model',
-            columns=None
-        )
-        # For single cohort, create a simple bar chart
         ax.bar(metrics_df['Model'], metrics_df['C_Index_Mean'], 
                yerr=metrics_df['C_Index_SD'], capsize=5, alpha=0.7)
         ax.set_ylabel('C-index (Mean ± SD)')
         ax.set_xlabel('Model')
-        ax.set_title(f'Model Performance Comparison ({cohort})')
+        ax.set_title(f'Model Performance Comparison - C-index ({cohort})')
         ax.grid(axis='y', alpha=0.3)
         plt.tight_layout()
         cindex_plot_path = plots_dir / "cindex_comparison.png"
         plt.savefig(cindex_plot_path, dpi=300, bbox_inches='tight')
         plt.close()
         logger.info(f"  Saved C-index comparison to: {cindex_plot_path}")
+        
+        # 2. AUC Comparison
+        if not metrics_df['AUC_Mean'].isna().all():
+            logger.info("Creating AUC comparison plot...")
+            fig, ax = plt.subplots(figsize=(8, 4))
+            valid_auc = metrics_df.dropna(subset=['AUC_Mean'])
+            ax.bar(valid_auc['Model'], valid_auc['AUC_Mean'], 
+                   yerr=valid_auc['AUC_SD'], capsize=5, alpha=0.7, color='green')
+            ax.set_ylabel('AUC (Mean ± SD)')
+            ax.set_xlabel('Model')
+            ax.set_title(f'Model Performance Comparison - AUC ({cohort})')
+            ax.grid(axis='y', alpha=0.3)
+            plt.tight_layout()
+            auc_plot_path = plots_dir / "auc_comparison.png"
+            plt.savefig(auc_plot_path, dpi=300, bbox_inches='tight')
+            plt.close()
+            logger.info(f"  Saved AUC comparison to: {auc_plot_path}")
+        
+        # 3. AU-PRC Comparison
+        if not metrics_df['AU_PRC_Mean'].isna().all():
+            logger.info("Creating AU-PRC comparison plot...")
+            fig, ax = plt.subplots(figsize=(8, 4))
+            valid_auprc = metrics_df.dropna(subset=['AU_PRC_Mean'])
+            ax.bar(valid_auprc['Model'], valid_auprc['AU_PRC_Mean'], 
+                   yerr=valid_auprc['AU_PRC_SD'], capsize=5, alpha=0.7, color='orange')
+            ax.set_ylabel('AU-PRC (Mean ± SD)')
+            ax.set_xlabel('Model')
+            ax.set_title(f'Model Performance Comparison - AU-PRC ({cohort})')
+            ax.grid(axis='y', alpha=0.3)
+            plt.tight_layout()
+            auprc_plot_path = plots_dir / "auprc_comparison.png"
+            plt.savefig(auprc_plot_path, dpi=300, bbox_inches='tight')
+            plt.close()
+            logger.info(f"  Saved AU-PRC comparison to: {auprc_plot_path}")
+        
+        # 4. Recall Comparison
+        if not metrics_df['Recall_Mean'].isna().all():
+            logger.info("Creating Recall comparison plot...")
+            fig, ax = plt.subplots(figsize=(8, 4))
+            valid_recall = metrics_df.dropna(subset=['Recall_Mean'])
+            ax.bar(valid_recall['Model'], valid_recall['Recall_Mean'], 
+                   yerr=valid_recall['Recall_SD'], capsize=5, alpha=0.7, color='blue')
+            ax.set_ylabel('Recall (Mean ± SD)')
+            ax.set_xlabel('Model')
+            ax.set_title(f'Model Performance Comparison - Recall ({cohort})')
+            ax.grid(axis='y', alpha=0.3)
+            plt.tight_layout()
+            recall_plot_path = plots_dir / "recall_comparison.png"
+            plt.savefig(recall_plot_path, dpi=300, bbox_inches='tight')
+            plt.close()
+            logger.info(f"  Saved Recall comparison to: {recall_plot_path}")
+        
+        # 5. Combined Metrics Heatmap
+        logger.info("Creating combined metrics heatmap...")
+        # Create a heatmap with all metrics
+        heatmap_metrics = ['C_Index_Mean', 'AUC_Mean', 'AU_PRC_Mean', 'Recall_Mean']
+        available_metrics = [m for m in heatmap_metrics if m in metrics_df.columns and not metrics_df[m].isna().all()]
+        
+        if available_metrics:
+            heatmap_data = metrics_df.set_index('Model')[available_metrics].T
+            # Normalize each metric to [0, 1] for visualization
+            heatmap_data_norm = heatmap_data.copy()
+            for metric in available_metrics:
+                col = heatmap_data[metric]
+                if col.max() > col.min():
+                    heatmap_data_norm[metric] = (col - col.min()) / (col.max() - col.min())
+                else:
+                    heatmap_data_norm[metric] = 0.5
+            
+            fig, ax = plt.subplots(figsize=(8, 6))
+            sns.heatmap(
+                heatmap_data_norm,
+                annot=heatmap_data,  # Show actual values
+                fmt='.4f',
+                cmap='YlOrRd',
+                cbar_kws={'label': 'Normalized Value'},
+                ax=ax,
+                linewidths=0.5
+            )
+            ax.set_title(f'Model Performance Metrics Heatmap ({cohort})', fontsize=14, fontweight='bold')
+            ax.set_xlabel('Model', fontsize=12)
+            ax.set_ylabel('Metric', fontsize=12)
+            plt.tight_layout()
+            metrics_heatmap_path = plots_dir / "model_metrics_heatmap.png"
+            plt.savefig(metrics_heatmap_path, dpi=300, bbox_inches='tight')
+            plt.close()
+            logger.info(f"  Saved metrics heatmap to: {metrics_heatmap_path}")
+        
+        # 2. Feature Importance Heatmap (if we have aggregated importances)
         
         # 2. Feature Importance Heatmap (if we have aggregated importances)
         if aggregated_importances:
@@ -1289,6 +1677,12 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
         f.write(f"MC-CV Mean C-index: {best_c_index:.6f}\n")
         f.write(f"MC-CV 95% CI: [{best_model_row['C_Index_CI_Lower']:.6f}, {best_model_row['C_Index_CI_Upper']:.6f}]\n")
         f.write(f"MC-CV SD: {best_model_row['C_Index_SD']:.6f}\n")
+        if not np.isnan(best_model_row.get('AUC_Mean', np.nan)):
+            f.write(f"MC-CV Mean AUC: {best_model_row['AUC_Mean']:.6f} ± {best_model_row['AUC_SD']:.6f}\n")
+        if not np.isnan(best_model_row.get('AU_PRC_Mean', np.nan)):
+            f.write(f"MC-CV Mean AU-PRC: {best_model_row['AU_PRC_Mean']:.6f} ± {best_model_row['AU_PRC_SD']:.6f}\n")
+        if not np.isnan(best_model_row.get('Recall_Mean', np.nan)):
+            f.write(f"MC-CV Mean Recall: {best_model_row['Recall_Mean']:.6f} ± {best_model_row['Recall_SD']:.6f}\n")
         f.write(f"MC-CV n_splits: {int(best_model_row['n_splits'])}\n")
         f.write(f"\nTemporal Split Results:\n")
         f.write(f"  CatBoost: {cb_cindex:.6f}\n")
@@ -1296,9 +1690,19 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
         f.write(f"  XGBoost RF: {xgb_rf_cindex:.6f}\n")
         f.write(f"\nMC-CV Model Performance (all models):\n")
         for _, row in metrics_df.iterrows():
-            f.write(f"  {row['Model']}: {row['C_Index_Mean']:.6f} ± {row['C_Index_SD']:.6f} "
-                   f"(95% CI: {row['C_Index_CI_Lower']:.6f} - {row['C_Index_CI_Upper']:.6f}) "
-                   f"[{int(row['n_splits'])} splits]\n")
+            f.write(f"  {row['Model']}:\n")
+            f.write(f"    C-index: {row['C_Index_Mean']:.6f} ± {row['C_Index_SD']:.6f} "
+                   f"(95% CI: {row['C_Index_CI_Lower']:.6f} - {row['C_Index_CI_Upper']:.6f})\n")
+            if not np.isnan(row.get('AUC_Mean', np.nan)):
+                f.write(f"    AUC: {row['AUC_Mean']:.6f} ± {row['AUC_SD']:.6f} "
+                       f"(95% CI: {row['AUC_CI_Lower']:.6f} - {row['AUC_CI_Upper']:.6f})\n")
+            if not np.isnan(row.get('AU_PRC_Mean', np.nan)):
+                f.write(f"    AU-PRC: {row['AU_PRC_Mean']:.6f} ± {row['AU_PRC_SD']:.6f} "
+                       f"(95% CI: {row['AU_PRC_CI_Lower']:.6f} - {row['AU_PRC_CI_Upper']:.6f})\n")
+            if not np.isnan(row.get('Recall_Mean', np.nan)):
+                f.write(f"    Recall: {row['Recall_Mean']:.6f} ± {row['Recall_SD']:.6f} "
+                       f"(95% CI: {row['Recall_CI_Lower']:.6f} - {row['Recall_CI_Upper']:.6f})\n")
+            f.write(f"    [{int(row['n_splits'])} splits]\n")
     
     logger.info(f"\n{'='*80}")
     logger.info("TRAINING COMPLETE")
