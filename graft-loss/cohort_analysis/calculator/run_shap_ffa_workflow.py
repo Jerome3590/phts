@@ -92,10 +92,24 @@ except ImportError as e1:
 
 # Import leakage removal function
 try:
+    # Try importing from the same directory first
     from train_python_models import remove_leakage_predictors
 except ImportError:
-    logger.warning("Could not import remove_leakage_predictors from train_python_models")
-    remove_leakage_predictors = None
+    try:
+        # Try importing with full path
+        import importlib.util
+        train_models_path = CALCULATOR_DIR / "train_python_models.py"
+        if train_models_path.exists():
+            spec = importlib.util.spec_from_file_location("train_python_models", train_models_path)
+            train_models = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(train_models)
+            remove_leakage_predictors = train_models.remove_leakage_predictors
+            logger.info("Loaded remove_leakage_predictors using direct file import")
+        else:
+            raise ImportError(f"train_python_models.py not found at {train_models_path}")
+    except Exception as e:
+        logger.warning(f"Could not import remove_leakage_predictors from train_python_models: {e}")
+        remove_leakage_predictors = None
 
 
 def get_best_model(cohort: str) -> Optional[str]:
@@ -1099,8 +1113,17 @@ def run_ffa_with_shap(
     rule definitions. This ensures FFA analysis runs on the test set.
     """
     if not FFA_AVAILABLE:
-        logger.warning("FFA modules not available")
-        return None
+        error_msg = (
+            "FFA analysis modules are REQUIRED but not available.\n"
+            f"Expected location: {FFA_ANALYSIS_DIR}/\n"
+            "Required files:\n"
+            "  - ffa_utils.py (with load_model_json, extract_feature_mappings)\n"
+            "  - xgboost_axp_explainer.py (with XGBoostSymbolicExplainer, PathConfig)\n"
+            "\n"
+            "Please ensure these modules are synced from GitHub or created."
+        )
+        logger.error(error_msg)
+        raise ImportError(error_msg)
 
     if use_xgboost_only:
         logger.info("Running FFA analysis with XGBoost model JSON and XGBoost SHAP filtering (simplified pipeline)...")
@@ -2088,6 +2111,12 @@ def main():
                 X_test_for_ffa = None
 
         # Step 4: Run FFA with XGBoost JSON and SHAP values
+        if not FFA_AVAILABLE:
+            raise RuntimeError(
+                "FFA analysis is REQUIRED but modules are not available. "
+                f"Please ensure ffa_analysis/ directory exists at {FFA_ANALYSIS_DIR} with required modules."
+            )
+        
         logger.info("Step 4: Running full rule-based FFA analysis on TEST SET...")
         logger.info("Rules will be applied to test data instances to count actual rule firings")
         causal_df = run_ffa_with_shap(
