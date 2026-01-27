@@ -638,9 +638,16 @@ def predict_risk_survival(
     if not MODEL_LIBS_AVAILABLE:
         raise RuntimeError("Model libraries not available")
     
-    # Always use Combined model (single model for all cohorts)
-    model_cohort = MODEL_COHORT
-    logger.info(f"Using {model_cohort} model for cohort {cohort} (single model for all cohorts)")
+    # Use model variant if specified in cohort name (_base or _enhanced)
+    # If cohort ends with _base or _enhanced, use as-is; otherwise default to Combined_base
+    if cohort.endswith('_base') or cohort.endswith('_enhanced'):
+        model_cohort = cohort
+        base_cohort = cohort.rsplit('_', 1)[0]  # Extract base cohort name
+        logger.info(f"Using {model_cohort} model for cohort {base_cohort} (model variant specified)")
+    else:
+        # Default to baseline model if no variant specified
+        model_cohort = f"{MODEL_COHORT}_base"
+        logger.info(f"Using {model_cohort} model for cohort {cohort} (defaulting to baseline model)")
     
     # Prepare features (create derived variables)
     prepared_features = prepare_features_for_inference(features)
@@ -988,7 +995,8 @@ def handle_risk(event: Dict[str, Any]) -> Dict[str, Any]:
             "ltxtrach": 1,
             ...
         },
-        "use_ensemble": false  // optional, default: false (use best model only)
+        "use_ensemble": false,  // optional, default: false (use best model only)
+        "model_variant": "base"  // optional, default: "base" (use baseline model), "enhanced" (use extended model)
     }
     """
     try:
@@ -1003,9 +1011,18 @@ def handle_risk(event: Dict[str, Any]) -> Dict[str, Any]:
             return _response(400, {"error": "No features provided"})
         
         use_ensemble = body.get("use_ensemble", False)
+        model_variant = body.get("model_variant", "base")  # "base" or "enhanced"
+        
+        # Adjust cohort name based on model variant
+        # Models are stored in directories like "Combined_base" or "Combined_enhanced"
+        model_cohort = cohort
+        if model_variant == "enhanced":
+            model_cohort = f"{cohort}_enhanced"
+        else:
+            model_cohort = f"{cohort}_base"
         
         # Predict risk
-        result = predict_risk_survival(cohort, features, use_best_model_only=not use_ensemble)
+        result = predict_risk_survival(model_cohort, features, use_best_model_only=not use_ensemble)
         
         # Load causal factors
         try:
@@ -1016,11 +1033,11 @@ def handle_risk(event: Dict[str, Any]) -> Dict[str, Any]:
             top_causal = []
         
         # Normalize risk score for interpretability
-        # Use model_cohort (Combined) for normalization, not requested cohort
+        # Use model_cohort from result for normalization
         raw_score = result['risk_score']
         model_used = result.get('model_used', 'unknown')
-        model_cohort = result.get('model_cohort', MODEL_COHORT)
-        normalization = normalize_risk_score(raw_score, model_cohort, method="percentile", model_type=model_used)
+        result_model_cohort = result.get('model_cohort', model_cohort)
+        normalization = normalize_risk_score(raw_score, result_model_cohort, method="percentile", model_type=model_used)
         
         # Use normalized score and percentile for display
         normalized_score = normalization.get('normalized_score', raw_score)

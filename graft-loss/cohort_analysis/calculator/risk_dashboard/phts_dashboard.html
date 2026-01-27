@@ -393,13 +393,14 @@
     
     <!-- Tab Navigation -->
     <div class="tabs">
-      <button class="tab active" onclick="switchTab('risk-calculator')">Risk Calculator</button>
+      <button class="tab active" onclick="switchTab('baseline-model')">Baseline Model</button>
+      <button class="tab" onclick="switchTab('extended-model')">Extended Model</button>
       <button class="tab" onclick="switchTab('causal-analysis')">Causal Analysis</button>
       <button class="tab" onclick="window.location.href='phts_readme.html'">Documentation</button>
     </div>
     
-    <!-- Risk Calculator Tab -->
-    <div id="risk-calculator-tab" class="tab-content active">
+    <!-- Baseline Model Tab -->
+    <div id="baseline-model-tab" class="tab-content active">
     <div class="cohort-selector">
       <label for="cohort">Cohort:</label>
       <select id="cohort">
@@ -511,7 +512,122 @@
       </div>
     </div>
     </div>
-    <!-- End Risk Calculator Tab -->
+    <!-- End Baseline Model Tab -->
+    
+    <!-- Extended Model Tab -->
+    <div id="extended-model-tab" class="tab-content">
+    <div class="cohort-selector">
+      <label for="cohort-extended">Cohort:</label>
+      <select id="cohort-extended">
+        <option value="Combined">Combined</option>
+        <option value="CHD">CHD (Congenital Heart Disease)</option>
+        <option value="Myocardio">Myocardio (Cardiomyopathy/Myocarditis)</option>
+      </select>
+    </div>
+    
+    <div class="controls">
+      <div class="control-group">
+        <h3>Kidney Function</h3>
+        <div class="form-group">
+          <label for="egfr_tx-extended">eGFR at Transplant (mL/min/1.73m²)</label>
+          <input type="number" id="egfr_tx-extended" step="0.1" placeholder="e.g., 60.0" value="90.0">
+        </div>
+        <div class="form-group">
+          <label for="txbun_r-extended">BUN at Transplant (mg/dL)</label>
+          <input type="number" id="txbun_r-extended" step="0.1" placeholder="e.g., 20.0" value="15.0">
+        </div>
+        <div class="form-group">
+          <label for="txcreat_r-extended">Creatinine at Transplant (mg/dL)</label>
+          <input type="number" id="txcreat_r-extended" step="0.01" placeholder="e.g., 1.0" value="0.8">
+        </div>
+      </div>
+      
+      <div class="control-group">
+        <h3>Cardiac Support</h3>
+        <div class="form-group">
+          <label for="ltxtrach-extended">Left Ventricular Assist Device (LVAD)</label>
+          <select id="ltxtrach-extended">
+            <option value="0">No</option>
+            <option value="1">Yes</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="txecmo-extended">ECMO at Transplant</label>
+          <select id="txecmo-extended">
+            <option value="0">No</option>
+            <option value="1">Yes</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="txnomcsd-extended">Mechanical Circulatory Support Device</label>
+          <select id="txnomcsd-extended">
+            <option value="0">No</option>
+            <option value="1">Yes</option>
+          </select>
+        </div>
+      </div>
+      
+      <div class="control-group">
+        <h3>Diagnosis & Demographics</h3>
+        <div class="form-group">
+          <label for="chd_papvr-extended">CHD: Partial Anomalous Pulmonary Venous Return</label>
+          <select id="chd_papvr-extended">
+            <option value="0">No</option>
+            <option value="1">Yes</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="chd_anom-extended">CHD: Anomaly</label>
+          <select id="chd_anom-extended">
+            <option value="0">No</option>
+            <option value="1">Yes</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="donisch-extended">Donor Ischemic Time (hours)</label>
+          <input type="number" id="donisch-extended" step="0.1" placeholder="e.g., 4.5" value="4.0">
+        </div>
+      </div>
+      
+      <div class="control-group">
+        <h3>Lab Values</h3>
+        <div class="form-group">
+          <label for="txsa_r-extended">Serum Albumin at Transplant (g/dL)</label>
+          <input type="number" id="txsa_r-extended" step="0.1" placeholder="e.g., 3.5" value="3.8">
+        </div>
+        <div class="form-group">
+          <label for="txast-extended">AST at Transplant (U/L)</label>
+          <input type="number" id="txast-extended" step="0.1" placeholder="e.g., 30.0" value="25.0">
+        </div>
+      </div>
+    </div>
+    
+    <div class="button-group">
+      <button class="primary" id="calculate-btn-extended" onclick="calculateRiskExtended()">Calculate Risk</button>
+      <button class="secondary" onclick="clearFormExtended()">Clear Form</button>
+      <button class="secondary" onclick="loadBaselineExtended()">Load Baseline Values</button>
+    </div>
+    
+    <div class="loading" id="loading-extended">
+      <p>Calculating risk score...</p>
+    </div>
+    
+    <div class="error" id="error-extended"></div>
+    
+    <div class="results" id="results-extended">
+      <div class="risk-score">
+        <h2>Risk Score</h2>
+        <div class="risk-value" id="risk-value-extended">-</div>
+        <div class="risk-band" id="risk-band-extended">-</div>
+      </div>
+      
+      <div class="causal-factors">
+        <h3>Top Causal Factors</h3>
+        <div id="causal-factors-list-extended"></div>
+      </div>
+    </div>
+    </div>
+    <!-- End Extended Model Tab -->
     
     <!-- Causal Analysis Tab -->
     <div id="causal-analysis-tab" class="tab-content">
@@ -642,22 +758,55 @@
       return document.getElementById('cohort').value;
     }
     
-    // Collect all form values
+    // Get cohort from extended model selector
+    function getCohortExtended() {
+      return document.getElementById('cohort-extended').value;
+    }
+    
+    // Collect all form values (for baseline model)
     function collectFeatures() {
       const features = {};
-      const inputs = document.querySelectorAll('input, select');
+      const inputs = document.querySelectorAll('#baseline-model-tab input, #baseline-model-tab select');
       
       inputs.forEach(input => {
-        if (input.id && input.id !== 'cohort') {
+        if (input.id && input.id !== 'cohort' && !input.id.includes('-extended')) {
           const value = input.value;
           if (value !== '' && value !== null) {
+            // Remove -extended suffix if present and use base feature name
+            const featureName = input.id.replace('-extended', '');
             // Convert to appropriate type
             if (input.type === 'number') {
-              features[input.id] = parseFloat(value);
+              features[featureName] = parseFloat(value);
             } else if (input.type === 'select-one') {
-              features[input.id] = parseInt(value);
+              features[featureName] = parseInt(value);
             } else {
-              features[input.id] = value;
+              features[featureName] = value;
+            }
+          }
+        }
+      });
+      
+      return features;
+    }
+    
+    // Collect all form values (for extended model)
+    function collectFeaturesExtended() {
+      const features = {};
+      const inputs = document.querySelectorAll('#extended-model-tab input, #extended-model-tab select');
+      
+      inputs.forEach(input => {
+        if (input.id && input.id !== 'cohort-extended' && input.id.includes('-extended')) {
+          const value = input.value;
+          if (value !== '' && value !== null) {
+            // Remove -extended suffix to get base feature name
+            const featureName = input.id.replace('-extended', '');
+            // Convert to appropriate type
+            if (input.type === 'number') {
+              features[featureName] = parseFloat(value);
+            } else if (input.type === 'select-one') {
+              features[featureName] = parseInt(value);
+            } else {
+              features[featureName] = value;
             }
           }
         }
@@ -694,7 +843,8 @@
           body: JSON.stringify({
             cohort: cohort,
             features: features,
-            use_ensemble: false
+            use_ensemble: false,
+            model_variant: 'base'  // Use baseline model
           }),
           mode: 'cors'  // Explicitly set CORS mode
         });
@@ -879,7 +1029,14 @@
       // Activate the clicked tab button
       const tabs = document.querySelectorAll('.tab');
       tabs.forEach(tab => {
-        if (tab.textContent.includes(tabName === 'risk-calculator' ? 'Risk Calculator' : 'Causal Analysis')) {
+        const tabText = tab.textContent.trim();
+        if (tabName === 'baseline-model' && tabText === 'Baseline Model') {
+          tab.classList.add('active');
+        } else if (tabName === 'extended-model' && tabText === 'Extended Model') {
+          tab.classList.add('active');
+        } else if (tabName === 'causal-analysis' && tabText === 'Causal Analysis') {
+          tab.classList.add('active');
+        } else if (tabName === 'documentation' && tabText === 'Documentation') {
           tab.classList.add('active');
         }
       });
@@ -888,6 +1045,179 @@
       if (tabName === 'causal-analysis') {
         loadCausalAnalysis();
       }
+    }
+    
+    // Calculate risk for extended model
+    async function calculateRiskExtended() {
+      const cohort = getCohortExtended();
+      const features = collectFeaturesExtended();
+      
+      if (Object.keys(features).length === 0) {
+        showErrorExtended('Please enter at least one clinical feature value.');
+        return;
+      }
+      
+      // Show loading
+      document.getElementById('loading-extended').classList.add('show');
+      document.getElementById('error-extended').classList.remove('show');
+      document.getElementById('results-extended').classList.remove('show');
+      document.getElementById('calculate-btn-extended').disabled = true;
+      
+      try {
+        console.log('Calling API for extended model:', `${LAMBDA_API_URL}/risk`);
+        console.log('Request body:', { cohort, features, use_ensemble: false, model_variant: 'enhanced' });
+        
+        const response = await fetch(`${LAMBDA_API_URL}/risk`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            cohort: cohort,
+            features: features,
+            use_ensemble: false,
+            model_variant: 'enhanced'  // Use extended/enhanced model
+          }),
+          mode: 'cors'  // Explicitly set CORS mode
+        });
+        
+        console.log('Response status:', response.status);
+        console.log('Response headers:', [...response.headers.entries()]);
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Error response:', errorText);
+          let errorData;
+          try {
+            errorData = JSON.parse(errorText);
+          } catch (e) {
+            errorData = { error: errorText || `HTTP ${response.status}` };
+          }
+          throw new Error(errorData.error || 'Failed to calculate risk');
+        }
+        
+        const data = await response.json();
+        console.log('Success response:', data);
+        displayResultsExtended(data);
+        
+      } catch (error) {
+        console.error('Fetch error:', error);
+        if (error.name === 'TypeError' && error.message.includes('fetch')) {
+          showErrorExtended(`Network error: Unable to connect to API. Please check your connection and try again.`);
+        } else {
+          showErrorExtended(`Error: ${error.message}`);
+        }
+      } finally {
+        document.getElementById('loading-extended').classList.remove('show');
+        document.getElementById('calculate-btn-extended').disabled = false;
+      }
+    }
+    
+    // Display results for extended model
+    function displayResultsExtended(data) {
+      const riskScore = data.risk_score;  // Normalized score (percentile 0-100)
+      const rawScore = data.raw_score;  // Original raw prediction
+      const percentile = data.percentile;  // Percentile rank
+      const riskBand = data.risk_band;
+      const causalFactors = data.top_causal_factors || [];
+      
+      // Update risk score - display as percentile if available
+      const riskValueEl = document.getElementById('risk-value-extended');
+      if (percentile !== null && percentile !== undefined) {
+        // Display as percentile (0-100)
+        riskValueEl.textContent = percentile.toFixed(1) + '%';
+        riskValueEl.title = `Percentile: ${percentile.toFixed(1)}% (Raw score: ${rawScore.toFixed(3)})`;
+      } else {
+        // Fallback to normalized or raw score
+        riskValueEl.textContent = riskScore.toFixed(3);
+        if (rawScore !== undefined) {
+          riskValueEl.title = `Raw score: ${rawScore.toFixed(3)}`;
+        }
+      }
+      riskValueEl.className = `risk-value ${riskBand}`;
+      
+      // Update risk band
+      const riskBandEl = document.getElementById('risk-band-extended');
+      riskBandEl.textContent = riskBand.toUpperCase().replace('_', ' ');
+      riskBandEl.className = `risk-band ${riskBand}`;
+      
+      // Display causal factors
+      const factorsListEl = document.getElementById('causal-factors-list-extended');
+      factorsListEl.innerHTML = '';
+      
+      if (causalFactors.length === 0) {
+        factorsListEl.innerHTML = '<p>No causal factors available.</p>';
+      } else {
+        causalFactors.forEach((factor, index) => {
+          const factorEl = document.createElement('div');
+          factorEl.className = 'factor-item';
+          factorEl.innerHTML = `
+            <div class="factor-name">${index + 1}. ${factor.feature}</div>
+            <div class="factor-importance">
+              Importance: ${(factor.causal_responsibility || factor.importance || 0).toFixed(4)}
+            </div>
+          `;
+          factorsListEl.appendChild(factorEl);
+        });
+      }
+      
+      // Show results
+      document.getElementById('results-extended').classList.add('show');
+    }
+    
+    // Show error for extended model
+    function showErrorExtended(message) {
+      const errorEl = document.getElementById('error-extended');
+      errorEl.textContent = message;
+      errorEl.classList.add('show');
+    }
+    
+    // Clear form for extended model
+    function clearFormExtended() {
+      document.querySelectorAll('#extended-model-tab input, #extended-model-tab select').forEach(input => {
+        if (input.id !== 'cohort-extended') {
+          input.value = '';
+        }
+      });
+      document.getElementById('results-extended').classList.remove('show');
+      document.getElementById('error-extended').classList.remove('show');
+    }
+    
+    // Load baseline/default values for extended model
+    function loadBaselineExtended() {
+      // Baseline values based on typical/normal ranges for pediatric heart transplant
+      const baseline = {
+        // Kidney Function - normal ranges
+        'egfr_tx': 90.0,        // Normal eGFR (mL/min/1.73m²)
+        'txbun_r': 15.0,        // Normal BUN (mg/dL)
+        'txcreat_r': 0.8,       // Normal creatinine (mg/dL)
+        
+        // Cardiac Support - default to "No"
+        'ltxtrach': '0',        // No LVAD
+        'txecmo': '0',          // No ECMO
+        'txnomcsd': '0',        // No MCSD
+        
+        // Diagnosis & Demographics
+        'chd_papvr': '0',       // No CHD PAPVR
+        'chd_anom': '0',        // No CHD anomaly
+        'donisch': 4.0,         // Typical donor ischemic time (hours)
+        
+        // Lab Values - normal ranges
+        'txsa_r': 3.8,          // Normal serum albumin (g/dL)
+        'txast': 25.0           // Normal AST (U/L)
+      };
+      
+      // Apply baseline values (with -extended suffix)
+      Object.keys(baseline).forEach(id => {
+        const element = document.getElementById(`${id}-extended`);
+        if (element) {
+          element.value = baseline[id];
+        }
+      });
+      
+      // Clear results when loading baseline
+      document.getElementById('results-extended').classList.remove('show');
+      document.getElementById('error-extended').classList.remove('show');
     }
     
     // Causal Analysis state
