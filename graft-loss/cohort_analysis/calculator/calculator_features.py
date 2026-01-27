@@ -62,10 +62,14 @@ def get_calculator_base_features() -> List[str]:
         "lssab_r",
         "txtp_r",
         "lstp_r",
+        "txpalb_r",
+        "lspalb_r",
         
         # Immunology
         "txfcpra",
         "lsfcpra",
+        "lsfprab",
+        "lsfprat",
         
         # Donor characteristics
         "donor_age",
