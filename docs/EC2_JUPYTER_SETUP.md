@@ -43,9 +43,18 @@ chmod +x docs/setup_git_credentials_auto.sh
 ### 3. Start Jupyter Notebook Server
 
 ```bash
-# Activate virtual environment
+# Activate virtual environment (use existing if available)
 cd phts
-source phts_env/bin/activate
+
+# Check for existing virtual environment
+if [ -d "jupyter-env" ]; then
+    source jupyter-env/bin/activate
+elif [ -d "phts_env" ]; then
+    source phts_env/bin/activate
+else
+    echo "No virtual environment found. Run clone_and_setup.sh first."
+    exit 1
+fi
 
 # Start Jupyter (accessible from anywhere)
 jupyter notebook --ip=0.0.0.0 --port=8888 --no-browser --allow-root

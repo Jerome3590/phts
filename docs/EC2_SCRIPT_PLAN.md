@@ -118,7 +118,9 @@ SHALLOW_CLONE=false ./clone_and_setup.sh
 - ✅ Auto-detects and installs Git if missing
 - ✅ Auto-detects and installs Python 3 if missing
 - ✅ Shallow clone by default (saves ~50-70% space/time)
-- ✅ Creates virtual environment
+- ✅ **Detects existing virtual environments** (`jupyter-env`, `phts_env`)
+- ✅ Uses existing venv or creates new one
+- ✅ Works if already in repository directory
 - ✅ Installs all required packages
 - ✅ Handles existing repository (pulls updates)
 
@@ -130,7 +132,12 @@ SHALLOW_CLONE=false ./clone_and_setup.sh
 - matplotlib
 
 **Output Directory:**
-- `~/phts/` (or current directory)
+- `~/phts/` (or current directory if already in repo)
+
+**Virtual Environment:**
+- Uses existing `jupyter-env` if found
+- Uses existing `phts_env` if found
+- Creates new `phts_env` if none exist
 
 ---
 

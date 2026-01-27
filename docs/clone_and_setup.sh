@@ -27,12 +27,20 @@ if ! command -v git &> /dev/null; then
     fi
 fi
 
-# Clone repository
-if [ -d "$REPO_DIR" ]; then
+# Check if we're already in the repository
+if [ -d ".git" ] || [ -f "README.md" ]; then
+    echo "Already in repository directory"
+    REPO_DIR="."
+    # If we're in the repo, check if we should pull updates
+    if [ -d ".git" ]; then
+        echo "Checking for updates..."
+        git pull || echo "Note: Could not pull updates (may need credentials setup)"
+    fi
+elif [ -d "$REPO_DIR" ]; then
     echo "Repository already exists at $REPO_DIR"
     echo "Pulling latest changes..."
     cd "$REPO_DIR"
-    git pull
+    git pull || echo "Note: Could not pull updates (may need credentials setup)"
     cd ..
 else
     echo "Cloning repository..."
@@ -49,8 +57,10 @@ else
     echo "✓ Repository cloned successfully"
 fi
 
-# Navigate to repository
-cd "$REPO_DIR"
+# Navigate to repository (if not already there)
+if [ "$REPO_DIR" != "." ]; then
+    cd "$REPO_DIR"
+fi
 
 # Check Python installation
 if ! command -v python3 &> /dev/null; then
@@ -65,11 +75,29 @@ if ! command -v python3 &> /dev/null; then
     fi
 fi
 
-# Check if virtual environment exists
-if [ ! -d "$PYTHON_ENV" ]; then
-    echo "Creating Python virtual environment..."
-    python3 -m venv "$PYTHON_ENV"
-    echo "✓ Virtual environment created"
+# Check for existing virtual environments
+EXISTING_VENV=""
+if [ -d "jupyter-env" ]; then
+    EXISTING_VENV="jupyter-env"
+    echo "Found existing virtual environment: jupyter-env"
+elif [ -d "phts_env" ]; then
+    EXISTING_VENV="phts_env"
+    echo "Found existing virtual environment: phts_env"
+elif [ -d "$PYTHON_ENV" ]; then
+    EXISTING_VENV="$PYTHON_ENV"
+    echo "Found existing virtual environment: $PYTHON_ENV"
+fi
+
+# Use existing venv or create new one
+if [ -n "$EXISTING_VENV" ]; then
+    PYTHON_ENV="$EXISTING_VENV"
+    echo "Using existing virtual environment: $PYTHON_ENV"
+else
+    if [ ! -d "$PYTHON_ENV" ]; then
+        echo "Creating Python virtual environment..."
+        python3 -m venv "$PYTHON_ENV"
+        echo "✓ Virtual environment created: $PYTHON_ENV"
+    fi
 fi
 
 # Activate virtual environment

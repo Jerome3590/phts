@@ -35,8 +35,10 @@ SHALLOW_CLONE=false ./clone_and_setup.sh
 
 **What the script does:**
 - Clone the repository (shallow or full)
-- Set up Python virtual environment
+- **Detects existing virtual environments** (`jupyter-env`, `phts_env`) and uses them
+- Creates new virtual environment only if none exist
 - Install required dependencies (numpy, pandas, catboost, xgboost, shap, jupyter, etc.)
+- Works if you're already in the repository directory
 
 ### 2. Configure GitHub Credentials
 
