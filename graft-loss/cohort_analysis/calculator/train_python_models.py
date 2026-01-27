@@ -1086,30 +1086,7 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
     xgb_recall_stats = calc_stats(xgb_recalls, 'XGBoost')
     xgb_rf_recall_stats = calc_stats(xgb_rf_recalls, 'XGBoost RF')
     
-    # Calculate Recall at time horizon (1 year)
-    # Collect recall values for each model
-    cb_recalls = []
-    xgb_recalls = []
-    xgb_rf_recalls = []
-    
-    for r in successful_results:
-        # Calculate recall for each model from this split
-        # We need to recalculate from risk scores and binary labels at time horizon
-        # For now, we'll extract from the split results if available, or calculate
-        # For survival models, recall = TP / (TP + FN) at time horizon
-        # We can calculate this from the binary labels we created for AUC
-        try:
-            # Get risk scores and calculate recall at 1-year horizon
-            # This would require storing risk scores or recalculating
-            # For now, we'll calculate recall from the binary classification at time horizon
-            # We'll need to add this to the split results
-            pass
-        except:
-            pass
-    
-    # For now, calculate recall from AUC data (we can enhance this later)
-    # Recall can be calculated from the binary labels used for AUC
-    # We'll add a helper function to calculate recall from risk scores and labels
+    # Collect Recall values for each model (already calculated in train_single_split_models)
     
     # Create metrics DataFrame with all metrics
     metrics_df = pd.DataFrame([
