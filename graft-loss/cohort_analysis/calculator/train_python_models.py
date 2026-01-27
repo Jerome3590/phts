@@ -586,12 +586,14 @@ def train_single_split_models(
         results['catboost_cindex'] = cb_cindex
         
         # Get CatBoost feature importance
+        # For survival models, use signed time labels (y_test) for importance calculation
+        # CatBoost's get_feature_importance works with the same label format used for training
         try:
             cb_importance = get_importance_catboost(
                 cb_model, 
                 feature_names, 
                 X_test=X_test, 
-                y_test=status_test  # Use status for importance calculation
+                y_test=y_test  # Use signed time labels (same format as training)
             )
             results['catboost_importance'] = cb_importance
         except Exception as e:
@@ -613,12 +615,33 @@ def train_single_split_models(
         results['xgboost_cindex'] = xgb_cindex
         
         # Get XGBoost feature importance
+        # For survival models, we need to use a custom C-index scorer
+        # For now, use signed time labels - XGBoost permutation importance will work with this
         try:
+            # Create custom C-index scorer for survival
+            def cindex_scorer(model, X, y):
+                """Custom scorer using C-index for survival models."""
+                # y is signed time labels (+time for events, -time for censored)
+                # Extract time and status
+                time_vals = np.abs(y)
+                status_vals = (y > 0).astype(int)
+                
+                # Get risk predictions
+                risk_scores = model.predict(X)
+                
+                # Calculate C-index
+                c_index, _, _, _, _ = concordance_index_censored(
+                    status_vals.astype(bool),
+                    time_vals,
+                    risk_scores
+                )
+                return c_index
+            
             xgb_importance = get_importance_xgboost(
                 xgb_model,
                 feature_names,
                 X_test=X_test,
-                y_test=status_test  # Use status for importance calculation
+                y_test=y_test  # Use signed time labels
             )
             # Extract importance column (may be 'importance' or 'gain_importance')
             if 'importance' in xgb_importance.columns:
@@ -651,7 +674,7 @@ def train_single_split_models(
                 xgb_rf_model,
                 feature_names,
                 X_test=X_test,
-                y_test=status_test  # Use status for importance calculation
+                y_test=y_test  # Use signed time labels
             )
             # Extract importance column
             if 'importance' in xgb_rf_importance.columns:
