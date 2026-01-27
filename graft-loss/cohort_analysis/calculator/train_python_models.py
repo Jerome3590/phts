@@ -385,6 +385,7 @@ def train_catboost_survival(
     logger.info(f"  CatBoost C-index: {c_index:.6f}")
     
     # Save model
+    output_dir.mkdir(parents=True, exist_ok=True)
     model_path = output_dir / "catboost_model.cbm"
     model.save_model(str(model_path))
     logger.info(f"  Saved CatBoost model to {model_path}")
@@ -469,6 +470,7 @@ def train_xgboost_survival(
     logger.info(f"  XGBoost C-index: {c_index:.6f}")
     
     # Save model binary
+    output_dir.mkdir(parents=True, exist_ok=True)
     model_binary_path = output_dir / "xgboost_model.ubj"
     model.save_model(str(model_binary_path))
     logger.info(f"  Saved XGBoost binary to {model_binary_path}")
@@ -582,6 +584,7 @@ def train_xgboost_rf_survival(
     logger.info(f"  XGBoost RF C-index: {c_index:.6f}")
     
     # Save model binary
+    output_dir.mkdir(parents=True, exist_ok=True)
     model_binary_path = output_dir / "xgboost_rf_model.ubj"
     model.save_model(str(model_binary_path))
     logger.info(f"  Saved XGBoost RF binary to {model_binary_path}")
