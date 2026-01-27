@@ -83,7 +83,7 @@ def calculate_survival_auc_auprc_recall(
     time_horizon: float = 365.25  # Default: 1 year in days
 ) -> Tuple[float, float, float]:
     """
-    Calculate AUC and AU-PRC for survival models at a specific time horizon.
+    Calculate AUC, AU-PRC, and Recall for survival models at a specific time horizon.
     
     Converts survival problem to binary classification:
     - Positive class: event occurred by time_horizon
@@ -96,10 +96,10 @@ def calculate_survival_auc_auprc_recall(
         time_horizon: Time horizon for binary classification (default: 365.25 days = 1 year)
         
     Returns:
-        Tuple of (AUC, AU-PRC) or (np.nan, np.nan) if calculation fails
+        Tuple of (AUC, AU-PRC, Recall) or (np.nan, np.nan, np.nan) if calculation fails
     """
     if not HAS_SKLEARN_METRICS:
-        return np.nan, np.nan
+        return np.nan, np.nan, np.nan
     
     try:
         # Convert to binary classification problem at time_horizon
@@ -123,16 +123,16 @@ def calculate_survival_auc_auprc_recall(
         # Remove NaN labels and corresponding risk scores
         valid_mask = ~np.isnan(binary_labels)
         if valid_mask.sum() < 2:
-            logger.warning(f"Insufficient data for AUC/AU-PRC at time_horizon={time_horizon}")
-            return np.nan, np.nan
+            logger.warning(f"Insufficient data for AUC/AU-PRC/Recall at time_horizon={time_horizon}")
+            return np.nan, np.nan, np.nan
         
         binary_labels_clean = binary_labels[valid_mask].astype(int)
         risk_scores_clean = risk_scores[valid_mask]
         
         # Check if we have both classes
         if len(np.unique(binary_labels_clean)) < 2:
-            logger.warning(f"Only one class present for AUC/AU-PRC at time_horizon={time_horizon}")
-            return np.nan, np.nan
+            logger.warning(f"Only one class present for AUC/AU-PRC/Recall at time_horizon={time_horizon}")
+            return np.nan, np.nan, np.nan
         
         # Normalize risk scores to [0, 1] for probability interpretation
         # Higher risk = higher probability of event
@@ -162,81 +162,8 @@ def calculate_survival_auc_auprc_recall(
         return float(auc), float(auprc), float(recall)
         
     except Exception as e:
-        logger.warning(f"Error calculating AUC/AU-PRC: {e}")
-        return np.nan, np.nan
-
-# Import sklearn metrics for AUC and AU-PRC
-try:
-    from sklearn.metrics import roc_auc_score, average_precision_score
-    HAS_SKLEARN_METRICS = True
-except ImportError:
-    HAS_SKLEARN_METRICS = False
-    logger.warning("sklearn.metrics not available. AUC and AU-PRC will not be calculated.")
-
-
-def calculate_survival_auc_auprc(
-    risk_scores: np.ndarray,
-    time: np.ndarray,
-    status: np.ndarray,
-    time_horizon: float = 365.25  # Default: 1 year in days
-) -> Tuple[float, float]:
-    """
-    Calculate AUC and AU-PRC for survival models at a specific time horizon.
-    
-    Converts survival problem to binary classification:
-    - Positive class: event occurred by time_horizon
-    - Negative class: no event by time_horizon (censored or event after horizon)
-    
-    Args:
-        risk_scores: Risk scores from model (higher = higher risk)
-        time: Time to event or censoring
-        status: Event indicator (1=event, 0=censored)
-        time_horizon: Time horizon in days (default: 365.25 = 1 year)
-        
-    Returns:
-        Tuple of (AUC, AU-PRC)
-    """
-    if not HAS_SKLEARN_METRICS:
-        return np.nan, np.nan
-    
-    # Convert to binary classification problem
-    # Positive: event occurred by time_horizon
-    # Negative: no event by time_horizon (censored after horizon or event after horizon)
-    binary_labels = np.zeros(len(time), dtype=int)
-    
-    for i in range(len(time)):
-        if status[i] == 1 and time[i] <= time_horizon:
-            # Event occurred by horizon: positive
-            binary_labels[i] = 1
-        elif status[i] == 0 and time[i] > time_horizon:
-            # Censored after horizon: negative (we know they survived past horizon)
-            binary_labels[i] = 0
-        elif status[i] == 1 and time[i] > time_horizon:
-            # Event after horizon: negative
-            binary_labels[i] = 0
-        # Censored before horizon: exclude (we don't know if event occurred)
-        # This is handled by filtering below
-    
-    # Filter out censored observations before time_horizon (we can't label them)
-    valid_mask = ~((status == 0) & (time <= time_horizon))
-    
-    if valid_mask.sum() == 0:
-        return np.nan, np.nan
-    
-    y_true = binary_labels[valid_mask]
-    y_scores = risk_scores[valid_mask]
-    
-    # Check if we have both classes
-    if len(np.unique(y_true)) < 2:
-        return np.nan, np.nan
-    
-    try:
-        auc = roc_auc_score(y_true, y_scores)
-        auprc = average_precision_score(y_true, y_scores)
-        return auc, auprc
-    except Exception as e:
-        logger.warning(f"Error calculating AUC/AU-PRC: {e}")
-        return np.nan, np.nan
+        logger.warning(f"Error calculating AUC/AU-PRC/Recall: {e}")
+        return np.nan, np.nan, np.nan
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
