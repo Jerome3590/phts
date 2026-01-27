@@ -182,6 +182,10 @@ def filter_to_calculator_features(df, feature_cols: List[str]) -> List[str]:
     """
     Filter feature columns to only include calculator features.
     
+    Calculator features are those that:
+    1. Can be provided directly by users in the calculator UI, OR
+    2. Can be derived from user inputs (e.g., eGFR from height/creatinine)
+    
     Args:
         df: DataFrame (for reference, not used currently)
         feature_cols: List of all available feature columns
@@ -199,10 +203,10 @@ def filter_to_calculator_features(df, feature_cols: List[str]) -> List[str]:
     ]
     
     # Also include any CHD subtype features (chd_* pattern) as they may be calculator inputs
-    # This ensures we don't miss any CHD subtypes
+    # This ensures we don't miss any CHD subtypes that users can select
     chd_features = [col for col in feature_cols if col.lower().startswith('chd_')]
     for chd_feat in chd_features:
-        if chd_feat not in filtered:
+        if chd_feat.lower() not in [f.lower() for f in filtered]:
             filtered.append(chd_feat)
     
     return filtered
