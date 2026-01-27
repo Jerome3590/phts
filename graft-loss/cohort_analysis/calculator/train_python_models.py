@@ -837,7 +837,7 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
     1. Trains all three models on the training set
     2. Evaluates each model on the test set using C-index
     3. Aggregates results across all splits
-    4. Selects the best model based on mean C-index
+    4. Selects the best model based on mean C-index (primary), then AU-PRC (tiebreaker)
     
     After MC-CV evaluation, trains the best model on the full temporal 80/20 split
     for final model deployment.
@@ -1172,12 +1172,34 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
                        f"(95% CI: {row['Recall_CI_Lower']:.6f} - {row['Recall_CI_Upper']:.6f})")
         logger.info(f"    [{int(row['n_splits'])} splits]")
     
-    # Determine best model based on mean C-index
-    best_model_row = metrics_df.loc[metrics_df['C_Index_Mean'].idxmax()]
+    # Determine best model: first by C-index, then by AU-PRC as tiebreaker
+    max_c_index = metrics_df['C_Index_Mean'].max()
+    candidates = metrics_df[metrics_df['C_Index_Mean'] == max_c_index].copy()
+    
+    if len(candidates) > 1:
+        # Multiple models tied for best C-index - use AU-PRC as tiebreaker
+        logger.info(f"\nMultiple models tied for best C-index ({max_c_index:.6f}). Using AU-PRC as tiebreaker...")
+        # Filter out NaN AU-PRC values
+        candidates_with_auprc = candidates[candidates['AU_PRC_Mean'].notna()]
+        if len(candidates_with_auprc) > 0:
+            best_model_row = candidates_with_auprc.loc[candidates_with_auprc['AU_PRC_Mean'].idxmax()]
+            logger.info(f"  Selected {best_model_row['Model']} based on AU-PRC: {best_model_row['AU_PRC_Mean']:.6f}")
+        else:
+            # No AU-PRC available - use first candidate (arbitrary tiebreak)
+            best_model_row = candidates.iloc[0]
+            logger.info(f"  No AU-PRC available. Selected {best_model_row['Model']} (first candidate)")
+    else:
+        # Single best model by C-index
+        best_model_row = candidates.iloc[0]
+    
     best_model_name = best_model_row['Model']
     best_c_index = best_model_row['C_Index_Mean']
+    best_auprc = best_model_row.get('AU_PRC_Mean', np.nan)
     
-    logger.info(f"\nBest Model: {best_model_name} (Mean C-index: {best_c_index:.6f})")
+    if not np.isnan(best_auprc):
+        logger.info(f"\nBest Model: {best_model_name} (Mean C-index: {best_c_index:.6f}, Mean AU-PRC: {best_auprc:.6f})")
+    else:
+        logger.info(f"\nBest Model: {best_model_name} (Mean C-index: {best_c_index:.6f})")
     
     # ============================================================================
     # AGGREGATE FEATURE IMPORTANCES
@@ -1576,6 +1598,7 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
     best_model_path = cohort_output_dir / "best_model.txt"
     with open(best_model_path, 'w') as f:
         f.write(f"Best Model (MC-CV): {best_model_name}\n")
+        f.write(f"Selection Criteria: C-index (primary), AU-PRC (tiebreaker)\n")
         f.write(f"MC-CV Mean C-index: {best_c_index:.6f}\n")
         f.write(f"MC-CV 95% CI: [{best_model_row['C_Index_CI_Lower']:.6f}, {best_model_row['C_Index_CI_Upper']:.6f}]\n")
         f.write(f"MC-CV SD: {best_model_row['C_Index_SD']:.6f}\n")
@@ -1610,7 +1633,10 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
     logger.info("TRAINING COMPLETE")
     logger.info(f"{'='*80}")
     logger.info(f"Best Model (MC-CV): {best_model_name}")
+    logger.info(f"Selection Criteria: C-index (primary), AU-PRC (tiebreaker)")
     logger.info(f"MC-CV Mean C-index: {best_c_index:.6f}")
+    if not np.isnan(best_auprc):
+        logger.info(f"MC-CV Mean AU-PRC: {best_auprc:.6f}")
     logger.info(f"\nAll outputs saved to: {cohort_output_dir}")
     logger.info(f"  - MC-CV metrics: {metrics_path}")
     logger.info(f"  - Feature importances: {cohort_output_dir / 'mc_cv_*_feature_importance.csv'}")
