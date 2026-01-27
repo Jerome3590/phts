@@ -17,6 +17,7 @@ Added new derived variables to `prepare_calculator_features()`:
 - ✅ **vad_combined**: `txvad OR slvad` (VAD at transplant or listing)
 - ✅ **vent_combined**: `txvent OR slvent OR ltxtrach OR hxtrach` (Mechanical ventilation at transplant or listing)
 - ✅ **donor_weight_ratio**: `(weight_donor / weight_txpl) * 100` (Donor/recipient weight ratio)
+- ✅ **donor_size_ratio**: `(height_donor / height_txpl) * 100` (Donor/recipient size ratio - height ratio)
 
 These match the feature engineering requirements from the risk calculator updates plan.
 
@@ -116,6 +117,7 @@ The following derived variables are created during training:
 5. **Derived ratios**:
    - `egfr_change`: egfr_tx - egfr_listing
    - `donor_weight_ratio`: (weight_donor / weight_txpl) * 100 ✅ NEW
+   - `donor_size_ratio`: (height_donor / height_txpl) * 100 ✅ NEW
 
 ### Inference Features (prepare_features_for_inference)
 
@@ -125,7 +127,8 @@ The Lambda function creates the same derived variables from user inputs:
 2. **Ventilation combined**: `txvent OR slvent OR ltxtrach OR hxtrach`
 3. **ECMO combined**: `txecmo OR slecmo`
 4. **Donor weight ratio**: `(weight_donor / weight_txpl) * 100`
-5. **eGFR calculation**: `0.413 * height_txpl / txcreat_r` (if not provided)
+5. **Donor size ratio**: `(height_donor / height_txpl) * 100`
+6. **eGFR calculation**: `0.413 * height_txpl / txcreat_r` (if not provided)
 
 ## Validation
 
@@ -216,6 +219,7 @@ prepared = prepare_features_for_inference(features)
 # - vad_combined: 1
 # - vent_combined: 1
 # - donor_weight_ratio: 133.33
+# - donor_size_ratio: (if height_donor provided)
 # - egfr_tx: 77.44
 ```
 

@@ -579,6 +579,15 @@ def prepare_features_for_inference(features: Dict[str, Any]) -> Dict[str, Any]:
         else:
             prepared["donor_weight_ratio"] = None
     
+    # Donor/Recipient Size Ratio (Height Ratio)
+    if "height_donor" in prepared and "height_txpl" in prepared:
+        height_donor = prepared.get("height_donor")
+        height_txpl = prepared.get("height_txpl")
+        if height_txpl and height_txpl > 0:
+            prepared["donor_size_ratio"] = (height_donor / height_txpl) * 100
+        else:
+            prepared["donor_size_ratio"] = None
+    
     # ECMO combined (if not already present)
     if "ecmo_combined" not in prepared:
         if "txecmo" in prepared or "slecmo" in prepared:

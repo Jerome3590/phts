@@ -452,6 +452,15 @@ def prepare_calculator_features(df: pd.DataFrame) -> pd.DataFrame:
         )
         logger.info("Created donor_weight_ratio")
 
+    # Donor/Recipient Size Ratio (Height Ratio)
+    if "height_donor" in df.columns and "height_txpl" in df.columns:
+        mask = df["height_txpl"].notna() & (df["height_txpl"] > 0)
+        df["donor_size_ratio"] = np.nan
+        df.loc[mask, "donor_size_ratio"] = (
+            (df.loc[mask, "height_donor"] / df.loc[mask, "height_txpl"]) * 100
+        )
+        logger.info("Created donor_size_ratio")
+
     # History of Fontan Associated Liver Disease (dichotomous)
     if "hxfonlvr" in df.columns:
         df["hxfonlvr_bin"] = (df["hxfonlvr"] == 1).astype(int)
