@@ -80,7 +80,7 @@ elif [ -f "graft-loss/cohort_analysis/calculator/requirements.txt" ]; then
     pip install -r graft-loss/cohort_analysis/calculator/requirements.txt
 else
     echo "Installing common dependencies..."
-    pip install numpy pandas scikit-learn catboost xgboost shap jupyter
+    pip install numpy pandas scikit-learn catboost xgboost shap jupyter notebook matplotlib
 fi
 
 echo ""
@@ -93,6 +93,12 @@ echo "To activate the environment in the future:"
 echo "  cd $REPO_DIR"
 echo "  source $PYTHON_ENV/bin/activate"
 echo ""
-echo "To run the interactive workflow:"
-echo "  python docs/calculator_workflow_interactive.py"
+echo "To start Jupyter notebook:"
+echo "  jupyter notebook --ip=0.0.0.0 --port=8888 --no-browser"
+echo ""
+echo "Then create SSH tunnel from local machine:"
+echo "  ssh -i your-key.pem -L 8888:localhost:8888 ec2-user@your-ec2-ip"
+echo ""
+echo "Open notebook:"
+echo "  graft-loss/cohort_analysis/calculator/calculator_workflow.ipynb"
 echo ""

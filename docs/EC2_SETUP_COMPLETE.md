@@ -30,15 +30,29 @@ chmod +x docs/setup_git_credentials.sh
 ./docs/setup_git_credentials_auto.sh Jerome3590 YOUR_TOKEN
 ```
 
-### 3. Run Interactive Workflow
+### 3. Start Jupyter Notebook
 
-**Option A: Using VS Code Python Interactive Window**
+```bash
+# Activate virtual environment
+source phts_env/bin/activate
 
-1. Open VS Code on your local machine
-2. Connect to EC2 via SSH (Remote-SSH extension)
-3. Open `docs/calculator_workflow_interactive.py`
-4. Select Python interpreter (the virtual environment)
-5. Click "Run Cell" above each `# %%` cell to execute step by step
+# Start Jupyter server
+jupyter notebook --ip=0.0.0.0 --port=8888 --no-browser
+```
+
+**Connect from Local Machine:**
+
+On your local machine, create SSH tunnel:
+```bash
+ssh -i your-key.pem -L 8888:localhost:8888 ec2-user@your-ec2-ip
+```
+
+Then open in browser: `http://localhost:8888` (use token from Jupyter output)
+
+**Open Calculator Workflow Notebook:**
+- Navigate to `graft-loss/cohort_analysis/calculator/`
+- Open `calculator_workflow.ipynb`
+- Run cells step by step or use "Run All"
 
 **Option B: Run Individual Scripts**
 
