@@ -714,12 +714,14 @@ def train_single_split_models(
         # Get CatBoost feature importance
         # For survival models, use signed time labels (y_test) for importance calculation
         # CatBoost's get_feature_importance works with the same label format used for training
+        # Pass categorical feature indices so CatBoost knows which features are categorical
         try:
             cb_importance = get_importance_catboost(
                 cb_model, 
                 feature_names, 
                 X_test=X_test, 
-                y_test=y_test  # Use signed time labels (same format as training)
+                y_test=y_test,  # Use signed time labels (same format as training)
+                cat_feature_indices=cat_feature_indices  # Pass categorical feature indices
             )
             results['catboost_importance'] = cb_importance
         except Exception as e:

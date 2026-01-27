@@ -337,10 +337,18 @@ def predict_proba_catboost(model, X_test):
     return pred_proba
 
 
-def get_importance_catboost(model, feature_names, X_test=None, y_test=None, scoring='recall'):
+def get_importance_catboost(model, feature_names, X_test=None, y_test=None, scoring='recall', cat_feature_indices=None):
     """
     Get permutation-based feature importance from CatBoost model using CatBoost's built-in method.
     Uses CatBoost's get_feature_importance with Pool for permutation-based calculation.
+    
+    Args:
+        model: Trained CatBoost model
+        feature_names: List of feature names
+        X_test: Test features (DataFrame or array)
+        y_test: Test labels (array)
+        scoring: Scoring function (not used for CatBoost built-in importance)
+        cat_feature_indices: Optional list of categorical feature indices (0-based)
     """
     if X_test is not None and y_test is not None:
         # Ensure X_test is a DataFrame
@@ -370,10 +378,24 @@ def get_importance_catboost(model, feature_names, X_test=None, y_test=None, scor
         # This is important because train_catboost removes constant features per split
         X_test_aligned = X_test[model_feature_names].copy()
         
-        # Use CatBoost's built-in permutation importance
-        # Create Pool for test data
-        categorical_features = [col for col in X_test_aligned.columns if col.startswith('item_')]
-        cat_indices = [X_test_aligned.columns.get_loc(col) for col in categorical_features] if categorical_features else None
+        # Determine categorical feature indices
+        # Priority: use provided cat_feature_indices, otherwise check for 'item_' pattern
+        if cat_feature_indices is not None:
+            # Map the provided indices to the aligned feature set
+            # cat_feature_indices are indices in the original feature_names
+            # We need to map them to indices in model_feature_names
+            cat_indices = []
+            for orig_idx in cat_feature_indices:
+                if orig_idx < len(feature_names):
+                    feature_name = feature_names[orig_idx]
+                    if feature_name in model_feature_names:
+                        aligned_idx = list(model_feature_names).index(feature_name)
+                        cat_indices.append(aligned_idx)
+            cat_indices = cat_indices if cat_indices else None
+        else:
+            # Fallback: check for 'item_' pattern (for backward compatibility)
+            categorical_features = [col for col in X_test_aligned.columns if col.startswith('item_')]
+            cat_indices = [X_test_aligned.columns.get_loc(col) for col in categorical_features] if categorical_features else None
         
         test_pool = Pool(
             data=X_test_aligned,
