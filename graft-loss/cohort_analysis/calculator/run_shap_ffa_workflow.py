@@ -1317,30 +1317,36 @@ def run_ffa_with_shap(
                             for lit in clause:
                                 if lit in explainer.id_condition_map:
                                     feat_idx, op, threshold = explainer.id_condition_map[lit]
-                                    if feat_idx < len(x_instance):
-                                        feat_val = x_instance[feat_idx]
-                                        # Check condition based on operator
-                                        if op == '<=' or op == 'le':
-                                            if not (feat_val <= threshold):
-                                                clause_satisfied = False
-                                                break
-                                        elif op == '>' or op == 'gt':
-                                            if not (feat_val > threshold):
-                                                clause_satisfied = False
-                                                break
-                                        elif op == '<' or op == 'lt':
-                                            if not (feat_val < threshold):
-                                                clause_satisfied = False
-                                                break
-                                        elif op == '>=' or op == 'ge':
-                                            if not (feat_val >= threshold):
-                                                clause_satisfied = False
-                                                break
-                                        elif op == '==' or op == 'eq':
-                                            if not (feat_val == threshold):
-                                                clause_satisfied = False
-                                                break
-                                        # If operator not recognized, assume satisfied (conservative)
+                                    if feat_idx >= len(x_instance):
+                                        # Feature index out of bounds - rule cannot be satisfied
+                                        clause_satisfied = False
+                                        break
+                                    feat_val = x_instance[feat_idx]
+                                    # Check condition based on operator
+                                    if op == '<=' or op == 'le':
+                                        if not (feat_val <= threshold):
+                                            clause_satisfied = False
+                                            break
+                                    elif op == '>' or op == 'gt':
+                                        if not (feat_val > threshold):
+                                            clause_satisfied = False
+                                            break
+                                    elif op == '<' or op == 'lt':
+                                        if not (feat_val < threshold):
+                                            clause_satisfied = False
+                                            break
+                                    elif op == '>=' or op == 'ge':
+                                        if not (feat_val >= threshold):
+                                            clause_satisfied = False
+                                            break
+                                    elif op == '==' or op == 'eq':
+                                        if not (feat_val == threshold):
+                                            clause_satisfied = False
+                                            break
+                                    # If operator not recognized, assume satisfied (conservative)
+                                else:
+                                    # Literal not in id_condition_map - skip this literal
+                                    logger.debug(f"Literal {lit} not found in id_condition_map")
                             if clause_satisfied:
                                 satisfied_rules.append(rule_idx)
                 except Exception as e:
@@ -1364,6 +1370,14 @@ def run_ffa_with_shap(
 
             logger.info(f"Rules fired on {len(rule_firing_counts)} unique rules out of {len(explainer.rule_clauses)} total rules")
             logger.info(f"Total rule firings: {sum(rule_firing_counts.values())}")
+            
+            # Debug: Check feature index ranges
+            if explainer.id_condition_map:
+                max_feat_idx = max(feat_idx for feat_idx, _, _ in explainer.id_condition_map.values())
+                logger.info(f"Model uses feature indices 0-{max_feat_idx}, test data has {len(X_test_array[0])} features")
+                if max_feat_idx >= len(X_test_array[0]):
+                    logger.error(f"Feature index mismatch: Model expects up to index {max_feat_idx}, but test data only has {len(X_test_array[0])} features")
+                    logger.error("This will cause rule checking to fail. Check that test data feature count matches model.")
 
             # Use test-based rule firing counts instead of rule definition counts
             rule_feature_counts = feature_rule_firing_counts
@@ -2091,13 +2105,37 @@ def main():
                                    'outcome_graft_loss']
                     df_clean = df_test.drop(columns=[c for c in leakage_cols if c in df_test.columns], errors='ignore')
 
-                feature_cols = [col for col in df_clean.columns if col not in ['time', 'status', 'txpl_year']]
+                all_feature_cols = [col for col in df_clean.columns if col not in ['time', 'status', 'txpl_year']]
+                
+                # Filter to calculator features to match the model
+                # Check if model directory has _base or _enhanced suffix to determine feature set
+                xgboost_json = find_xgboost_model_json(args.cohort)
+                include_recommended = False
+                if xgboost_json:
+                    # Check if model is from _enhanced directory
+                    if '_enhanced' in str(xgboost_json):
+                        include_recommended = True
+                        logger.info("Detected enhanced model - will include recommended features in test data")
+                    else:
+                        logger.info("Detected base model - will use base calculator features only")
+                
+                # Filter to calculator features
+                try:
+                    from calculator_features import filter_to_calculator_features
+                    feature_cols = filter_to_calculator_features(df_clean, all_feature_cols, include_recommended=include_recommended)
+                    logger.info(f"Filtered to calculator features: {len(feature_cols)} features (from {len(all_feature_cols)} total)")
+                except ImportError:
+                    logger.warning("calculator_features module not found, using all features")
+                    feature_cols = all_feature_cols
+                
                 X_test_for_ffa = df_clean[feature_cols].copy()
 
                 # Remove constant columns and fill NaN
                 constant_cols = [col for col in X_test_for_ffa.columns if X_test_for_ffa[col].nunique() < 2]
                 if constant_cols:
+                    logger.info(f"Removing {len(constant_cols)} constant columns from test data")
                     X_test_for_ffa = X_test_for_ffa.drop(columns=constant_cols)
+                    feature_cols = [col for col in feature_cols if col not in constant_cols]
                 X_test_for_ffa = X_test_for_ffa.fillna(0)
 
                 # Convert categorical to numeric
