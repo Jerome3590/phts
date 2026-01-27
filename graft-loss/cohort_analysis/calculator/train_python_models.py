@@ -878,7 +878,7 @@ def train_single_split_models(
     return results
 
 
-def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: float = 0.8, n_jobs: int = 1, time_horizon: float = 365.25):
+def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: float = 0.8, n_jobs: int = 1, time_horizon: float = 365.25, include_recommended_features: bool = False):
     """
     Train CatBoost, XGBoost (Gradient Boosting), and XGBoost Random Forest models for a cohort
     using Monte Carlo Cross-Validation (MC-CV) with 25 splits.
@@ -996,12 +996,20 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
     
     # Filter to only calculator features
     from calculator_features import filter_to_calculator_features
-    feature_cols = filter_to_calculator_features(df_clean, all_feature_cols)
+    feature_cols = filter_to_calculator_features(df_clean, all_feature_cols, include_recommended=include_recommended_features)
     
-    logger.info(f"Filtered to calculator features: {len(feature_cols)} features (from {len(all_feature_cols)} total)")
+    feature_set_name = "calculator features (with recommended)" if include_recommended_features else "base calculator features"
+    logger.info(f"Filtered to {feature_set_name}: {len(feature_cols)} features (from {len(all_feature_cols)} total)")
     if len(feature_cols) < len(all_feature_cols):
         removed = set(all_feature_cols) - set(feature_cols)
         logger.info(f"Removed {len(removed)} non-calculator features (e.g., {', '.join(list(removed)[:10])}...)")
+    
+    if include_recommended_features:
+        from calculator_features import get_recommended_additional_features
+        recommended = get_recommended_additional_features()
+        included_recommended = [f for f in recommended if f in feature_cols]
+        if included_recommended:
+            logger.info(f"Included {len(included_recommended)} recommended additional features: {', '.join(included_recommended[:10])}{'...' if len(included_recommended) > 10 else ''}")
     
     X = df_clean[feature_cols].copy()
     time = df_clean['time'].values
@@ -1058,8 +1066,9 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
     # Prepare signed time labels for full dataset (for MC CV splits)
     y_all = prepare_survival_labels(time, status)
     
-    # Create output directory
-    cohort_output_dir = MODELS_DIR / cohort
+    # Create output directory (with suffix for enhanced features if applicable)
+    feature_suffix = "_enhanced" if include_recommended_features else "_base"
+    cohort_output_dir = MODELS_DIR / f"{cohort}{feature_suffix}"
     cohort_output_dir.mkdir(parents=True, exist_ok=True)
     mc_cv_output_dir = cohort_output_dir / "mc_cv"
     mc_cv_output_dir.mkdir(parents=True, exist_ok=True)
@@ -1458,13 +1467,14 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
         if available_metrics:
             heatmap_data = metrics_df.set_index('Model')[available_metrics].T
             # Normalize each metric to [0, 1] for visualization
+            # After transposing, rows are metrics and columns are models
             heatmap_data_norm = heatmap_data.copy()
-            for metric in available_metrics:
-                col = heatmap_data[metric]
-                if col.max() > col.min():
-                    heatmap_data_norm[metric] = (col - col.min()) / (col.max() - col.min())
+            for metric in heatmap_data.index:  # Iterate over row index (metrics)
+                row = heatmap_data.loc[metric]
+                if row.max() > row.min():
+                    heatmap_data_norm.loc[metric] = (row - row.min()) / (row.max() - row.min())
                 else:
-                    heatmap_data_norm[metric] = 0.5
+                    heatmap_data_norm.loc[metric] = 0.5
             
             fig, ax = plt.subplots(figsize=(8, 6))
             sns.heatmap(
@@ -1755,6 +1765,8 @@ if __name__ == "__main__":
                        help="Training proportion for MC-CV splits (default: 0.8)")
     parser.add_argument("--n_jobs", type=int, default=1,
                        help="Number of parallel jobs for MC-CV (default: 1)")
+    parser.add_argument("--include_recommended", action="store_true",
+                       help="Include recommended additional features (BNP, CRP, sec_dx/ter_dx, etc.)")
     
     args = parser.parse_args()
     
@@ -1762,9 +1774,15 @@ if __name__ == "__main__":
     if args.cohort != "Combined":
         logger.warning(f"Requested cohort '{args.cohort}' but using Combined model for all cohorts. Training Combined model.")
     
+    feature_set_name = "enhanced (with recommended features)" if args.include_recommended else "base calculator"
+    logger.info(f"\n{'='*80}")
+    logger.info(f"Training with {feature_set_name} feature set")
+    logger.info(f"{'='*80}")
+    
     train_models_for_cohort(
         cohort="Combined",
         n_mc_splits=args.n_mc_splits,
         train_prop=args.train_prop,
-        n_jobs=args.n_jobs
+        n_jobs=args.n_jobs,
+        include_recommended_features=args.include_recommended
     )
