@@ -16,6 +16,8 @@ import numpy as np
 import pandas as pd
 from catboost import CatBoostRegressor, Pool
 import xgboost as xgb
+from sklearn.model_selection import StratifiedShuffleSplit
+from joblib import Parallel, delayed
 
 try:
     from sksurv.metrics import concordance_index_censored
@@ -74,6 +76,20 @@ from run_shap_ffa_workflow import (
     load_calculator_data_for_shap,
     prepare_calculator_features
 )
+
+# Import feature importance functions
+try:
+    from scripts.py.feature_importance_model_utils import (
+        get_importance_catboost,
+        get_importance_xgboost
+    )
+except ImportError:
+    # Fallback: try relative import
+    sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "py"))
+    from feature_importance_model_utils import (
+        get_importance_catboost,
+        get_importance_xgboost
+    )
 
 logging.basicConfig(
     level=logging.INFO,
@@ -524,15 +540,159 @@ def prepare_survival_labels(
     return signed_time.astype(np.float32)
 
 
-def train_models_for_cohort(cohort: str):
+def train_single_split_models(
+    split_idx: int,
+    X_train: pd.DataFrame,
+    y_train: np.ndarray,
+    X_test: pd.DataFrame,
+    y_test: np.ndarray,
+    time_test: np.ndarray,
+    status_test: np.ndarray,
+    feature_names: List[str],
+    cohort_name: str,
+    output_dir: Path
+) -> Dict:
     """
-    Train CatBoost, XGBoost (Gradient Boosting), and XGBoost Random Forest models for a cohort.
+    Train all three models (CatBoost, XGBoost, XGBoost RF) for a single MC-CV split.
+    Also computes feature importances for each model.
     
-    Evaluates all three models and reports which performs best, while saving all three
-    for SHAP/FFA analysis (matching R calculator approach).
+    Returns:
+        Dictionary with model results, C-index values, and feature importances
+    """
+    results = {
+        'split': split_idx,
+        'catboost_cindex': None,
+        'xgboost_cindex': None,
+        'xgboost_rf_cindex': None,
+        'catboost_importance': None,
+        'xgboost_importance': None,
+        'xgboost_rf_importance': None,
+        'status': 'error'
+    }
+    
+    try:
+        # Train CatBoost
+        cb_model, cb_cindex = train_catboost_survival(
+            X_train=X_train,
+            y_train=y_train,
+            X_test=X_test,
+            y_test=y_test,
+            time_test=time_test,
+            status_test=status_test,
+            feature_names=feature_names,
+            cohort_name=cohort_name,
+            output_dir=output_dir / f"split_{split_idx}"
+        )
+        results['catboost_cindex'] = cb_cindex
+        
+        # Get CatBoost feature importance
+        try:
+            cb_importance = get_importance_catboost(
+                cb_model, 
+                feature_names, 
+                X_test=X_test, 
+                y_test=status_test  # Use status for importance calculation
+            )
+            results['catboost_importance'] = cb_importance
+        except Exception as e:
+            logger.warning(f"Could not compute CatBoost importance for split {split_idx}: {e}")
+            results['catboost_importance'] = pd.DataFrame({'feature': feature_names, 'importance': 0.0})
+        
+        # Train XGBoost
+        xgb_model, xgb_cindex = train_xgboost_survival(
+            X_train=X_train,
+            y_train=y_train,
+            X_test=X_test,
+            y_test=y_test,
+            time_test=time_test,
+            status_test=status_test,
+            feature_names=feature_names,
+            cohort_name=cohort_name,
+            output_dir=output_dir / f"split_{split_idx}"
+        )
+        results['xgboost_cindex'] = xgb_cindex
+        
+        # Get XGBoost feature importance
+        try:
+            xgb_importance = get_importance_xgboost(
+                xgb_model,
+                feature_names,
+                X_test=X_test,
+                y_test=status_test  # Use status for importance calculation
+            )
+            # Extract importance column (may be 'importance' or 'gain_importance')
+            if 'importance' in xgb_importance.columns:
+                xgb_importance = xgb_importance[['feature', 'importance']].copy()
+            else:
+                xgb_importance = xgb_importance[['feature', 'gain_importance']].copy()
+                xgb_importance = xgb_importance.rename(columns={'gain_importance': 'importance'})
+            results['xgboost_importance'] = xgb_importance
+        except Exception as e:
+            logger.warning(f"Could not compute XGBoost importance for split {split_idx}: {e}")
+            results['xgboost_importance'] = pd.DataFrame({'feature': feature_names, 'importance': 0.0})
+        
+        # Train XGBoost RF
+        xgb_rf_model, xgb_rf_cindex = train_xgboost_rf_survival(
+            X_train=X_train,
+            y_train=y_train,
+            X_test=X_test,
+            y_test=y_test,
+            time_test=time_test,
+            status_test=status_test,
+            feature_names=feature_names,
+            cohort_name=cohort_name,
+            output_dir=output_dir / f"split_{split_idx}"
+        )
+        results['xgboost_rf_cindex'] = xgb_rf_cindex
+        
+        # Get XGBoost RF feature importance (same as XGBoost)
+        try:
+            xgb_rf_importance = get_importance_xgboost(
+                xgb_rf_model,
+                feature_names,
+                X_test=X_test,
+                y_test=status_test  # Use status for importance calculation
+            )
+            # Extract importance column
+            if 'importance' in xgb_rf_importance.columns:
+                xgb_rf_importance = xgb_rf_importance[['feature', 'importance']].copy()
+            else:
+                xgb_rf_importance = xgb_rf_importance[['feature', 'gain_importance']].copy()
+                xgb_rf_importance = xgb_rf_importance.rename(columns={'gain_importance': 'importance'})
+            results['xgboost_rf_importance'] = xgb_rf_importance
+        except Exception as e:
+            logger.warning(f"Could not compute XGBoost RF importance for split {split_idx}: {e}")
+            results['xgboost_rf_importance'] = pd.DataFrame({'feature': feature_names, 'importance': 0.0})
+        
+        results['status'] = 'success'
+        logger.info(f"Split {split_idx}: CatBoost={cb_cindex:.6f}, XGBoost={xgb_cindex:.6f}, XGBoost RF={xgb_rf_cindex:.6f}")
+        
+    except Exception as e:
+        logger.error(f"Error in split {split_idx}: {e}", exc_info=True)
+        results['error'] = str(e)
+    
+    return results
+
+
+def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: float = 0.8, n_jobs: int = 1):
+    """
+    Train CatBoost, XGBoost (Gradient Boosting), and XGBoost Random Forest models for a cohort
+    using Monte Carlo Cross-Validation (MC-CV) with 25 splits.
+    
+    For each of 25 stratified train/test splits:
+    1. Trains all three models on the training set
+    2. Evaluates each model on the test set using C-index
+    3. Aggregates results across all splits
+    4. Selects the best model based on mean C-index
+    
+    After MC-CV evaluation, trains the best model on the full temporal 80/20 split
+    for final model deployment.
     
     Args:
         cohort: Cohort name (e.g., "Combined", "CHD", "Myocardio")
+        n_mc_splits: Number of MC-CV splits (default: 25)
+        train_prop: Training proportion for MC-CV splits (default: 0.8)
+        n_jobs: Number of parallel jobs for MC-CV (default: 1)
     """
     logger.info(f"\n{'='*80}")
     logger.info(f"Training models for cohort: {cohort}")
@@ -644,10 +804,344 @@ def train_models_for_cohort(cohort: str):
     
     logger.info(f"Final feature matrix: {X.shape}")
     
-    # Create ordered 80/20 split by year (temporal split)
-    # Train on earlier years, test on later years
+    # Prepare signed time labels for full dataset (for MC CV splits)
+    y_all = prepare_survival_labels(time, status)
+    
+    # Create output directory
+    cohort_output_dir = MODELS_DIR / cohort
+    cohort_output_dir.mkdir(parents=True, exist_ok=True)
+    mc_cv_output_dir = cohort_output_dir / "mc_cv"
+    mc_cv_output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # ============================================================================
+    # MONTE CARLO CROSS-VALIDATION (25 splits)
+    # ============================================================================
+    logger.info("\n" + "="*80)
+    logger.info("MONTE CARLO CROSS-VALIDATION")
+    logger.info("="*80)
+    logger.info(f"Creating {n_mc_splits} stratified train/test splits...")
+    
+    # Create stratified splits (stratified by status to maintain event distribution)
+    sss = StratifiedShuffleSplit(n_splits=n_mc_splits, test_size=1-train_prop, random_state=42)
+    split_indices = []
+    for train_idx, test_idx in sss.split(X, status):
+        split_indices.append({
+            'train_idx': train_idx,
+            'test_idx': test_idx
+        })
+    
+    logger.info(f"Created {len(split_indices)} MC-CV splits")
+    logger.info(f"  Training proportion: {train_prop:.1%}")
+    logger.info(f"  Test proportion: {1-train_prop:.1%}")
+    
+    # Run MC-CV splits in parallel
+    logger.info(f"\nRunning MC-CV with {n_jobs} parallel jobs...")
+    logger.info("Training all three models (CatBoost, XGBoost, XGBoost RF) on each split...")
+    
+    mc_cv_results = Parallel(n_jobs=n_jobs, verbose=10)(
+        delayed(train_single_split_models)(
+            split_idx=i,
+            X_train=X.iloc[split_indices[i]['train_idx']].copy(),
+            y_train=y_all[split_indices[i]['train_idx']],
+            X_test=X.iloc[split_indices[i]['test_idx']].copy(),
+            y_test=y_all[split_indices[i]['test_idx']],
+            time_test=time[split_indices[i]['test_idx']],
+            status_test=status[split_indices[i]['test_idx']],
+            feature_names=feature_cols,
+            cohort_name=cohort,
+            output_dir=mc_cv_output_dir
+        )
+        for i in range(len(split_indices))
+    )
+    
+    # Filter successful splits
+    successful_results = [r for r in mc_cv_results if r['status'] == 'success']
+    failed_results = [r for r in mc_cv_results if r['status'] == 'error']
+    
+    logger.info(f"\nMC-CV Results: {len(successful_results)}/{len(mc_cv_results)} splits successful")
+    if failed_results:
+        logger.warning(f"  {len(failed_results)} splits failed")
+        for r in failed_results[:3]:  # Show first 3 errors
+            logger.warning(f"    Split {r['split']}: {r.get('error', 'Unknown error')}")
+    
+    if len(successful_results) == 0:
+        raise ValueError("No successful MC-CV splits. Cannot proceed with model selection.")
+    
+    # ============================================================================
+    # AGGREGATE MODEL METRICS (C-index across splits)
+    # ============================================================================
+    logger.info("\n" + "="*80)
+    logger.info("AGGREGATING MODEL METRICS")
+    logger.info("="*80)
+    
+    # Collect C-index values for each model
+    cb_cindices = [r['catboost_cindex'] for r in successful_results if r['catboost_cindex'] is not None]
+    xgb_cindices = [r['xgboost_cindex'] for r in successful_results if r['xgboost_cindex'] is not None]
+    xgb_rf_cindices = [r['xgboost_rf_cindex'] for r in successful_results if r['xgboost_rf_cindex'] is not None]
+    
+    # Calculate statistics for each model
+    def calc_stats(cindices, model_name):
+        if len(cindices) == 0:
+            return {
+                'mean': np.nan,
+                'std': np.nan,
+                'ci_lower': np.nan,
+                'ci_upper': np.nan,
+                'n_splits': 0
+            }
+        cindices_arr = np.array(cindices)
+        return {
+            'mean': float(np.mean(cindices_arr)),
+            'std': float(np.std(cindices_arr)),
+            'ci_lower': float(np.percentile(cindices_arr, 2.5)),
+            'ci_upper': float(np.percentile(cindices_arr, 97.5)),
+            'n_splits': len(cindices)
+        }
+    
+    cb_stats = calc_stats(cb_cindices, 'CatBoost')
+    xgb_stats = calc_stats(xgb_cindices, 'XGBoost')
+    xgb_rf_stats = calc_stats(xgb_rf_cindices, 'XGBoost RF')
+    
+    # Create metrics DataFrame
+    metrics_df = pd.DataFrame([
+        {
+            'Model': 'CatBoost',
+            'C_Index_Mean': cb_stats['mean'],
+            'C_Index_SD': cb_stats['std'],
+            'C_Index_CI_Lower': cb_stats['ci_lower'],
+            'C_Index_CI_Upper': cb_stats['ci_upper'],
+            'n_splits': cb_stats['n_splits']
+        },
+        {
+            'Model': 'XGBoost',
+            'C_Index_Mean': xgb_stats['mean'],
+            'C_Index_SD': xgb_stats['std'],
+            'C_Index_CI_Lower': xgb_stats['ci_lower'],
+            'C_Index_CI_Upper': xgb_stats['ci_upper'],
+            'n_splits': xgb_stats['n_splits']
+        },
+        {
+            'Model': 'XGBoost RF',
+            'C_Index_Mean': xgb_rf_stats['mean'],
+            'C_Index_SD': xgb_rf_stats['std'],
+            'C_Index_CI_Lower': xgb_rf_stats['ci_lower'],
+            'C_Index_CI_Upper': xgb_rf_stats['ci_upper'],
+            'n_splits': xgb_rf_stats['n_splits']
+        }
+    ])
+    
+    # Save metrics
+    metrics_path = cohort_output_dir / "mc_cv_model_metrics.csv"
+    metrics_df.to_csv(metrics_path, index=False)
+    logger.info(f"Saved MC-CV metrics to: {metrics_path}")
+    
+    # Print summary
+    logger.info("\nMC-CV Model Performance Summary:")
+    for _, row in metrics_df.iterrows():
+        logger.info(f"  {row['Model']:15s}: C-index = {row['C_Index_Mean']:.6f} ± {row['C_Index_SD']:.6f} "
+                   f"(95% CI: {row['C_Index_CI_Lower']:.6f} - {row['C_Index_CI_Upper']:.6f}) "
+                   f"[{int(row['n_splits'])} splits]")
+    
+    # Determine best model based on mean C-index
+    best_model_row = metrics_df.loc[metrics_df['C_Index_Mean'].idxmax()]
+    best_model_name = best_model_row['Model']
+    best_c_index = best_model_row['C_Index_Mean']
+    
+    logger.info(f"\nBest Model: {best_model_name} (Mean C-index: {best_c_index:.6f})")
+    
+    # ============================================================================
+    # AGGREGATE FEATURE IMPORTANCES
+    # ============================================================================
+    logger.info("\n" + "="*80)
+    logger.info("AGGREGATING FEATURE IMPORTANCES")
+    logger.info("="*80)
+    
+    # Collect feature importances for each model across all splits
+    model_importances = {
+        'CatBoost': [],
+        'XGBoost': [],
+        'XGBoost RF': []
+    }
+    
+    for r in successful_results:
+        if r['catboost_importance'] is not None:
+            imp = r['catboost_importance'].copy()
+            imp['split'] = r['split']
+            model_importances['CatBoost'].append(imp)
+        
+        if r['xgboost_importance'] is not None:
+            imp = r['xgboost_importance'].copy()
+            imp['split'] = r['split']
+            model_importances['XGBoost'].append(imp)
+        
+        if r['xgboost_rf_importance'] is not None:
+            imp = r['xgboost_rf_importance'].copy()
+            imp['split'] = r['split']
+            model_importances['XGBoost RF'].append(imp)
+    
+    # Aggregate feature importances for each model
+    aggregated_importances = {}
+    for model_name, importance_list in model_importances.items():
+        if len(importance_list) == 0:
+            logger.warning(f"No feature importances collected for {model_name}")
+            continue
+        
+        # Combine all splits
+        all_importance = pd.concat(importance_list, ignore_index=True)
+        
+        # Aggregate by feature
+        aggregated = all_importance.groupby('feature').agg({
+            'importance': ['mean', 'std', 'count']
+        }).reset_index()
+        
+        # Flatten column names
+        aggregated.columns = ['feature', 'importance_mean', 'importance_std', 'importance_count']
+        
+        # Sort by mean importance
+        aggregated = aggregated.sort_values('importance_mean', ascending=False)
+        aggregated['Model'] = model_name
+        
+        aggregated_importances[model_name] = aggregated
+        logger.info(f"  {model_name}: Aggregated {len(aggregated)} features from {len(importance_list)} splits")
+    
+    # Save aggregated feature importances
+    for model_name, agg_df in aggregated_importances.items():
+        imp_path = cohort_output_dir / f"mc_cv_{model_name.lower().replace(' ', '_')}_feature_importance.csv"
+        agg_df.to_csv(imp_path, index=False)
+        logger.info(f"  Saved {model_name} feature importance to: {imp_path}")
+    
+    # Combine all models for visualization
+    if aggregated_importances:
+        all_importance_df = pd.concat(aggregated_importances.values(), ignore_index=True)
+        all_importance_path = cohort_output_dir / "mc_cv_all_models_feature_importance.csv"
+        all_importance_df.to_csv(all_importance_path, index=False)
+        logger.info(f"  Saved combined feature importance to: {all_importance_path}")
+    
+    # ============================================================================
+    # CREATE VISUALIZATIONS
+    # ============================================================================
+    logger.info("\n" + "="*80)
+    logger.info("CREATING VISUALIZATIONS")
+    logger.info("="*80)
+    
+    try:
+        import matplotlib
+        matplotlib.use('Agg')  # Non-interactive backend
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        
+        plots_dir = cohort_output_dir / "plots"
+        plots_dir.mkdir(parents=True, exist_ok=True)
+        
+        # 1. C-index Heatmap
+        logger.info("Creating C-index heatmap...")
+        fig, ax = plt.subplots(figsize=(8, 4))
+        cindex_matrix = metrics_df.pivot_table(
+            values='C_Index_Mean',
+            index='Model',
+            columns=None
+        )
+        # For single cohort, create a simple bar chart
+        ax.bar(metrics_df['Model'], metrics_df['C_Index_Mean'], 
+               yerr=metrics_df['C_Index_SD'], capsize=5, alpha=0.7)
+        ax.set_ylabel('C-index (Mean ± SD)')
+        ax.set_xlabel('Model')
+        ax.set_title(f'Model Performance Comparison ({cohort})')
+        ax.grid(axis='y', alpha=0.3)
+        plt.tight_layout()
+        cindex_plot_path = plots_dir / "cindex_comparison.png"
+        plt.savefig(cindex_plot_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        logger.info(f"  Saved C-index comparison to: {cindex_plot_path}")
+        
+        # 2. Feature Importance Heatmap (if we have aggregated importances)
+        if aggregated_importances:
+            logger.info("Creating feature importance heatmap...")
+            
+            # Get top N features (e.g., top 30)
+            top_n = 30
+            all_features = all_importance_df.groupby('feature')['importance_mean'].sum().sort_values(ascending=False)
+            top_features = all_features.head(top_n).index.tolist()
+            
+            # Create matrix: features (rows) × models (columns)
+            heatmap_data = []
+            for model_name in ['CatBoost', 'XGBoost', 'XGBoost RF']:
+                if model_name in aggregated_importances:
+                    model_df = aggregated_importances[model_name]
+                    for feat in top_features:
+                        feat_data = model_df[model_df['feature'] == feat]
+                        if len(feat_data) > 0:
+                            heatmap_data.append({
+                                'feature': feat,
+                                'Model': model_name,
+                                'importance': feat_data['importance_mean'].iloc[0]
+                            })
+                        else:
+                            heatmap_data.append({
+                                'feature': feat,
+                                'Model': model_name,
+                                'importance': 0.0
+                            })
+            
+            if heatmap_data:
+                heatmap_df = pd.DataFrame(heatmap_data)
+                
+                # Normalize importance within each model for visualization
+                for model_name in heatmap_df['Model'].unique():
+                    mask = heatmap_df['Model'] == model_name
+                    max_imp = heatmap_df.loc[mask, 'importance'].max()
+                    if max_imp > 0:
+                        heatmap_df.loc[mask, 'importance_normalized'] = heatmap_df.loc[mask, 'importance'] / max_imp
+                    else:
+                        heatmap_df.loc[mask, 'importance_normalized'] = 0.0
+                
+                # Create pivot table for heatmap
+                pivot_data = heatmap_df.pivot_table(
+                    values='importance_normalized',
+                    index='feature',
+                    columns='Model',
+                    fill_value=0.0
+                )
+                
+                # Sort features by total importance
+                feature_order = heatmap_df.groupby('feature')['importance'].sum().sort_values(ascending=False).index
+                pivot_data = pivot_data.reindex(feature_order)
+                
+                # Create heatmap
+                fig, ax = plt.subplots(figsize=(10, max(12, len(top_features) * 0.4)))
+                sns.heatmap(
+                    pivot_data,
+                    annot=False,
+                    cmap='YlOrRd',
+                    cbar_kws={'label': 'Normalized Importance'},
+                    ax=ax,
+                    linewidths=0.5
+                )
+                ax.set_title(f'Feature Importance Heatmap by Model ({cohort}, Top {top_n} Features)', fontsize=14, fontweight='bold')
+                ax.set_xlabel('Model', fontsize=12)
+                ax.set_ylabel('Feature', fontsize=12)
+                plt.tight_layout()
+                heatmap_path = plots_dir / "feature_importance_heatmap.png"
+                plt.savefig(heatmap_path, dpi=300, bbox_inches='tight')
+                plt.close()
+                logger.info(f"  Saved feature importance heatmap to: {heatmap_path}")
+        
+    except ImportError:
+        logger.warning("Matplotlib/Seaborn not available. Skipping visualizations.")
+        logger.warning("  Install with: pip install matplotlib seaborn")
+    except Exception as e:
+        logger.warning(f"Error creating visualizations: {e}", exc_info=True)
+    
+    # ============================================================================
+    # TRAIN FINAL MODEL ON TEMPORAL SPLIT
+    # ============================================================================
+    logger.info("\n" + "="*80)
+    logger.info("TRAINING FINAL MODEL (Temporal 80/20 Split)")
+    logger.info("="*80)
+    logger.info("Training best model ({}) on full temporal split for deployment...".format(best_model_name))
+    
+    # Create temporal split for final model
     if 'txpl_year' in df_clean.columns:
-        # Find cutoff year for 80/20 split
         year_counts = df_clean['txpl_year'].value_counts().sort_index()
         cumsum = year_counts.cumsum()
         target = int(len(df_clean) * 0.8)
@@ -659,7 +1153,6 @@ def train_models_for_cohort(cohort: str):
                 break
         
         if cutoff_year is None:
-            # Fallback: use 2021 as cutoff
             cutoff_year = 2021
             logger.warning(f"Could not find cutoff year, using {cutoff_year}")
         
@@ -669,111 +1162,131 @@ def train_models_for_cohort(cohort: str):
         logger.info(f"Temporal split: Train (≤{cutoff_year}): {train_mask.sum()} samples, "
                    f"Test (>{cutoff_year}): {test_mask.sum()} samples")
         
-        X_train = X[train_mask].copy()
-        X_test = X[test_mask].copy()
-        time_train = time[train_mask]
-        time_test = time[test_mask]
-        status_train = status[train_mask]
-        status_test = status[test_mask]
+        X_train_final = X[train_mask].copy()
+        X_test_final = X[test_mask].copy()
+        time_train_final = time[train_mask]
+        time_test_final = time[test_mask]
+        status_train_final = status[train_mask]
+        status_test_final = status[test_mask]
     else:
-        # Fallback: use full dataset if txpl_year not available
-        logger.warning("txpl_year not found, using full dataset for both train and test")
-        X_train = X
-        X_test = X
-        time_train = time
-        time_test = time
-        status_train = status
-        status_test = status
+        logger.warning("txpl_year not found, using full dataset")
+        X_train_final = X
+        X_test_final = X
+        time_train_final = time
+        time_test_final = time
+        status_train_final = status
+        status_test_final = status
     
-    # Prepare signed time labels
-    y_train = prepare_survival_labels(time_train, status_train)
-    y_test = prepare_survival_labels(time_test, status_test)
+    y_train_final = prepare_survival_labels(time_train_final, status_train_final)
+    y_test_final = prepare_survival_labels(time_test_final, status_test_final)
     
-    # Create output directory
-    cohort_output_dir = MODELS_DIR / cohort
-    cohort_output_dir.mkdir(parents=True, exist_ok=True)
+    # Train the best model on temporal split
+    if best_model_name == 'CatBoost':
+        final_model, final_cindex = train_catboost_survival(
+            X_train=X_train_final,
+            y_train=y_train_final,
+            X_test=X_test_final,
+            y_test=y_test_final,
+            time_test=time_test_final,
+            status_test=status_test_final,
+            feature_names=feature_cols,
+            cohort_name=cohort,
+            output_dir=cohort_output_dir
+        )
+    elif best_model_name == 'XGBoost':
+        final_model, final_cindex = train_xgboost_survival(
+            X_train=X_train_final,
+            y_train=y_train_final,
+            X_test=X_test_final,
+            y_test=y_test_final,
+            time_test=time_test_final,
+            status_test=status_test_final,
+            feature_names=feature_cols,
+            cohort_name=cohort,
+            output_dir=cohort_output_dir
+        )
+    else:  # XGBoost RF
+        final_model, final_cindex = train_xgboost_rf_survival(
+            X_train=X_train_final,
+            y_train=y_train_final,
+            X_test=X_test_final,
+            y_test=y_test_final,
+            time_test=time_test_final,
+            status_test=status_test_final,
+            feature_names=feature_cols,
+            cohort_name=cohort,
+            output_dir=cohort_output_dir
+        )
     
-    # Train CatBoost
-    logger.info("\n" + "="*80)
-    logger.info("Training CatBoost")
-    logger.info("="*80)
+    logger.info(f"Final {best_model_name} model C-index (temporal split): {final_cindex:.6f}")
+    
+    # Also train all three models for SHAP/FFA analysis (as before)
+    logger.info("\nTraining all three models for SHAP/FFA analysis...")
+    
     cb_model, cb_cindex = train_catboost_survival(
-        X_train=X_train,
-        y_train=y_train,
-        X_test=X_test,
-        y_test=y_test,
-        time_test=time_test,
-        status_test=status_test,
+        X_train=X_train_final,
+        y_train=y_train_final,
+        X_test=X_test_final,
+        y_test=y_test_final,
+        time_test=time_test_final,
+        status_test=status_test_final,
         feature_names=feature_cols,
         cohort_name=cohort,
         output_dir=cohort_output_dir
     )
     
-    # Train XGBoost (Gradient Boosting)
-    logger.info("\n" + "="*80)
-    logger.info("Training XGBoost (Gradient Boosting)")
-    logger.info("="*80)
     xgb_model, xgb_cindex = train_xgboost_survival(
-        X_train=X_train,
-        y_train=y_train,
-        X_test=X_test,
-        y_test=y_test,
-        time_test=time_test,
-        status_test=status_test,
+        X_train=X_train_final,
+        y_train=y_train_final,
+        X_test=X_test_final,
+        y_test=y_test_final,
+        time_test=time_test_final,
+        status_test=status_test_final,
         feature_names=feature_cols,
         cohort_name=cohort,
         output_dir=cohort_output_dir
     )
     
-    # Train XGBoost Random Forest
-    logger.info("\n" + "="*80)
-    logger.info("Training XGBoost Random Forest")
-    logger.info("="*80)
     xgb_rf_model, xgb_rf_cindex = train_xgboost_rf_survival(
-        X_train=X_train,
-        y_train=y_train,
-        X_test=X_test,
-        y_test=y_test,
-        time_test=time_test,
-        status_test=status_test,
+        X_train=X_train_final,
+        y_train=y_train_final,
+        X_test=X_test_final,
+        y_test=y_test_final,
+        time_test=time_test_final,
+        status_test=status_test_final,
         feature_names=feature_cols,
         cohort_name=cohort,
         output_dir=cohort_output_dir
     )
     
-    logger.info("\n" + "="*80)
-    logger.info("Training Complete")
-    logger.info("="*80)
-    logger.info(f"CatBoost C-index: {cb_cindex:.6f}")
-    logger.info(f"XGBoost C-index: {xgb_cindex:.6f}")
-    logger.info(f"XGBoost RF C-index: {xgb_rf_cindex:.6f}")
-    
-    # Compare models and identify best
-    model_results = {
-        "CatBoost": cb_cindex,
-        "XGBoost": xgb_cindex,
-        "XGBoost RF": xgb_rf_cindex
-    }
-    
-    best_model_name = max(model_results, key=model_results.get)
-    best_c_index = model_results[best_model_name]
-    
-    logger.info("\n" + "="*80)
-    logger.info("Model Comparison")
-    logger.info("="*80)
-    logger.info(f"Best Model: {best_model_name} (C-index: {best_c_index:.6f})")
-    logger.info(f"\nAll models saved to: {cohort_output_dir}")
-    logger.info("  (All models saved for SHAP/FFA analysis, matching R calculator approach)")
-    
-    # Save best model info to file
+    # Save best model info
     best_model_path = cohort_output_dir / "best_model.txt"
     with open(best_model_path, 'w') as f:
-        f.write(f"Best Model: {best_model_name}\n")
-        f.write(f"C-index: {best_c_index:.6f}\n")
-        f.write(f"\nAll Model Results:\n")
-        for model_name, c_idx in sorted(model_results.items(), key=lambda x: x[1], reverse=True):
-            f.write(f"  {model_name}: {c_idx:.6f}\n")
-    logger.info(f"  Best model info saved to: {best_model_path}")
+        f.write(f"Best Model (MC-CV): {best_model_name}\n")
+        f.write(f"MC-CV Mean C-index: {best_c_index:.6f}\n")
+        f.write(f"MC-CV 95% CI: [{best_model_row['C_Index_CI_Lower']:.6f}, {best_model_row['C_Index_CI_Upper']:.6f}]\n")
+        f.write(f"MC-CV SD: {best_model_row['C_Index_SD']:.6f}\n")
+        f.write(f"MC-CV n_splits: {int(best_model_row['n_splits'])}\n")
+        f.write(f"\nTemporal Split Results:\n")
+        f.write(f"  CatBoost: {cb_cindex:.6f}\n")
+        f.write(f"  XGBoost: {xgb_cindex:.6f}\n")
+        f.write(f"  XGBoost RF: {xgb_rf_cindex:.6f}\n")
+        f.write(f"\nMC-CV Model Performance (all models):\n")
+        for _, row in metrics_df.iterrows():
+            f.write(f"  {row['Model']}: {row['C_Index_Mean']:.6f} ± {row['C_Index_SD']:.6f} "
+                   f"(95% CI: {row['C_Index_CI_Lower']:.6f} - {row['C_Index_CI_Upper']:.6f}) "
+                   f"[{int(row['n_splits'])} splits]\n")
+    
+    logger.info(f"\n{'='*80}")
+    logger.info("TRAINING COMPLETE")
+    logger.info(f"{'='*80}")
+    logger.info(f"Best Model (MC-CV): {best_model_name}")
+    logger.info(f"MC-CV Mean C-index: {best_c_index:.6f}")
+    logger.info(f"\nAll outputs saved to: {cohort_output_dir}")
+    logger.info(f"  - MC-CV metrics: {metrics_path}")
+    logger.info(f"  - Feature importances: {cohort_output_dir / 'mc_cv_*_feature_importance.csv'}")
+    logger.info(f"  - Visualizations: {plots_dir}")
+    logger.info(f"  - Final models: {cohort_output_dir}")
 
 
 if __name__ == "__main__":
@@ -783,6 +1296,12 @@ if __name__ == "__main__":
     parser.add_argument("--cohort", type=str, default="Combined",
                        choices=["Combined", "CHD", "Myocardio"],
                        help="Cohort to train models for (default: Combined - single model for all cohorts)")
+    parser.add_argument("--n_mc_splits", type=int, default=25,
+                       help="Number of Monte Carlo cross-validation splits (default: 25)")
+    parser.add_argument("--train_prop", type=float, default=0.8,
+                       help="Training proportion for MC-CV splits (default: 0.8)")
+    parser.add_argument("--n_jobs", type=int, default=1,
+                       help="Number of parallel jobs for MC-CV (default: 1)")
     
     args = parser.parse_args()
     
@@ -790,4 +1309,9 @@ if __name__ == "__main__":
     if args.cohort != "Combined":
         logger.warning(f"Requested cohort '{args.cohort}' but using Combined model for all cohorts. Training Combined model.")
     
-    train_models_for_cohort("Combined")
+    train_models_for_cohort(
+        cohort="Combined",
+        n_mc_splits=args.n_mc_splits,
+        train_prop=args.train_prop,
+        n_jobs=args.n_jobs
+    )
