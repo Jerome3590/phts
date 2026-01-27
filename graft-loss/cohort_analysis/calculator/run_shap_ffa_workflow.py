@@ -139,6 +139,98 @@ def get_best_model(cohort: str) -> Optional[str]:
     return None
 
 
+def get_model_c_indices(cohort: str) -> Dict[str, float]:
+    """
+    Read C-index values for all models from best_model.txt file.
+    
+    Returns:
+        Dictionary mapping model names to C-index values
+        e.g., {"CatBoost": 0.677, "XGBoost": 0.645, "XGBoost RF": 0.620}
+    """
+    calculator_best_path = CALCULATOR_DIR / "outputs" / "models" / cohort / "best_model.txt"
+    parent_best_path = CALCULATOR_DIR.parent / "outputs" / "models" / cohort / "best_model.txt"
+
+    best_model_path = None
+    if calculator_best_path.exists():
+        best_model_path = calculator_best_path
+    elif parent_best_path.exists():
+        best_model_path = parent_best_path
+
+    if best_model_path is None:
+        return {}
+
+    c_indices = {}
+    try:
+        with open(best_model_path, 'r') as f:
+            lines = f.readlines()
+            for line in lines:
+                # Parse lines like "  CatBoost: 0.677123"
+                if ':' in line and ('CatBoost' in line or 'XGBoost' in line):
+                    parts = line.strip().split(':')
+                    if len(parts) == 2:
+                        model_name = parts[0].strip()
+                        try:
+                            c_index = float(parts[1].strip())
+                            c_indices[model_name] = c_index
+                        except ValueError:
+                            continue
+    except Exception as e:
+        logger.warning(f"Error reading C-index values: {e}")
+
+    return c_indices
+
+
+def determine_shap_weights(cohort: str, best_model: Optional[str] = None) -> Tuple[float, float]:
+    """
+    Automatically determine SHAP weights based on best model and C-index values.
+    
+    Strategy:
+    - If XGBoost is best: Use XGBoost only (weights not used, but return 0.0, 1.0 for consistency)
+    - If CatBoost is best: Weight based on relative C-index performance
+      - Higher weight for CatBoost (best model)
+      - Lower weight for XGBoost
+      - Weights normalized to sum to 1.0
+    
+    Args:
+        cohort: Cohort name
+        best_model: Best model name (if None, will be read from file)
+    
+    Returns:
+        Tuple of (weight_catboost, weight_xgboost)
+    """
+    if best_model is None:
+        best_model = get_best_model(cohort)
+    
+    # If XGBoost is best, we use XGBoost only (no weights needed)
+    if best_model == "XGBoost" or best_model == "XGBoost RF":
+        return (0.0, 1.0)  # Not used, but return for consistency
+    
+    # If CatBoost is best, determine weights based on C-index values
+    if best_model == "CatBoost":
+        c_indices = get_model_c_indices(cohort)
+        
+        cb_cindex = c_indices.get("CatBoost", 0.0)
+        xgb_cindex = c_indices.get("XGBoost", 0.0)
+        
+        # If we have both C-index values, weight based on relative performance
+        if cb_cindex > 0 and xgb_cindex > 0:
+            total = cb_cindex + xgb_cindex
+            if total > 0:
+                weight_catboost = cb_cindex / total
+                weight_xgboost = xgb_cindex / total
+                logger.info(f"Determined weights from C-index: CatBoost={weight_catboost:.3f} (C-index={cb_cindex:.6f}), "
+                          f"XGBoost={weight_xgboost:.3f} (C-index={xgb_cindex:.6f})")
+                return (weight_catboost, weight_xgboost)
+        
+        # Fallback: If CatBoost is best but no C-index data, use default weights
+        logger.warning("Could not determine weights from C-index, using defaults: CatBoost=0.7, XGBoost=0.3")
+        return (0.7, 0.3)
+    
+    # Fallback: Default weights if best model is unknown
+    logger.warning(f"Unknown best model '{best_model}', using default weights: CatBoost=0.6, XGBoost=0.4")
+    return (0.6, 0.4)
+
+
 def load_calculator_importance(cohort: str) -> Dict[str, pd.DataFrame]:
     """
     Load aggregated feature importance from calculator outputs.
@@ -1713,14 +1805,14 @@ def main():
     parser.add_argument(
         "--weight-catboost",
         type=float,
-        default=0.6,
-        help="Weight for CatBoost SHAP (default: 0.6)"
+        default=None,
+        help="Weight for CatBoost SHAP (default: auto-determined from best model C-index)"
     )
     parser.add_argument(
         "--weight-xgboost",
         type=float,
-        default=0.4,
-        help="Weight for XGBoost SHAP (default: 0.4)"
+        default=None,
+        help="Weight for XGBoost SHAP (default: auto-determined from best model C-index)"
     )
 
     args = parser.parse_args()
@@ -1746,6 +1838,15 @@ def main():
     best_model = get_best_model(args.cohort)
     use_xgboost_only = (best_model == "XGBoost" or best_model == "XGBoost RF")
 
+    # Automatically determine weights based on best model and C-index values
+    if not use_xgboost_only:
+        auto_weight_cb, auto_weight_xgb = determine_shap_weights(args.cohort, best_model)
+        # Override manual weights with auto-determined weights
+        args.weight_catboost = auto_weight_cb
+        args.weight_xgboost = auto_weight_xgb
+        logger.info(f"Auto-determined weights from best model: CatBoost={args.weight_catboost:.3f}, "
+                   f"XGBoost={args.weight_xgboost:.3f}")
+
     logger.info("=" * 80)
     logger.info(f"SHAP + FFA Analysis for {args.cohort} Cohort")
     logger.info("=" * 80)
@@ -1755,10 +1856,10 @@ def main():
     else:
         logger.info(f"Best model: {best_model} - Using combined pipeline")
         logger.info(f"Strategy: XGBoost JSON + Combined SHAP (XGBoost + CatBoost) filtering")
+        logger.info(f"SHAP Weights (auto-determined from C-index): CatBoost={args.weight_catboost:.3f}, "
+                   f"XGBoost={args.weight_xgboost:.3f}")
     logger.info(f"Output directory: {output_dir}")
     logger.info(f"Top K: {args.top_k}")
-    if not use_xgboost_only:
-        logger.info(f"SHAP Weights: CatBoost={args.weight_catboost:.2f}, XGBoost={args.weight_xgboost:.2f}")
     logger.info("")
 
     try:
