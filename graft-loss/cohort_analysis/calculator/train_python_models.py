@@ -1086,8 +1086,6 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
     xgb_recall_stats = calc_stats(xgb_recalls, 'XGBoost')
     xgb_rf_recall_stats = calc_stats(xgb_rf_recalls, 'XGBoost RF')
     
-    # Collect Recall values for each model (already calculated in train_single_split_models)
-    
     # Create metrics DataFrame with all metrics
     metrics_df = pd.DataFrame([
         {
