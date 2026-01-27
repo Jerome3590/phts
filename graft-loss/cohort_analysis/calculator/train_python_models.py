@@ -770,8 +770,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train Python survival models")
     parser.add_argument("--cohort", type=str, default="Combined",
                        choices=["Combined", "CHD", "Myocardio"],
-                       help="Cohort to train models for")
+                       help="Cohort to train models for (default: Combined - single model for all cohorts)")
     
     args = parser.parse_args()
     
-    train_models_for_cohort(args.cohort)
+    # Always train Combined model (single model for all cohorts)
+    if args.cohort != "Combined":
+        logger.warning(f"Requested cohort '{args.cohort}' but using Combined model for all cohorts. Training Combined model.")
+    
+    train_models_for_cohort("Combined")

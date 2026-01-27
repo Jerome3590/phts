@@ -425,6 +425,33 @@ def prepare_calculator_features(df: pd.DataFrame) -> pd.DataFrame:
         df["ecmo_combined"] = ((df["txecmo"] == 1) | (df["slecmo"] == 1)).astype(int)
         logger.info("Created ecmo_combined")
 
+    # VAD combined (txvad OR slvad)
+    if "txvad" in df.columns and "slvad" in df.columns:
+        df["vad_combined"] = ((df["txvad"] == 1) | (df["slvad"] == 1)).astype(int)
+        logger.info("Created vad_combined")
+    elif "txvad" in df.columns:
+        df["vad_combined"] = (df["txvad"] == 1).astype(int)
+        logger.info("Created vad_combined from txvad only")
+    elif "slvad" in df.columns:
+        df["vad_combined"] = (df["slvad"] == 1).astype(int)
+        logger.info("Created vad_combined from slvad only")
+
+    # Ventilation combined (txvent OR slvent OR ltxtrach OR hxtrach)
+    vent_vars = ["txvent", "slvent", "ltxtrach", "hxtrach"]
+    available_vent_vars = [v for v in vent_vars if v in df.columns]
+    if available_vent_vars:
+        df["vent_combined"] = df[available_vent_vars].any(axis=1).astype(int)
+        logger.info(f"Created vent_combined from {available_vent_vars}")
+
+    # Donor/Recipient Weight Ratio
+    if "weight_donor" in df.columns and "weight_txpl" in df.columns:
+        mask = df["weight_txpl"].notna() & (df["weight_txpl"] > 0)
+        df["donor_weight_ratio"] = np.nan
+        df.loc[mask, "donor_weight_ratio"] = (
+            (df.loc[mask, "weight_donor"] / df.loc[mask, "weight_txpl"]) * 100
+        )
+        logger.info("Created donor_weight_ratio")
+
     # History of Fontan Associated Liver Disease (dichotomous)
     if "hxfonlvr" in df.columns:
         df["hxfonlvr_bin"] = (df["hxfonlvr"] == 1).astype(int)

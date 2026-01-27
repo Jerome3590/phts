@@ -66,9 +66,12 @@ RISK_DISTRIBUTION_PATH = os.environ.get("RISK_DISTRIBUTION_PATH", "/var/task/ris
 MODEL_CACHE_TTL = int(os.environ.get("MODEL_CACHE_TTL", "3600"))
 
 # Available cohorts
-# All three cohorts have trained models and dashboard data
+# NOTE: Using single Combined model for all cohorts
+# All cohorts use the same Combined model, but may have different dashboard data
 AVAILABLE_COHORTS = ["CHD", "Combined", "Myocardio"]
 COHORTS_WITH_DATA = ["CHD", "Combined", "Myocardio"]
+# Model cohort (always Combined - single model for all)
+MODEL_COHORT = "Combined"
 
 # Risk score distributions for normalization (loaded on demand)
 _risk_distributions: Dict[str, Dict[str, Any]] = {}  # All cohorts have trained models
@@ -538,6 +541,61 @@ def prepare_feature_vector(features: Dict[str, Any], feature_names: List[str]) -
     return feature_vector
 
 
+def prepare_features_for_inference(features: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Prepare features for inference by creating derived variables.
+    This matches the feature engineering in prepare_calculator_features().
+    
+    Args:
+        features: Raw feature dictionary from user input
+    
+    Returns:
+        Dictionary with derived features added
+    """
+    prepared = features.copy()
+    
+    # VAD combined (txvad OR slvad)
+    if "txvad" in prepared or "slvad" in prepared:
+        txvad = prepared.get("txvad", 0)
+        slvad = prepared.get("slvad", 0)
+        prepared["vad_combined"] = 1 if (txvad == 1 or slvad == 1) else 0
+    
+    # Ventilation combined (txvent OR slvent OR ltxtrach OR hxtrach)
+    vent_vars = ["txvent", "slvent", "ltxtrach", "hxtrach"]
+    if any(v in prepared for v in vent_vars):
+        vent_combined = 0
+        for v in vent_vars:
+            if prepared.get(v, 0) == 1:
+                vent_combined = 1
+                break
+        prepared["vent_combined"] = vent_combined
+    
+    # Donor/Recipient Weight Ratio
+    if "weight_donor" in prepared and "weight_txpl" in prepared:
+        weight_donor = prepared.get("weight_donor")
+        weight_txpl = prepared.get("weight_txpl")
+        if weight_txpl and weight_txpl > 0:
+            prepared["donor_weight_ratio"] = (weight_donor / weight_txpl) * 100
+        else:
+            prepared["donor_weight_ratio"] = None
+    
+    # ECMO combined (if not already present)
+    if "ecmo_combined" not in prepared:
+        if "txecmo" in prepared or "slecmo" in prepared:
+            txecmo = prepared.get("txecmo", 0)
+            slecmo = prepared.get("slecmo", 0)
+            prepared["ecmo_combined"] = 1 if (txecmo == 1 or slecmo == 1) else 0
+    
+    # eGFR calculation (if height and creatinine provided but eGFR not)
+    if "egfr_tx" not in prepared and "height_txpl" in prepared and "txcreat_r" in prepared:
+        height = prepared.get("height_txpl")
+        creat = prepared.get("txcreat_r")
+        if height and creat and creat > 0:
+            prepared["egfr_tx"] = 0.413 * height / creat
+    
+    return prepared
+
+
 def predict_risk_survival(
     cohort: str,
     features: Dict[str, Any],
@@ -546,8 +604,11 @@ def predict_risk_survival(
     """
     Predict graft loss risk using survival models.
     
+    NOTE: Always uses Combined model regardless of cohort parameter.
+    The cohort parameter is only used for dashboard data (causal factors).
+    
     Args:
-        cohort: Cohort name
+        cohort: Cohort name (for dashboard data only - model is always Combined)
         features: Dictionary of clinical feature values
         use_best_model_only: If True, use only the best model; if False, use ensemble
     
@@ -557,12 +618,19 @@ def predict_risk_survival(
     if not MODEL_LIBS_AVAILABLE:
         raise RuntimeError("Model libraries not available")
     
-    # Get best model
-    best_model_type = get_best_model(cohort)
+    # Always use Combined model (single model for all cohorts)
+    model_cohort = MODEL_COHORT
+    logger.info(f"Using {model_cohort} model for cohort {cohort} (single model for all cohorts)")
+    
+    # Prepare features (create derived variables)
+    prepared_features = prepare_features_for_inference(features)
+    
+    # Get best model (from Combined)
+    best_model_type = get_best_model(model_cohort)
     
     if use_best_model_only:
-        # Use only the best model
-        model = load_model(cohort, best_model_type)
+        # Use only the best model (always from Combined)
+        model = load_model(model_cohort, best_model_type)
         
         # Get feature names from model
         if best_model_type == 'catboost':
@@ -580,8 +648,8 @@ def predict_risk_survival(
                 # Try to infer from input features dict
                 feature_names = sorted(features.keys())
         
-        # Prepare feature vector
-        feature_vector = prepare_feature_vector(features, feature_names)
+        # Prepare feature vector (use prepared features with derived variables)
+        feature_vector = prepare_feature_vector(prepared_features, feature_names)
         
         # Predict
         if best_model_type == 'catboost':
@@ -596,6 +664,8 @@ def predict_risk_survival(
         return {
             'risk_score': float(risk_score),
             'model_used': best_model_type,
+            'model_cohort': model_cohort,  # Always Combined
+            'requested_cohort': cohort,  # Original cohort parameter
             'models_used': [best_model_type],
             'ensemble': False
         }
@@ -606,7 +676,7 @@ def predict_risk_survival(
         
         for model_type in ['catboost', 'xgboost', 'xgboost_rf']:
             try:
-                model = load_model(cohort, model_type)
+                model = load_model(model_cohort, model_type)  # Always use Combined model
                 
                 if model_type == 'catboost':
                     feature_names = model.feature_names_ if hasattr(model, 'feature_names_') else []
@@ -618,9 +688,9 @@ def predict_risk_survival(
                 
                 if not feature_names:
                     # Infer from input features
-                    feature_names = sorted(features.keys())
+                    feature_names = sorted(prepared_features.keys())
                 
-                feature_vector = prepare_feature_vector(features, feature_names)
+                feature_vector = prepare_feature_vector(prepared_features, feature_names)
                 
                 if model_type == 'catboost':
                     # Model is now saved correctly with only logging_level='Silent'
@@ -646,6 +716,8 @@ def predict_risk_survival(
         return {
             'risk_score': float(ensemble_score),
             'model_predictions': predictions,
+            'model_cohort': model_cohort,  # Always Combined
+            'requested_cohort': cohort,  # Original cohort parameter
             'models_used': models_used,
             'ensemble': True
         }
@@ -924,9 +996,11 @@ def handle_risk(event: Dict[str, Any]) -> Dict[str, Any]:
             top_causal = []
         
         # Normalize risk score for interpretability
+        # Use model_cohort (Combined) for normalization, not requested cohort
         raw_score = result['risk_score']
         model_used = result.get('model_used', 'unknown')
-        normalization = normalize_risk_score(raw_score, cohort, method="percentile", model_type=model_used)
+        model_cohort = result.get('model_cohort', MODEL_COHORT)
+        normalization = normalize_risk_score(raw_score, model_cohort, method="percentile", model_type=model_used)
         
         # Use normalized score and percentile for display
         normalized_score = normalization.get('normalized_score', raw_score)
