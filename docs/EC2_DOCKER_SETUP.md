@@ -123,7 +123,7 @@ docker run hello-world
 
 ## Docker for AWS ECR
 
-To push images to AWS ECR, you also need AWS CLI configured:
+To push images to AWS ECR, you need AWS CLI installed. **If your EC2 instance has an IAM role attached, credentials are automatically provided** - no need to run `aws configure`.
 
 ```bash
 # Install AWS CLI (if not already installed)
@@ -136,15 +136,13 @@ sudo dnf install awscli -y
 # Ubuntu
 sudo apt-get install awscli -y
 
-# Configure AWS CLI
-aws configure
-# Enter your AWS Access Key ID
-# Enter your AWS Secret Access Key
-# Enter default region (e.g., us-east-1)
-# Enter default output format (json)
-
-# Test AWS CLI
+# Test AWS CLI (uses EC2 instance role credentials automatically)
 aws sts get-caller-identity
+
+# If this works, you're all set! No need to run aws configure.
+# If it fails, you may need to:
+# 1. Attach an IAM role to your EC2 instance with ECR permissions, OR
+# 2. Run: aws configure (and enter credentials manually)
 ```
 
 ### Login to ECR
@@ -201,8 +199,20 @@ sudo systemctl status docker
 **Problem:** `Error: Unable to locate credentials`
 
 **Solution:**
+
+**Option 1: Use EC2 Instance Role (Recommended)**
 ```bash
-# Configure AWS credentials
+# Attach an IAM role to your EC2 instance with these permissions:
+# - AmazonEC2ContainerRegistryFullAccess (or custom policy with ECR push/pull)
+# 
+# The instance will automatically use these credentials - no aws configure needed
+# Verify it's working:
+aws sts get-caller-identity
+```
+
+**Option 2: Manual Credentials**
+```bash
+# Configure AWS credentials manually
 aws configure
 
 # Or set environment variables
