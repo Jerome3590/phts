@@ -86,14 +86,17 @@ OUTPUTS_DIR = CALCULATOR_DIR / "outputs"
 MODELS_DIR = OUTPUTS_DIR / "models"
 
 
-def get_survival_leakage_keywords() -> List[str]:
+def get_survival_leakage_keywords(cohort: Optional[str] = None) -> List[str]:
     """
     Get list of keywords that indicate target leakage in survival models.
     Matches the R function get_survival_leakage_keywords().
+    
+    Args:
+        cohort: Cohort name. For Combined model, primary_etiology is kept (not removed).
     """
-    return [
+    keywords = [
         # Identifiers and outcomes (handled separately in drop_cols)
-        "transplant_year", "primary_etiology", "txpl_year",
+        "transplant_year", "txpl_year",
         # Cohort-defining variables (should not be features - defines the cohort itself)
         "prim_dx", "PRIM_DX",  # Primary diagnosis defines cohorts (CHD, Myocardio, Combined)
         # Donor/survival variables and obvious leak sources
@@ -114,6 +117,13 @@ def get_survival_leakage_keywords() -> List[str]:
         # Additional variables
         "lsvcma", "cpbypass"
     ]
+    
+    # For Combined model, keep primary_etiology (it's needed to distinguish etiologies)
+    # For CHD and Myocardio models, remove it (cohort is already defined)
+    if cohort != "Combined":
+        keywords.append("primary_etiology")
+    
+    return keywords
 
 
 def remove_leakage_predictors(
@@ -597,7 +607,9 @@ def train_models_for_cohort(cohort: str):
     txpl_year_values = df['txpl_year'].values if 'txpl_year' in df.columns else None
     
     # Remove leakage predictors (matches R remove_leakage_predictors)
-    df_clean = remove_leakage_predictors(df, time_col='time', status_col='status')
+    # Pass cohort to get correct leakage keywords (keeps primary_etiology for Combined)
+    leak_keywords = get_survival_leakage_keywords(cohort=cohort)
+    df_clean = remove_leakage_predictors(df, leak_keywords=leak_keywords, time_col='time', status_col='status')
     
     # Re-add txpl_year if it was removed (needed for temporal split, but not as a feature)
     if txpl_year_values is not None and 'txpl_year' not in df_clean.columns:

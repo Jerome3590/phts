@@ -18,6 +18,7 @@ Added new derived variables to `prepare_calculator_features()`:
 - ✅ **vent_combined**: `txvent OR slvent OR ltxtrach OR hxtrach` (Mechanical ventilation at transplant or listing)
 - ✅ **donor_weight_ratio**: `(weight_donor / weight_txpl) * 100` (Donor/recipient weight ratio)
 - ✅ **donor_size_ratio**: `(height_donor / height_txpl) * 100` (Donor/recipient size ratio - height ratio)
+- ✅ **chd_lat**: Composite laterality disorder from 8 CHD subtype variables (chd_dex, chd_si, chd_heter, chd_iivc, chd_bivc, chd_lsvc, chd_raa, chd_avd)
 
 These match the feature engineering requirements from the risk calculator updates plan.
 
@@ -128,7 +129,8 @@ The Lambda function creates the same derived variables from user inputs:
 3. **ECMO combined**: `txecmo OR slecmo`
 4. **Donor weight ratio**: `(weight_donor / weight_txpl) * 100`
 5. **Donor size ratio**: `(height_donor / height_txpl) * 100`
-6. **eGFR calculation**: `0.413 * height_txpl / txcreat_r` (if not provided)
+6. **CHD laterality disorder**: `chd_dex OR chd_si OR chd_heter OR chd_iivc OR chd_bivc OR chd_lsvc OR chd_raa OR chd_avd`
+7. **eGFR calculation**: `0.413 * height_txpl / txcreat_r` (if not provided)
 
 ## Validation
 

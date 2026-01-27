@@ -588,6 +588,17 @@ def prepare_features_for_inference(features: Dict[str, Any]) -> Dict[str, Any]:
         else:
             prepared["donor_size_ratio"] = None
     
+    # CHD Laterality Disorder (CHD_LAT) - Composite variable
+    # Composite of: CHD_DEX, CHD_SI, CHD_HETER, CHD_IIVC, CHD_BIVC, CHD_LSVC, CHD_RAA, CHD_AVD
+    chd_lat_vars = ["chd_dex", "chd_si", "chd_heter", "chd_iivc", "chd_bivc", "chd_lsvc", "chd_raa", "chd_avd"]
+    if any(v in prepared for v in chd_lat_vars):
+        chd_lat = 0
+        for v in chd_lat_vars:
+            if prepared.get(v, 0) == 1:
+                chd_lat = 1
+                break
+        prepared["chd_lat"] = chd_lat
+    
     # ECMO combined (if not already present)
     if "ecmo_combined" not in prepared:
         if "txecmo" in prepared or "slecmo" in prepared:

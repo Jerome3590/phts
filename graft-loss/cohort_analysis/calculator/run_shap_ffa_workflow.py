@@ -461,6 +461,14 @@ def prepare_calculator_features(df: pd.DataFrame) -> pd.DataFrame:
         )
         logger.info("Created donor_size_ratio")
 
+    # CHD Laterality Disorder (CHD_LAT) - Composite variable
+    # Composite of: CHD_DEX, CHD_SI, CHD_HETER, CHD_IIVC, CHD_BIVC, CHD_LSVC, CHD_RAA, CHD_AVD
+    chd_lat_vars = ["chd_dex", "chd_si", "chd_heter", "chd_iivc", "chd_bivc", "chd_lsvc", "chd_raa", "chd_avd"]
+    available_chd_lat_vars = [v for v in chd_lat_vars if v in df.columns]
+    if available_chd_lat_vars:
+        df["chd_lat"] = df[available_chd_lat_vars].any(axis=1).astype(int)
+        logger.info(f"Created chd_lat from {available_chd_lat_vars}")
+
     # History of Fontan Associated Liver Disease (dichotomous)
     if "hxfonlvr" in df.columns:
         df["hxfonlvr_bin"] = (df["hxfonlvr"] == 1).astype(int)
@@ -1550,7 +1558,11 @@ def generate_dashboard_outputs(
 
     # Filter out cohort-defining variables (should not be causal factors)
     # prim_dx defines the cohorts (CHD, Myocardio, Combined) - it's not a causal feature
-    cohort_defining_vars = ['prim_dx', 'PRIM_DX', 'primary_etiology']
+    # NOTE: For Combined model, primary_etiology is kept as a feature (not filtered here)
+    # Only filter prim_dx/PRIM_DX variants, not primary_etiology for Combined
+    cohort_defining_vars = ['prim_dx', 'PRIM_DX']
+    if cohort != "Combined":
+        cohort_defining_vars.append('primary_etiology')
 
     # Top K causal factors (handle case when FFA is not available)
     if causal_df is None or len(causal_df) == 0:
