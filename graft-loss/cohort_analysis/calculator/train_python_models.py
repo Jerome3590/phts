@@ -170,10 +170,8 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(Path(__file__).parent))
 
-from run_shap_ffa_workflow import (
-    load_calculator_data_for_shap,
-    prepare_calculator_features
-)
+# Delay import of run_shap_ffa_workflow to avoid circular import
+# These will be imported inside train_models_for_cohort function
 
 # Import feature importance functions
 try:
@@ -857,6 +855,12 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
     logger.info(f"  - Parallel jobs: {n_jobs}")
     logger.info(f"  - Time horizon for AUC/AU-PRC/Recall: {time_horizon} days")
     logger.info("")
+    
+    # Import here to avoid circular import (run_shap_ffa_workflow imports from this module)
+    from run_shap_ffa_workflow import (
+        load_calculator_data_for_shap,
+        prepare_calculator_features
+    )
     
     # Load and prepare data
     logger.info("Loading calculator data...")
