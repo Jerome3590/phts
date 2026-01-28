@@ -612,11 +612,30 @@ def get_importance_xgboost(model, feature_names, X_test=None, y_test=None, scori
         "XGBoost importance: computing gain (Gini) for %d features",
         len(feature_names),
     )
-    gain_importance = getattr(model, "feature_importances_", None)
-    if gain_importance is None:
-        # Some XGBoost variants may not expose feature_importances_;
-        # in that case, we fall back directly to permutation or zeros.
-        gain_importance = np.zeros(len(feature_names), dtype=float)
+    
+    # Handle both XGBoost Booster objects and sklearn-style XGBoost models
+    gain_importance = None
+    if isinstance(model, xgb.Booster):
+        # For Booster objects, use get_score() to get gain importance
+        try:
+            gain_scores = model.get_score(importance_type='gain')
+            # Create array matching feature_names order
+            gain_importance = np.zeros(len(feature_names), dtype=float)
+            for i, feat_name in enumerate(feature_names):
+                if feat_name in gain_scores:
+                    gain_importance[i] = gain_scores[feat_name]
+                # Also check for f0, f1, f2... format (XGBoost internal naming)
+                elif f'f{i}' in gain_scores:
+                    gain_importance[i] = gain_scores[f'f{i}']
+        except Exception as e:
+            logger.warning(f"Could not extract gain importance from Booster: {e}")
+            gain_importance = np.zeros(len(feature_names), dtype=float)
+    else:
+        # For sklearn-style XGBoost models, use feature_importances_
+        gain_importance = getattr(model, "feature_importances_", None)
+        if gain_importance is None:
+            # Fall back to zeros if not available
+            gain_importance = np.zeros(len(feature_names), dtype=float)
 
     gain_df = pd.DataFrame(
         {"feature": feature_names, "gain_importance": gain_importance}
