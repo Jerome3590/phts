@@ -52,7 +52,33 @@ fi
 echo -e "${GREEN}✓ Found $MODEL_COUNT model files${NC}"
 echo ""
 
-# Step 3: Build Docker image
+# Step 3: Check Docker permissions
+echo -e "${YELLOW}Checking Docker permissions...${NC}"
+if ! docker ps &>/dev/null; then
+    echo -e "${RED}Error: Cannot access Docker daemon${NC}"
+    echo ""
+    echo "This usually means:"
+    echo "  1. Docker service is not running, OR"
+    echo "  2. Your user is not in the docker group"
+    echo ""
+    echo "To fix:"
+    echo "  # Add your user to docker group:"
+    echo "  sudo usermod -aG docker \$USER"
+    echo ""
+    echo "  # Then either:"
+    echo "  #   - Log out and log back in, OR"
+    echo "  #   - Run: newgrp docker"
+    echo ""
+    echo "  # Or use the helper script:"
+    echo "  bash fix_docker_permissions.sh"
+    echo ""
+    echo "After fixing, verify with: docker ps"
+    exit 1
+fi
+echo -e "${GREEN}✓ Docker access verified${NC}"
+echo ""
+
+# Step 4: Build Docker image
 # IMPORTANT: Lambda requires Docker format, not OCI format
 # Disable BuildKit to ensure Docker format
 echo -e "${YELLOW}Building Docker image (Docker format for Lambda compatibility)...${NC}"
@@ -65,7 +91,7 @@ fi
 echo -e "${GREEN}✓ Docker image built successfully (Docker format)${NC}"
 echo ""
 
-# Step 4: Get ECR login token
+# Step 5: Get ECR login token
 echo -e "${YELLOW}Logging in to ECR...${NC}"
 ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 aws ecr get-login-password --region ${AWS_REGION} | \
@@ -77,7 +103,7 @@ fi
 echo -e "${GREEN}✓ Logged in to ECR${NC}"
 echo ""
 
-# Step 5: Create ECR repository if it doesn't exist
+# Step 6: Create ECR repository if it doesn't exist
 echo -e "${YELLOW}Checking ECR repository...${NC}"
 if aws ecr describe-repositories --repository-names ${ECR_REPOSITORY} --region ${AWS_REGION} &>/dev/null; then
     echo -e "${GREEN}✓ ECR repository exists: ${ECR_REPOSITORY}${NC}"
@@ -96,14 +122,14 @@ else
 fi
 echo ""
 
-# Step 6: Tag image for ECR
+# Step 7: Tag image for ECR
 ECR_URI=${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}
 echo -e "${YELLOW}Tagging image...${NC}"
 docker tag ${ECR_REPOSITORY}:${IMAGE_TAG} ${ECR_URI}
 echo -e "${GREEN}✓ Image tagged: ${ECR_URI}${NC}"
 echo ""
 
-# Step 7: Push to ECR
+# Step 8: Push to ECR
 echo -e "${YELLOW}Pushing image to ECR (this may take a while)...${NC}"
 docker push ${ECR_URI}
 if [ $? -ne 0 ]; then
@@ -113,7 +139,7 @@ fi
 echo -e "${GREEN}✓ Image pushed successfully${NC}"
 echo ""
 
-# Step 8: Get image size
+# Step 9: Get image size
 IMAGE_SIZE=$(docker images ${ECR_REPOSITORY}:${IMAGE_TAG} --format "{{.Size}}")
 echo -e "${BLUE}========================================${NC}"
 echo -e "${GREEN}Deployment Complete!${NC}"

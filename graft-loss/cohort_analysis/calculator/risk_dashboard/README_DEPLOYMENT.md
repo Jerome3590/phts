@@ -20,6 +20,26 @@ This guide provides step-by-step instructions for deploying the PHTS Risk Calcul
 4. **Dashboard data generated** in `calculator/outputs/shap_ffa/`
 5. **Risk distributions computed** in `calculator/outputs/risk_distributions/`
 
+### Docker Setup
+
+If you get a "permission denied" error when building Docker images, add your user to the docker group:
+
+```bash
+# Add your user to docker group
+sudo usermod -aG docker $USER
+
+# Apply the group changes (choose one):
+# Option 1: Log out and log back in (recommended)
+# Option 2: Run this command in your current session:
+newgrp docker
+
+# Verify it worked:
+groups | grep docker
+docker ps
+```
+
+**Note:** After adding your user to the docker group, you must log out and back in (or run `newgrp docker`) for the changes to take effect.
+
 ## Quick Start
 
 For experienced users, here's the fastest path to deployment:
@@ -173,6 +193,8 @@ Create REST API and integrate with Lambda:
 8. **Automatically sets `API_GATEWAY_URL` in Lambda environment**
 
 **Output:** API Gateway URL (e.g., `https://API_ID.execute-api.us-east-1.amazonaws.com/prod`)
+
+**Known API ID:** `359vxflbzj` (if API Gateway already exists)
 
 ---
 

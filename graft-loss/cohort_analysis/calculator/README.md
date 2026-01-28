@@ -66,6 +66,14 @@ Each model compares five different **survival models**:
 
 3. **Deploy Dashboard**: See [docs/calculator/README_deployment.md](../../../docs/calculator/README_deployment.md)
 
+   **Docker Setup (if needed):**
+   ```bash
+   # If you get "permission denied" errors with Docker:
+   sudo usermod -aG docker $USER
+   newgrp docker  # Or log out and back in
+   docker ps      # Verify it works
+   ```
+
 ## Directory Structure
 
 ```
