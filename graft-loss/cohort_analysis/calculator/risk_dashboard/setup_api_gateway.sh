@@ -41,7 +41,17 @@ echo -e "${YELLOW}Creating/Getting REST API...${NC}"
 API_ID=$(aws apigateway get-rest-apis \
     --region ${AWS_REGION} \
     --query "items[?name=='${API_NAME}'].id" \
-    --output text)
+    --output text 2>/dev/null || echo "")
+
+# If not found by name, try known API ID (359vxflbzj)
+if [ -z "$API_ID" ]; then
+    echo "  API not found by name, trying known API ID: 359vxflbzj"
+    KNOWN_API_ID="359vxflbzj"
+    if aws apigateway get-rest-api --rest-api-id ${KNOWN_API_ID} --region ${AWS_REGION} &>/dev/null; then
+        API_ID=${KNOWN_API_ID}
+        echo -e "${GREEN}✓ Using existing API (by ID): ${API_ID}${NC}"
+    fi
+fi
 
 if [ -z "$API_ID" ]; then
     echo "Creating new REST API..."

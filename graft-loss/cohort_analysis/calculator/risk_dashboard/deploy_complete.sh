@@ -78,11 +78,21 @@ if ! ./setup_api_gateway.sh; then
     exit 1
 fi
 
-# Get API URL
+# Get API URL - try by name first, then by known ID
 API_ID=$(aws apigateway get-rest-apis \
     --region ${AWS_REGION} \
     --query "items[?name=='phts-calculator-api'].id" \
     --output text 2>/dev/null || echo "")
+
+# If not found by name, try known API ID (359vxflbzj)
+if [ -z "$API_ID" ]; then
+    echo "  Trying known API Gateway ID: 359vxflbzj"
+    API_ID="359vxflbzj"
+    # Verify it exists
+    if ! aws apigateway get-rest-api --rest-api-id ${API_ID} --region ${AWS_REGION} &>/dev/null; then
+        API_ID=""
+    fi
+fi
 
 if [ -z "$API_ID" ]; then
     echo -e "${RED}Error: Could not get API Gateway ID${NC}"
