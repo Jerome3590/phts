@@ -751,6 +751,8 @@ def train_single_split_models(
     cohort_name: str,
     output_dir: Path,
     cat_feature_indices: List[int] = None,  # Optional: categorical feature indices
+    X_train_xgb: pd.DataFrame = None,  # Optional: XGBoost version with numeric-encoded categoricals
+    X_test_xgb: pd.DataFrame = None,  # Optional: XGBoost version with numeric-encoded categoricals
     time_horizon: float = 365.25  # Default: 1 year in days for AUC/AU-PRC
 ) -> Dict:
     """
@@ -821,11 +823,13 @@ def train_single_split_models(
             logger.warning(f"Could not compute CatBoost importance for split {split_idx}: {e}")
             results['catboost_importance'] = pd.DataFrame({'feature': feature_names, 'importance': 0.0})
         
-        # Train XGBoost
+        # Train XGBoost (use numeric-encoded version if provided)
+        X_train_xgb_use = X_train_xgb if X_train_xgb is not None else X_train
+        X_test_xgb_use = X_test_xgb if X_test_xgb is not None else X_test
         xgb_model, xgb_cindex = train_xgboost_survival(
-            X_train=X_train,
+            X_train=X_train_xgb_use,
             y_train=y_train,
-            X_test=X_test,
+            X_test=X_test_xgb_use,
             y_test=y_test,
             time_test=time_test,
             status_test=status_test,
@@ -836,7 +840,7 @@ def train_single_split_models(
         results['xgboost_cindex'] = xgb_cindex
         
         # Calculate AUC, AU-PRC, and Recall for XGBoost
-        xgb_test_dmatrix = xgb.DMatrix(X_test.values.astype(np.float32))
+        xgb_test_dmatrix = xgb.DMatrix(X_test_xgb_use.values.astype(np.float32))
         xgb_test_dmatrix.feature_names = feature_names
         xgb_risk_scores = xgb_model.predict(xgb_test_dmatrix)
         xgb_auc, xgb_auprc, xgb_recall = calculate_survival_auc_auprc_recall(time_test, status_test, xgb_risk_scores)
@@ -876,7 +880,7 @@ def train_single_split_models(
             xgb_importance = get_importance_xgboost(
                 xgb_model,
                 feature_names,
-                X_test=X_test,
+                X_test=X_test_xgb_use,
                 y_test=y_test,  # Use signed time labels
                 scoring=cindex_scorer
             )
@@ -891,11 +895,11 @@ def train_single_split_models(
             logger.warning(f"Could not compute XGBoost importance for split {split_idx}: {e}")
             results['xgboost_importance'] = pd.DataFrame({'feature': feature_names, 'importance': 0.0})
         
-        # Train XGBoost RF
+        # Train XGBoost RF (use numeric-encoded version if provided)
         xgb_rf_model, xgb_rf_cindex = train_xgboost_rf_survival(
-            X_train=X_train,
+            X_train=X_train_xgb_use,
             y_train=y_train,
-            X_test=X_test,
+            X_test=X_test_xgb_use,
             y_test=y_test,
             time_test=time_test,
             status_test=status_test,
@@ -906,7 +910,7 @@ def train_single_split_models(
         results['xgboost_rf_cindex'] = xgb_rf_cindex
         
         # Calculate AUC, AU-PRC, and Recall for XGBoost RF
-        xgb_rf_test_dmatrix = xgb.DMatrix(X_test.values.astype(np.float32))
+        xgb_rf_test_dmatrix = xgb.DMatrix(X_test_xgb_use.values.astype(np.float32))
         xgb_rf_test_dmatrix.feature_names = feature_names
         xgb_rf_risk_scores = xgb_rf_model.predict(xgb_rf_test_dmatrix)
         xgb_rf_auc, xgb_rf_auprc, xgb_rf_recall = calculate_survival_auc_auprc_recall(time_test, status_test, xgb_rf_risk_scores)
@@ -944,7 +948,7 @@ def train_single_split_models(
             xgb_rf_importance = get_importance_xgboost(
                 xgb_rf_model,
                 feature_names,
-                X_test=X_test,
+                X_test=X_test_xgb_use,
                 y_test=y_test,  # Use signed time labels
                 scoring=cindex_scorer
             )
@@ -1123,38 +1127,38 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
     # Fill NaN values
     X = X.fillna(0)
     
-    # Identify categorical features BEFORE converting to numeric
-    # Store which columns are categorical so we can pass them to CatBoost
+    # Identify categorical features
+    # CatBoost can handle categoricals natively, but XGBoost needs numeric encoding
+    # We'll keep native categoricals for CatBoost and create a numeric version for XGBoost
     categorical_cols = []
     for col in X.columns:
-        if X[col].dtype == 'object':
+        if X[col].dtype == 'object' or X[col].dtype.name == 'category':
             categorical_cols.append(col)
     
-    # Convert categorical to numeric (simple encoding for now)
-    # Store the mapping of column names to their categorical indices for CatBoost
-    cat_feature_indices = []
+    # Store categorical feature indices for CatBoost (using native categoricals)
+    cat_feature_indices_final = []
     for i, col in enumerate(X.columns):
         if col in categorical_cols:
-            X[col] = pd.Categorical(X[col]).codes
-            cat_feature_indices.append(i)
+            cat_feature_indices_final.append(i)
+    
+    # Create a copy for XGBoost with numeric-encoded categoricals
+    # CatBoost will use the original X with native categoricals
+    X_for_xgb = X.copy()
+    for col in categorical_cols:
+        # Convert to string first (handles NaN), then to categorical codes
+        X_for_xgb[col] = pd.Categorical(X[col].astype(str).fillna('')).codes
     
     logger.info(f"Final feature matrix: {X.shape}")
     if categorical_cols:
-        logger.info(f"  Identified {len(categorical_cols)} categorical features (converted to numeric codes): {categorical_cols[:5]}{'...' if len(categorical_cols) > 5 else ''}")
-        logger.info(f"  Categorical feature indices for CatBoost: {cat_feature_indices}")
+        logger.info(f"  Identified {len(categorical_cols)} categorical features: {categorical_cols[:5]}{'...' if len(categorical_cols) > 5 else ''}")
+        logger.info(f"  CatBoost will use native categoricals (indices: {cat_feature_indices_final[:10]}{'...' if len(cat_feature_indices_final) > 10 else ''})")
+        logger.info(f"  XGBoost will use numeric-encoded categoricals")
     logger.info(f"Total features after leakage removal and constant column removal: {len(feature_cols)}")
     
     # Log feature categories for visibility
     derived_features = [f for f in feature_cols if any(x in f.lower() for x in ['combined', '_ratio', 'egfr_', 'bmi_', '_high', '_low', '_bin', '_cat', '_change'])]
     logger.info(f"  - Derived features (combined, ratios, calculated, dichotomous): {len(derived_features)}")
     logger.info(f"  - Original clinical features: {len(feature_cols) - len(derived_features)}")
-    
-    # Store categorical feature indices globally for use in train_single_split_models
-    # Map from original column names to indices in final feature list
-    cat_feature_indices_final = []
-    for i, col in enumerate(X.columns):
-        if col in categorical_cols:
-            cat_feature_indices_final.append(i)
     
     # Prepare signed time labels for full dataset (for MC CV splits)
     y_all = prepare_survival_labels(time, status)
@@ -1215,16 +1219,18 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
     mc_cv_results = Parallel(n_jobs=n_jobs, verbose=10)(
         delayed(train_single_split_models)(
             split_idx=i,
-            X_train=X.iloc[split_indices[i]['train_idx']].copy(),
+            X_train=X.iloc[split_indices[i]['train_idx']].copy(),  # Native categoricals for CatBoost
             y_train=y_all[split_indices[i]['train_idx']],
-            X_test=X.iloc[split_indices[i]['test_idx']].copy(),
+            X_test=X.iloc[split_indices[i]['test_idx']].copy(),  # Native categoricals for CatBoost
             y_test=y_all[split_indices[i]['test_idx']],
             time_test=time[split_indices[i]['test_idx']],
             status_test=status[split_indices[i]['test_idx']],
             feature_names=feature_cols,
             cohort_name=cohort,
             output_dir=mc_cv_output_dir,
-            cat_feature_indices=cat_feature_indices_final
+            cat_feature_indices=cat_feature_indices_final,
+            X_train_xgb=X_for_xgb.iloc[split_indices[i]['train_idx']].copy() if 'X_for_xgb' in locals() else None,  # Numeric-encoded for XGBoost
+            X_test_xgb=X_for_xgb.iloc[split_indices[i]['test_idx']].copy() if 'X_for_xgb' in locals() else None  # Numeric-encoded for XGBoost
         )
         for i in range(len(split_indices))
     )
@@ -1775,16 +1781,20 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
         logger.info(f"Temporal split: Train (≤{cutoff_year}): {train_mask.sum()} samples, "
                    f"Test (>{cutoff_year}): {test_mask.sum()} samples")
         
-        X_train_final = X[train_mask].copy()
-        X_test_final = X[test_mask].copy()
+        X_train_final = X[train_mask].copy()  # Native categoricals for CatBoost
+        X_test_final = X[test_mask].copy()  # Native categoricals for CatBoost
+        X_train_final_xgb = X_for_xgb[train_mask].copy() if 'X_for_xgb' in locals() else X_train_final  # Numeric-encoded for XGBoost
+        X_test_final_xgb = X_for_xgb[test_mask].copy() if 'X_for_xgb' in locals() else X_test_final  # Numeric-encoded for XGBoost
         time_train_final = time[train_mask]
         time_test_final = time[test_mask]
         status_train_final = status[train_mask]
         status_test_final = status[test_mask]
     else:
         logger.warning("txpl_year not found, using full dataset")
-        X_train_final = X
-        X_test_final = X
+        X_train_final = X  # Native categoricals for CatBoost
+        X_test_final = X  # Native categoricals for CatBoost
+        X_train_final_xgb = X_for_xgb if 'X_for_xgb' in locals() else X  # Numeric-encoded for XGBoost
+        X_test_final_xgb = X_for_xgb if 'X_for_xgb' in locals() else X  # Numeric-encoded for XGBoost
         time_train_final = time
         time_test_final = time
         status_train_final = status
@@ -1808,9 +1818,9 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
         )
     elif best_model_name == 'XGBoost':
         final_model, final_cindex = train_xgboost_survival(
-            X_train=X_train_final,
+            X_train=X_train_final_xgb,  # Use numeric-encoded version for XGBoost
             y_train=y_train_final,
-            X_test=X_test_final,
+            X_test=X_test_final_xgb,  # Use numeric-encoded version for XGBoost
             y_test=y_test_final,
             time_test=time_test_final,
             status_test=status_test_final,
@@ -1820,9 +1830,9 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
         )
     else:  # XGBoost RF
         final_model, final_cindex = train_xgboost_rf_survival(
-            X_train=X_train_final,
+            X_train=X_train_final_xgb,  # Use numeric-encoded version for XGBoost RF
             y_train=y_train_final,
-            X_test=X_test_final,
+            X_test=X_test_final_xgb,  # Use numeric-encoded version for XGBoost RF
             y_test=y_test_final,
             time_test=time_test_final,
             status_test=status_test_final,
@@ -1849,9 +1859,9 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
     )
     
     xgb_model, xgb_cindex = train_xgboost_survival(
-        X_train=X_train_final,
+        X_train=X_train_final_xgb,  # Use numeric-encoded version for XGBoost
         y_train=y_train_final,
-        X_test=X_test_final,
+        X_test=X_test_final_xgb,  # Use numeric-encoded version for XGBoost
         y_test=y_test_final,
         time_test=time_test_final,
         status_test=status_test_final,
@@ -1861,9 +1871,9 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
     )
     
     xgb_rf_model, xgb_rf_cindex = train_xgboost_rf_survival(
-        X_train=X_train_final,
+        X_train=X_train_final_xgb,  # Use numeric-encoded version for XGBoost RF
         y_train=y_train_final,
-        X_test=X_test_final,
+        X_test=X_test_final_xgb,  # Use numeric-encoded version for XGBoost RF
         y_test=y_test_final,
         time_test=time_test_final,
         status_test=status_test_final,
