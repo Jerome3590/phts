@@ -568,10 +568,18 @@ def prepare_feature_vector(features: Dict[str, Any], feature_names: List[str]) -
     return feature_vector
 
 
+# Model assumptions (for defaults when user does not provide values)
+# Per requirements: donor ischemic time assumed < 240 min when not given; size ratio 70-200%
+DONISCH_DEFAULT_MINUTES = 180  # < 240 minutes when not provided
+DONOR_RECIPIENT_RATIO_MIN_PCT = 70.0
+DONOR_RECIPIENT_RATIO_MAX_PCT = 200.0
+
+
 def prepare_features_for_inference(features: Dict[str, Any]) -> Dict[str, Any]:
     """
     Prepare features for inference by creating derived variables.
     This matches the feature engineering in prepare_calculator_features().
+    Applies model assumptions: DONISCH < 240 min when not given; prioritizes at-transplant over at-listing.
     
     Args:
         features: Raw feature dictionary from user input
@@ -581,7 +589,11 @@ def prepare_features_for_inference(features: Dict[str, Any]) -> Dict[str, Any]:
     """
     prepared = features.copy()
     
-    # VAD combined (txvad OR slvad)
+    # Donor ischemic time (DONISCH): if not provided, assume < 240 minutes (per model assumption)
+    if "donisch" not in prepared or prepared.get("donisch") is None:
+        prepared["donisch"] = DONISCH_DEFAULT_MINUTES
+    
+    # VAD combined (txvad OR slvad) - prioritize at transplant (txvad) over at listing (slvad)
     if "txvad" in prepared or "slvad" in prepared:
         txvad = prepared.get("txvad", 0)
         slvad = prepared.get("slvad", 0)

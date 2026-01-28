@@ -1,0 +1,438 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Local testing script for PHTS Lambda function and API Gateway endpoints.
+
+This script allows you to test the Lambda function locally without deploying to AWS.
+It simulates API Gateway events and runs the Lambda handler directly.
+"""
+
+import json
+import os
+import sys
+from pathlib import Path
+
+# Fix Unicode encoding for Windows
+if sys.platform == 'win32':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
+# Add the current directory to path so we can import the Lambda function
+sys.path.insert(0, str(Path(__file__).parent))
+
+# Set up environment variables for local testing
+os.environ.setdefault('MODEL_BASE_PATH', str(Path(__file__).parent / 'lambda_dir_phts' / 'models'))
+os.environ.setdefault('MODEL_FEATURES_PATH', str(Path(__file__).parent / 'lambda_dir_phts' / 'model_features'))
+os.environ.setdefault('DASHBOARD_DATA_PATH', str(Path(__file__).parent / 'lambda_dir_phts' / 'dashboard_data'))
+os.environ.setdefault('RISK_DISTRIBUTION_PATH', str(Path(__file__).parent / 'lambda_dir_phts' / 'risk_distributions'))
+os.environ.setdefault('PHTS_BUCKET', 'jerome-dixon.io')
+os.environ.setdefault('S3_PREFIX', 'uva/phts-risk-calculator')
+os.environ.setdefault('API_GATEWAY_URL', 'https://359vxflbzj.execute-api.us-east-1.amazonaws.com/prod')
+
+# Import Lambda function
+try:
+    from phts_lambda_function import lambda_handler
+except ImportError as e:
+    print(f"Error importing Lambda function: {e}")
+    print("Make sure you're in the risk_dashboard directory and dependencies are installed.")
+    sys.exit(1)
+
+
+def create_api_gateway_event(http_method, path, query_params=None, body=None, model_variant='base'):
+    """Create a mock API Gateway event."""
+    event = {
+        "httpMethod": http_method,
+        "path": path,
+        "pathParameters": None,
+        "queryStringParameters": query_params or {},
+        "headers": {
+            "Content-Type": "application/json",
+            "Origin": "http://localhost:8000"
+        },
+        "body": json.dumps(body) if body else None,
+        "isBase64Encoded": False,
+        "requestContext": {
+            "accountId": "123456789012",
+            "apiId": "359vxflbzj",
+            "domainName": "359vxflbzj.execute-api.us-east-1.amazonaws.com",
+            "domainPrefix": "359vxflbzj",
+            "httpMethod": http_method,
+            "path": path,
+            "protocol": "HTTP/1.1",
+            "requestId": "test-request-id",
+            "requestTime": "09/Apr/2015:12:34:56 +0000",
+            "requestTimeEpoch": 1428582896000,
+            "resourceId": "test-resource-id",
+            "resourcePath": path,
+            "stage": "prod"
+        }
+    }
+    return event
+
+
+def test_metadata_endpoint():
+    """Test GET /metadata endpoint."""
+    print("\n" + "="*80)
+    print("Testing GET /metadata endpoint")
+    print("="*80)
+    
+    event = create_api_gateway_event(
+        http_method="GET",
+        path="/metadata",
+        query_params={"cohort": "Combined"}
+    )
+    
+    try:
+        response = lambda_handler(event, None)
+        print(f"\nStatus Code: {response['statusCode']}")
+        print(f"Headers: {json.dumps(response.get('headers', {}), indent=2)}")
+        
+        if response.get('body'):
+            body = json.loads(response['body'])
+            print(f"\nResponse Body:")
+            print(json.dumps(body, indent=2))
+        
+        return response['statusCode'] == 200
+    except Exception as e:
+        print(f"\n❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def test_risk_endpoint():
+    """Test POST /risk endpoint."""
+    print("\n" + "="*80)
+    print("Testing POST /risk endpoint (Baseline Model)")
+    print("="*80)
+    
+    # Test with baseline model
+    body = {
+        "cohort": "Combined",
+        "model_variant": "base",
+        "features": {
+            "egfr_tx": 60.0,
+            "txbun_r": 20.0,
+            "txcreat_r": 1.0,
+            "ltxtrach": 0,
+            "txecmo": 0,
+            "txnomcsd": 0,
+            "chd_papvr": 0,
+            "chd_anom": 0,
+            "donisch": 4.0,
+            "txsa_r": 3.5,
+            "txast": 30.0
+        }
+    }
+    
+    event = create_api_gateway_event(
+        http_method="POST",
+        path="/risk",
+        body=body
+    )
+    
+    try:
+        response = lambda_handler(event, None)
+        print(f"\nStatus Code: {response['statusCode']}")
+        
+        if response.get('body'):
+            body = json.loads(response['body'])
+            print(f"\nResponse Body:")
+            print(json.dumps(body, indent=2))
+            
+            if 'risk_score' in body:
+                print(f"\n✓ Risk Score: {body['risk_score']:.2f}%")
+                print(f"✓ Risk Band: {body.get('risk_band', 'N/A')}")
+                print(f"✓ Percentile: {body.get('percentile', 'N/A')}")
+        
+        return response['statusCode'] == 200
+    except Exception as e:
+        print(f"\n❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def test_risk_endpoint_enhanced():
+    """Test POST /risk endpoint with enhanced model."""
+    print("\n" + "="*80)
+    print("Testing POST /risk endpoint (Enhanced Model)")
+    print("="*80)
+    
+    body = {
+        "cohort": "Combined",
+        "model_variant": "enhanced",
+        "features": {
+            "egfr_tx": 60.0,
+            "txbun_r": 20.0,
+            "txcreat_r": 1.0,
+            "ltxtrach": 0,
+            "txecmo": 0,
+            "txnomcsd": 0,
+            "chd_papvr": 0,
+            "chd_anom": 0,
+            "donisch": 4.0,
+            "txsa_r": 3.5,
+            "txast": 30.0
+        }
+    }
+    
+    event = create_api_gateway_event(
+        http_method="POST",
+        path="/risk",
+        body=body
+    )
+    
+    try:
+        response = lambda_handler(event, None)
+        print(f"\nStatus Code: {response['statusCode']}")
+        
+        if response.get('body'):
+            body = json.loads(response['body'])
+            print(f"\nResponse Body:")
+            print(json.dumps(body, indent=2))
+            
+            if 'risk_score' in body:
+                print(f"\n✓ Risk Score: {body['risk_score']:.2f}%")
+                print(f"✓ Risk Band: {body.get('risk_band', 'N/A')}")
+        
+        return response['statusCode'] == 200
+    except Exception as e:
+        print(f"\n❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def test_causal_endpoint():
+    """Test POST /causal endpoint."""
+    print("\n" + "="*80)
+    print("Testing POST /causal endpoint (Baseline Model)")
+    print("="*80)
+    
+    body = {
+        "cohort": "Combined",
+        "model_variant": "base",
+        "top_k": 10
+    }
+    
+    event = create_api_gateway_event(
+        http_method="POST",
+        path="/causal",
+        body=body
+    )
+    
+    try:
+        response = lambda_handler(event, None)
+        print(f"\nStatus Code: {response['statusCode']}")
+        
+        if response.get('body'):
+            body = json.loads(response['body'])
+            print(f"\nResponse Body:")
+            print(json.dumps(body, indent=2))
+            
+            if 'top_causal_factors' in body:
+                factors = body['top_causal_factors']
+                print(f"\n[OK] Found {len(factors)} causal factors")
+                if factors:
+                    print("\nTop 5 factors:")
+                    for i, factor in enumerate(factors[:5], 1):
+                        importance = factor.get('importance', factor.get('combined_importance', 0))
+                        print(f"  {i}. {factor['feature']}: {importance:.4f}")
+        
+        return response['statusCode'] == 200
+    except Exception as e:
+        print(f"\n❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def test_causal_endpoint_enhanced():
+    """Test POST /causal endpoint with enhanced model."""
+    print("\n" + "="*80)
+    print("Testing POST /causal endpoint (Enhanced Model)")
+    print("="*80)
+    
+    body = {
+        "cohort": "Combined",
+        "model_variant": "enhanced",
+        "top_k": 10
+    }
+    
+    event = create_api_gateway_event(
+        http_method="POST",
+        path="/causal",
+        body=body
+    )
+    
+    try:
+        response = lambda_handler(event, None)
+        print(f"\nStatus Code: {response['statusCode']}")
+        
+        if response.get('body'):
+            body = json.loads(response['body'])
+            print(f"\nResponse Body:")
+            print(json.dumps(body, indent=2))
+            
+            if 'top_causal_factors' in body:
+                factors = body['top_causal_factors']
+                print(f"\n✓ Found {len(factors)} causal factors")
+        
+        return response['statusCode'] == 200
+    except Exception as e:
+        print(f"\n❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def test_model_comparison():
+    """Test comparing baseline vs enhanced models."""
+    print("\n" + "="*80)
+    print("Testing Model Comparison (Baseline vs Enhanced)")
+    print("="*80)
+    
+    features = {
+        "egfr_tx": 60.0,
+        "txbun_r": 20.0,
+        "txcreat_r": 1.0,
+        "ltxtrach": 0,
+        "txecmo": 0,
+        "txnomcsd": 0,
+        "chd_papvr": 0,
+        "chd_anom": 0,
+        "donisch": 4.0,
+        "txsa_r": 3.5,
+        "txast": 30.0
+    }
+    
+    # Test baseline
+    baseline_event = create_api_gateway_event(
+        http_method="POST",
+        path="/risk",
+        body={"cohort": "Combined", "model_variant": "base", "features": features}
+    )
+    
+    # Test enhanced
+    enhanced_event = create_api_gateway_event(
+        http_method="POST",
+        path="/risk",
+        body={"cohort": "Combined", "model_variant": "enhanced", "features": features}
+    )
+    
+    try:
+        baseline_response = lambda_handler(baseline_event, None)
+        enhanced_response = lambda_handler(enhanced_event, None)
+        
+        if baseline_response['statusCode'] == 200 and enhanced_response['statusCode'] == 200:
+            baseline_body = json.loads(baseline_response['body'])
+            enhanced_body = json.loads(enhanced_response['body'])
+            
+            print("\nComparison Results:")
+            print("-" * 80)
+            print(f"Baseline Model Risk:  {baseline_body.get('risk_score', 0):.2f}%")
+            print(f"Enhanced Model Risk:  {enhanced_body.get('risk_score', 0):.2f}%")
+            print(f"Difference:           {enhanced_body.get('risk_score', 0) - baseline_body.get('risk_score', 0):.2f}%")
+            print("-" * 80)
+            
+            return True
+        else:
+            print(f"[ERROR] Baseline status: {baseline_response['statusCode']}")
+            print(f"[ERROR] Enhanced status: {enhanced_response['statusCode']}")
+            return False
+    except Exception as e:
+        print(f"\n[ERROR] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def check_prerequisites():
+    """Check if required directories and files exist."""
+    lambda_dir = Path(__file__).parent / 'lambda_dir_phts'
+    issues = []
+    
+    if not lambda_dir.exists():
+        issues.append("lambda_dir_phts/ directory not found")
+        return issues
+    
+    # Check for model directories
+    model_dir = lambda_dir / 'models'
+    if not model_dir.exists():
+        issues.append("lambda_dir_phts/models/ not found")
+    else:
+        # Check for Combined_base and Combined_enhanced
+        if not (model_dir / 'Combined_base').exists() and not (model_dir / 'Combined').exists():
+            issues.append("Neither Combined_base/ nor Combined/ model directory found")
+        if not (model_dir / 'Combined_enhanced').exists():
+            issues.append("Combined_enhanced/ model directory not found")
+    
+    # Check for dashboard data
+    dashboard_dir = lambda_dir / 'dashboard_data'
+    if not dashboard_dir.exists():
+        issues.append("lambda_dir_phts/dashboard_data/ not found")
+    else:
+        if not (dashboard_dir / 'Combined_base').exists() and not (dashboard_dir / 'Combined').exists():
+            issues.append("Neither Combined_base/ nor Combined/ dashboard data found")
+        if not (dashboard_dir / 'Combined_enhanced').exists():
+            issues.append("Combined_enhanced/ dashboard data not found")
+    
+    return issues
+
+
+def main():
+    """Run all tests."""
+    print("="*80)
+    print("PHTS Lambda Function - Local Testing")
+    print("="*80)
+    print("\nTesting Lambda function locally (simulating API Gateway events)")
+    print("Make sure lambda_dir_phts/ is prepared with models and data.")
+    print()
+    
+    # Check prerequisites
+    issues = check_prerequisites()
+    if issues:
+        print("[WARNING] Prerequisites check failed:")
+        for issue in issues:
+            print(f"  - {issue}")
+        print("\nTo fix, run:")
+        print("  python prepare_lambda_dir_phts.py")
+        print("\nNote: The script will continue but tests may fail if models/data are missing.")
+        print()
+    
+    results = []
+    
+    # Run tests
+    results.append(("Metadata (GET)", test_metadata_endpoint()))
+    results.append(("Risk Baseline (POST)", test_risk_endpoint()))
+    results.append(("Risk Enhanced (POST)", test_risk_endpoint_enhanced()))
+    results.append(("Causal Baseline (POST)", test_causal_endpoint()))
+    results.append(("Causal Enhanced (POST)", test_causal_endpoint_enhanced()))
+    results.append(("Model Comparison", test_model_comparison()))
+    
+    # Summary
+    print("\n" + "="*80)
+    print("Test Summary")
+    print("="*80)
+    for test_name, passed in results:
+        status = "[PASS]" if passed else "[FAIL]"
+        print(f"{status}: {test_name}")
+    
+    passed_count = sum(1 for _, passed in results if passed)
+    total_count = len(results)
+    print(f"\nTotal: {passed_count}/{total_count} tests passed")
+    
+    if passed_count == total_count:
+        print("\n[SUCCESS] All tests passed!")
+        return 0
+    else:
+        print("\n[WARNING] Some tests failed. Check output above for details.")
+        print("\nNote: If models are not found, make sure lambda_dir_phts/ is prepared:")
+        print("  python prepare_lambda_dir_phts.py")
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

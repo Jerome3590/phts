@@ -10,7 +10,17 @@ This document outlines the implementation plan for updating the PHTS Risk Calcul
 5. Improve user experience with better prompts and variable prioritization
 
 **Last Updated**: January 26, 2026  
-**Status**: Planning Phase
+**Status**: Partially implemented — backend defaults added; UI (disclaimers, prompts) not yet implemented (see below)
+
+### Implementation status (as of last update)
+
+| Requirement | Status | Notes |
+|-------------|--------|--------|
+| Disclaimer: donor-recipient size ratio 70–200% at top of calculator | **Implemented** | Blue info box at top of `phts_dashboard.html` |
+| Disclaimer: DONISCH &lt; 240 min when not given | **Implemented** | Amber warning box at top of `phts_dashboard.html`; backend defaults `donisch` to 180 min when missing |
+| Prompt user for most recent (at transplant) values | **Implemented** | Note box updated: “Enter the most recent patient values below (at transplant is preferred over at listing)” |
+| Model prioritize at transplant over at listing | **Implemented** | Backend uses at-transplant vars; UI note and labels (e.g. “at Transplant”) reflect prioritization |
+| Backend default DONISCH when missing | **Implemented** | `phts_lambda_function.prepare_features_for_inference()` sets `donisch = 180` if not provided |
 
 ---
 

@@ -234,6 +234,14 @@
       margin-bottom: 2rem;
       border-left: 4px solid #3b82f6;
     }
+    .disclaimer-warning {
+      background: #fef3c7;
+      color: #92400e;
+      padding: 1rem;
+      border-radius: 0.5rem;
+      margin-bottom: 1rem;
+      border-left: 4px solid #f59e0b;
+    }
     /* Tab system */
     .tabs {
       display: flex;
@@ -387,8 +395,16 @@
     <p class="subtitle">Pediatric Heart Transplant Survival Risk Assessment Tool</p>
     
     <div class="info-box">
+      <strong>Model assumption:</strong> This calculator assumes the donor-recipient size ratio is between 70–200%. 
+      If the actual ratio falls outside this range, results may be less accurate.
+    </div>
+    <div class="disclaimer-warning">
+      <strong>Donor ischemic time:</strong> If donor ischemic time is not provided, the model will assume it is less than 240 minutes (4 hours). 
+      Please enter the most recent donor ischemic time when available.
+    </div>
+    <div class="info-box">
       <strong>Note:</strong> This calculator uses clinical features to predict graft loss risk. 
-      Enter patient clinical values below to calculate risk score and view top causal factors.
+      Enter the most recent patient values below (at transplant is preferred over at listing). Calculate risk score and view top causal factors.
     </div>
     
     <!-- Tab Navigation -->

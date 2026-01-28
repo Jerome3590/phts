@@ -51,106 +51,157 @@ def prepare_lambda_directory():
     print()
     
     # Copy models for each cohort
+    # Handle both variant (Combined_base, Combined_enhanced) and non-variant (CHD, Myocardio) structures
     print("Copying models...")
     models_copied = 0
     for cohort in COHORTS:
-        cohort_models_dir = MODELS_DIR / cohort
-        if not cohort_models_dir.exists():
-            print(f"  [WARNING] Models not found for {cohort} at {cohort_models_dir}")
-            continue
-        
-        cohort_lambda_dir = lambda_models_dir / cohort
-        cohort_lambda_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Copy model files
-        files_copied = 0
-        for model_file in cohort_models_dir.glob("*.cbm"):
-            shutil.copy2(model_file, cohort_lambda_dir / model_file.name)
-            files_copied += 1
-        for model_file in cohort_models_dir.glob("*.ubj"):
-            shutil.copy2(model_file, cohort_lambda_dir / model_file.name)
-            files_copied += 1
-        for model_file in cohort_models_dir.glob("best_model.txt"):
-            shutil.copy2(model_file, cohort_lambda_dir / model_file.name)
-            files_copied += 1
-        
-        # Copy JSON files
-        json_dir = cohort_models_dir / "final_model_json"
-        if json_dir.exists():
-            json_lambda_dir = cohort_lambda_dir / "final_model_json"
-            json_lambda_dir.mkdir(parents=True, exist_ok=True)
-            for json_file in json_dir.glob("*.json"):
-                shutil.copy2(json_file, json_lambda_dir / json_file.name)
-                files_copied += 1
-        
-        if files_copied > 0:
-            print(f"  [OK] {cohort}: {files_copied} files copied")
-            models_copied += files_copied
+        # Try variant directories first (for Combined cohort)
+        variant_dirs = []
+        if cohort == "Combined":
+            # Combined has base and enhanced variants
+            variant_dirs = [
+                (MODELS_DIR / f"{cohort}_base", lambda_models_dir / f"{cohort}_base"),
+                (MODELS_DIR / f"{cohort}_enhanced", lambda_models_dir / f"{cohort}_enhanced")
+            ]
         else:
-            print(f"  [WARNING] {cohort}: No model files found")
+            # CHD and Myocardio may not have variants, try both
+            variant_dirs = [
+                (MODELS_DIR / cohort, lambda_models_dir / cohort),
+                (MODELS_DIR / f"{cohort}_base", lambda_models_dir / f"{cohort}_base"),
+                (MODELS_DIR / f"{cohort}_enhanced", lambda_models_dir / f"{cohort}_enhanced")
+            ]
+        
+        for cohort_models_dir, cohort_lambda_dir in variant_dirs:
+            if not cohort_models_dir.exists():
+                continue
+            
+            cohort_lambda_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Copy model files
+            files_copied = 0
+            for model_file in cohort_models_dir.glob("*.cbm"):
+                shutil.copy2(model_file, cohort_lambda_dir / model_file.name)
+                files_copied += 1
+            for model_file in cohort_models_dir.glob("*.ubj"):
+                shutil.copy2(model_file, cohort_lambda_dir / model_file.name)
+                files_copied += 1
+            for model_file in cohort_models_dir.glob("best_model.txt"):
+                shutil.copy2(model_file, cohort_lambda_dir / model_file.name)
+                files_copied += 1
+            
+            # Copy JSON files
+            json_dir = cohort_models_dir / "final_model_json"
+            if json_dir.exists():
+                json_lambda_dir = cohort_lambda_dir / "final_model_json"
+                json_lambda_dir.mkdir(parents=True, exist_ok=True)
+                for json_file in json_dir.glob("*.json"):
+                    shutil.copy2(json_file, json_lambda_dir / json_file.name)
+                    files_copied += 1
+            
+            if files_copied > 0:
+                variant_name = cohort_lambda_dir.name
+                print(f"  [OK] {variant_name}: {files_copied} files copied")
+                models_copied += files_copied
+    
+    if models_copied == 0:
+        print(f"  [WARNING] No model files found for any cohort")
     
     print(f"Total model files copied: {models_copied}")
     print()
     
     # Copy feature metadata
+    # Handle both variant (Combined_base, Combined_enhanced) and non-variant structures
     print("Copying feature metadata...")
     features_copied = 0
     for cohort in COHORTS:
-        cohort_dashboard_dir = DASHBOARD_DIR / cohort
-        if not cohort_dashboard_dir.exists():
-            print(f"  [WARNING] Dashboard data not found for {cohort} at {cohort_dashboard_dir}")
-            continue
+        # Try variant directories first (for Combined cohort)
+        variant_dirs = []
+        if cohort == "Combined":
+            # Combined has base and enhanced variants
+            variant_dirs = [
+                (DASHBOARD_DIR / f"{cohort}_base", lambda_model_features_dir / f"{cohort}_base"),
+                (DASHBOARD_DIR / f"{cohort}_enhanced", lambda_model_features_dir / f"{cohort}_enhanced")
+            ]
+        else:
+            # CHD and Myocardio may not have variants, try both
+            variant_dirs = [
+                (DASHBOARD_DIR / cohort, lambda_model_features_dir / cohort),
+                (DASHBOARD_DIR / f"{cohort}_base", lambda_model_features_dir / f"{cohort}_base"),
+                (DASHBOARD_DIR / f"{cohort}_enhanced", lambda_model_features_dir / f"{cohort}_enhanced")
+            ]
         
-        # Load dashboard_data.json to extract feature_metadata
-        dashboard_data_file = cohort_dashboard_dir / "dashboard_data.json"
-        if dashboard_data_file.exists():
-            try:
-                with open(dashboard_data_file, 'r') as f:
-                    dashboard_data = json.load(f)
-                
-                feature_metadata = dashboard_data.get("feature_metadata", {})
-                if feature_metadata:
-                    # Save feature_metadata to model_features directory
-                    cohort_features_dir = lambda_model_features_dir / cohort
-                    cohort_features_dir.mkdir(parents=True, exist_ok=True)
+        for cohort_dashboard_dir, cohort_features_dir in variant_dirs:
+            if not cohort_dashboard_dir.exists():
+                continue
+            
+            # Load dashboard_data.json to extract feature_metadata
+            dashboard_data_file = cohort_dashboard_dir / "dashboard_data.json"
+            if dashboard_data_file.exists():
+                try:
+                    with open(dashboard_data_file, 'r') as f:
+                        dashboard_data = json.load(f)
                     
-                    feature_metadata_file = cohort_features_dir / "feature_metadata.json"
-                    with open(feature_metadata_file, 'w') as f:
-                        json.dump(feature_metadata, f, indent=2)
-                    features_copied += 1
-                    print(f"  [OK] {cohort}: feature_metadata.json copied ({len(feature_metadata)} features)")
-                else:
-                    print(f"  [WARNING] {cohort}: No feature_metadata in dashboard_data.json")
-            except Exception as e:
-                print(f"  [ERROR] {cohort}: Failed to extract feature_metadata: {e}")
+                    feature_metadata = dashboard_data.get("feature_metadata", {})
+                    if feature_metadata:
+                        # Save feature_metadata to model_features directory
+                        cohort_features_dir.mkdir(parents=True, exist_ok=True)
+                        
+                        feature_metadata_file = cohort_features_dir / "feature_metadata.json"
+                        with open(feature_metadata_file, 'w') as f:
+                            json.dump(feature_metadata, f, indent=2)
+                        features_copied += 1
+                        variant_name = cohort_features_dir.name
+                        print(f"  [OK] {variant_name}: feature_metadata.json copied ({len(feature_metadata)} features)")
+                    else:
+                        variant_name = cohort_features_dir.name
+                        print(f"  [WARNING] {variant_name}: No feature_metadata in dashboard_data.json")
+                except Exception as e:
+                    variant_name = cohort_features_dir.name
+                    print(f"  [ERROR] {variant_name}: Failed to extract feature_metadata: {e}")
     
     print(f"Total feature metadata files copied: {features_copied}")
     print()
     
     # Copy dashboard data
+    # Handle both variant (Combined_base, Combined_enhanced) and non-variant structures
     print("Copying dashboard data...")
     data_copied = 0
     for cohort in COHORTS:
-        cohort_dashboard_dir = DASHBOARD_DIR / cohort
-        if not cohort_dashboard_dir.exists():
-            print(f"  [WARNING] Dashboard data not found for {cohort} at {cohort_dashboard_dir}")
-            continue
+        # Try variant directories first (for Combined cohort)
+        variant_dirs = []
+        if cohort == "Combined":
+            # Combined has base and enhanced variants
+            variant_dirs = [
+                (DASHBOARD_DIR / f"{cohort}_base", lambda_dashboard_dir / f"{cohort}_base"),
+                (DASHBOARD_DIR / f"{cohort}_enhanced", lambda_dashboard_dir / f"{cohort}_enhanced")
+            ]
+        else:
+            # CHD and Myocardio may not have variants, try both
+            variant_dirs = [
+                (DASHBOARD_DIR / cohort, lambda_dashboard_dir / cohort),
+                (DASHBOARD_DIR / f"{cohort}_base", lambda_dashboard_dir / f"{cohort}_base"),
+                (DASHBOARD_DIR / f"{cohort}_enhanced", lambda_dashboard_dir / f"{cohort}_enhanced")
+            ]
         
-        cohort_lambda_dir = lambda_dashboard_dir / cohort
-        cohort_lambda_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Copy dashboard_data.json
-        dashboard_data_file = cohort_dashboard_dir / "dashboard_data.json"
-        if dashboard_data_file.exists():
-            shutil.copy2(dashboard_data_file, cohort_lambda_dir / "dashboard_data.json")
-            data_copied += 1
-            print(f"  [OK] {cohort}: dashboard_data.json copied")
-        
-        # Copy top_causal_factors.csv
-        causal_factors_file = cohort_dashboard_dir / "top_causal_factors.csv"
-        if causal_factors_file.exists():
-            shutil.copy2(causal_factors_file, cohort_lambda_dir / "top_causal_factors.csv")
-            data_copied += 1
+        for cohort_dashboard_dir, cohort_lambda_dir in variant_dirs:
+            if not cohort_dashboard_dir.exists():
+                continue
+            
+            cohort_lambda_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Copy dashboard_data.json
+            dashboard_data_file = cohort_dashboard_dir / "dashboard_data.json"
+            if dashboard_data_file.exists():
+                shutil.copy2(dashboard_data_file, cohort_lambda_dir / "dashboard_data.json")
+                data_copied += 1
+                variant_name = cohort_lambda_dir.name
+                print(f"  [OK] {variant_name}: dashboard_data.json copied")
+            
+            # Copy top_causal_factors.csv
+            causal_factors_file = cohort_dashboard_dir / "top_causal_factors.csv"
+            if causal_factors_file.exists():
+                shutil.copy2(causal_factors_file, cohort_lambda_dir / "top_causal_factors.csv")
+                data_copied += 1
     
     print(f"Total dashboard data files copied: {data_copied}")
     print()
@@ -174,20 +225,62 @@ def prepare_lambda_directory():
     validation_errors = []
     
     for cohort in COHORTS:
-        # Check models
-        cohort_models = lambda_models_dir / cohort
-        if not cohort_models.exists():
-            validation_errors.append(f"Models directory missing for {cohort}")
+        # Check models - handle variants for Combined
+        if cohort == "Combined":
+            # Combined should have both base and enhanced
+            for variant in ["_base", "_enhanced"]:
+                variant_name = f"{cohort}{variant}"
+                cohort_models = lambda_models_dir / variant_name
+                if not cohort_models.exists():
+                    validation_errors.append(f"Models directory missing for {variant_name}")
+                else:
+                    # Check for at least one model file
+                    model_files = list(cohort_models.glob("*.cbm")) + list(cohort_models.glob("*.ubj"))
+                    if not model_files:
+                        validation_errors.append(f"No model files found for {variant_name}")
+                
+                # Check dashboard data
+                cohort_data = lambda_dashboard_dir / variant_name / "dashboard_data.json"
+                if not cohort_data.exists():
+                    validation_errors.append(f"Dashboard data missing for {variant_name}")
         else:
-            # Check for at least one model file
-            model_files = list(cohort_models.glob("*.cbm")) + list(cohort_models.glob("*.ubj"))
-            if not model_files:
-                validation_errors.append(f"No model files found for {cohort}")
-        
-        # Check dashboard data
-        cohort_data = lambda_dashboard_dir / cohort / "dashboard_data.json"
-        if not cohort_data.exists():
-            validation_errors.append(f"Dashboard data missing for {cohort}")
+            # CHD and Myocardio - check for variant or non-variant
+            found_models = False
+            found_dashboard = False
+            
+            # Try non-variant first
+            cohort_models = lambda_models_dir / cohort
+            if cohort_models.exists():
+                model_files = list(cohort_models.glob("*.cbm")) + list(cohort_models.glob("*.ubj"))
+                if model_files:
+                    found_models = True
+            
+            # Try variants
+            for variant in ["_base", "_enhanced"]:
+                variant_name = f"{cohort}{variant}"
+                variant_models = lambda_models_dir / variant_name
+                if variant_models.exists():
+                    model_files = list(variant_models.glob("*.cbm")) + list(variant_models.glob("*.ubj"))
+                    if model_files:
+                        found_models = True
+                        break
+            
+            if not found_models:
+                validation_errors.append(f"No model files found for {cohort} (checked {cohort}, {cohort}_base, {cohort}_enhanced)")
+            
+            # Check dashboard data
+            cohort_data = lambda_dashboard_dir / cohort / "dashboard_data.json"
+            if not cohort_data.exists():
+                # Try variants
+                found_dashboard = False
+                for variant in ["_base", "_enhanced"]:
+                    variant_name = f"{cohort}{variant}"
+                    variant_data = lambda_dashboard_dir / variant_name / "dashboard_data.json"
+                    if variant_data.exists():
+                        found_dashboard = True
+                        break
+                if not found_dashboard:
+                    validation_errors.append(f"Dashboard data missing for {cohort} (checked {cohort}, {cohort}_base, {cohort}_enhanced)")
     
     if validation_errors:
         print("  [WARNING] Validation warnings:")
