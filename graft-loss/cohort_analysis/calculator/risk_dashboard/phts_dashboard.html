@@ -638,6 +638,11 @@
           <option value="CHD">CHD (Congenital Heart Disease)</option>
           <option value="Myocardio">Myocardio (Cardiomyopathy/Myocarditis)</option>
         </select>
+        <label for="model-variant-causal" style="margin-left: 2rem;">Model:</label>
+        <select id="model-variant-causal">
+          <option value="base">Baseline Model</option>
+          <option value="enhanced">Extended Model</option>
+        </select>
       </div>
       
       <div class="causal-analysis">
@@ -1231,17 +1236,22 @@
     // Load causal analysis data
     async function loadCausalAnalysis() {
       const cohort = document.getElementById('cohort-causal').value;
+      const modelVariant = document.getElementById('model-variant-causal').value; // 'base' or 'enhanced'
       
       // Show loading state
       const controlsList = document.getElementById('causal-controls-list');
       controlsList.innerHTML = '<p style="text-align: center; padding: 2rem;">Loading causal analysis...</p>';
       
       try {
-        // Load causal factors
+        // Load causal factors for the selected model variant
         const causalResponse = await fetch(`${LAMBDA_API_URL}/causal`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cohort: cohort, top_k: 20 }),
+          body: JSON.stringify({ 
+            cohort: cohort, 
+            model_variant: modelVariant,
+            top_k: 20 
+          }),
           mode: 'cors'
         });
         
@@ -1276,13 +1286,22 @@
         }
         
         // Calculate baseline risk with current form values (or baseline defaults)
-        let baselineFeatures = collectFeatures();
-        if (Object.keys(baselineFeatures).length === 0) {
-          // Use baseline defaults if no features entered
-          loadBaseline();
+        // Use the appropriate feature collection function based on model variant
+        let baselineFeatures = {};
+        if (modelVariant === 'enhanced') {
+          baselineFeatures = collectFeaturesExtended();
+          if (Object.keys(baselineFeatures).length === 0) {
+            loadBaselineExtended();
+            baselineFeatures = collectFeaturesExtended();
+          }
+        } else {
           baselineFeatures = collectFeatures();
+          if (Object.keys(baselineFeatures).length === 0) {
+            loadBaseline();
+            baselineFeatures = collectFeatures();
+          }
         }
-        baselineRiskData = await calculateRiskForFeatures(cohort, baselineFeatures);
+        baselineRiskData = await calculateRiskForFeatures(cohort, baselineFeatures, modelVariant);
         
         // Initialize current risk with baseline
         currentRiskData = { ...baselineRiskData };
@@ -1492,19 +1511,31 @@
     
     // Update causal factor and recalculate risk
     async function updateCausalFactor(featureName, value) {
-      // Update the main form input if it exists
+      // Update the main form input if it exists (check both baseline and extended tabs)
       const mainInput = document.getElementById(featureName);
+      const extendedInput = document.getElementById(featureName + '-extended');
       if (mainInput) {
         mainInput.value = value;
+      }
+      if (extendedInput) {
+        extendedInput.value = value;
       }
       
       // Recalculate risk with updated features
       const cohort = document.getElementById('cohort-causal').value;
-      const features = collectFeatures();
+      const modelVariant = document.getElementById('model-variant-causal').value;
+      
+      // Use the appropriate feature collection function based on model variant
+      let features = {};
+      if (modelVariant === 'enhanced') {
+        features = collectFeaturesExtended();
+      } else {
+        features = collectFeatures();
+      }
       features[featureName] = parseFloat(value) || parseInt(value) || value;
       
       try {
-        currentRiskData = await calculateRiskForFeatures(cohort, features);
+        currentRiskData = await calculateRiskForFeatures(cohort, features, modelVariant);
         updateRiskComparison();
       } catch (error) {
         console.error('Error updating risk:', error);
@@ -1512,11 +1543,16 @@
     }
     
     // Calculate risk for given features
-    async function calculateRiskForFeatures(cohort, features) {
+    async function calculateRiskForFeatures(cohort, features, modelVariant = 'base') {
       const response = await fetch(`${LAMBDA_API_URL}/risk`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cohort: cohort, features: features, use_ensemble: false }),
+        body: JSON.stringify({ 
+          cohort: cohort, 
+          features: features, 
+          use_ensemble: false,
+          model_variant: modelVariant
+        }),
         mode: 'cors'
       });
       
@@ -1567,8 +1603,9 @@
       }
     }
     
-    // Load causal analysis when cohort changes in causal tab
+    // Load causal analysis when cohort or model variant changes in causal tab
     document.getElementById('cohort-causal').addEventListener('change', loadCausalAnalysis);
+    document.getElementById('model-variant-causal').addEventListener('change', loadCausalAnalysis);
   </script>
 </body>
 </html>
