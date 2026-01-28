@@ -2332,8 +2332,9 @@ def main():
                 all_feature_cols = [col for col in df_clean.columns if col not in ['time', 'status', 'txpl_year']]
                 
                 # Filter to calculator features to match the model
-                # Use the model variant to determine feature set
-                include_recommended = (args.model_variant == "enhanced")
+                # Use the model_cohort name to determine feature set (handles "auto" detection)
+                # model_cohort was already determined earlier and will be "Combined_enhanced" or "Combined_base"
+                include_recommended = model_cohort.endswith("_enhanced")
                 if include_recommended:
                     logger.info("Using enhanced model - will include recommended features in test data")
                 else:
