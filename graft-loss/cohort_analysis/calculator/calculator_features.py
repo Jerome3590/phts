@@ -63,7 +63,7 @@ def get_calculator_base_features() -> List[str]:
         "txtp_r",
         "lstp_r",
         "txpalb_r",
-        "lspalb_r",
+        # Note: lspalb_r moved to recommended features for consistency
         
         # Immunology
         "txfcpra",
@@ -170,19 +170,68 @@ def get_calculator_derived_features() -> List[str]:
     ]
 
 
-def get_all_calculator_features() -> Set[str]:
+def get_recommended_additional_features() -> List[str]:
     """
-    Get all calculator features (base + derived).
+    Get recommended additional features that could improve model performance.
     
+    These are calculator-accessible features that appear in previous model trees
+    and have strong evidence of importance.
+    """
+    return [
+        # BNP (Brain Natriuretic Peptide) - Cardiac biomarker
+        "txbnp",
+        "txpbnp_r",
+        "lbnp",
+        "lspbnp_r",
+        
+        # CRP (C-Reactive Protein) - Inflammatory marker
+        "txcrp_r",
+        "lcrp_r",
+        
+        # Secondary/Tertiary diagnoses - Comorbidity indicators
+        "sec_dx",
+        "ter_dx",
+        
+        # Pre-albumin at listing (completeness - we have txpalb_r)
+        "lspalb_r",
+        
+        # Lipid panel - Metabolic health indicator
+        "txchol_r",
+        "txtg_r",
+        "txldl_r",
+        "txhdl_r",
+        "txvldl_r",
+        
+        # Oxygen saturation - Respiratory function
+        "txbaosat",
+        "txsvcsat",
+        "lsbaosat",
+        "lssvcsat",
+    ]
+
+
+def get_all_calculator_features(include_recommended: bool = False) -> Set[str]:
+    """
+    Get all calculator features (base + derived, optionally + recommended).
+    
+    Args:
+        include_recommended: If True, include recommended additional features
+        
     Returns:
         Set of all feature names that should be used for calculator model training.
     """
     base = get_calculator_base_features()
     derived = get_calculator_derived_features()
-    return set(base + derived)
+    features = set(base + derived)
+    
+    if include_recommended:
+        recommended = get_recommended_additional_features()
+        features.update(recommended)
+    
+    return features
 
 
-def filter_to_calculator_features(df, feature_cols: List[str]) -> List[str]:
+def filter_to_calculator_features(df, feature_cols: List[str], include_recommended: bool = False) -> List[str]:
     """
     Filter feature columns to only include calculator features.
     
@@ -193,11 +242,12 @@ def filter_to_calculator_features(df, feature_cols: List[str]) -> List[str]:
     Args:
         df: DataFrame (for reference, not used currently)
         feature_cols: List of all available feature columns
+        include_recommended: If True, include recommended additional features
         
     Returns:
         Filtered list of feature columns that are calculator features
     """
-    calculator_features = get_all_calculator_features()
+    calculator_features = get_all_calculator_features(include_recommended=include_recommended)
     
     # Filter to only calculator features (case-insensitive)
     calculator_features_lower = {f.lower() for f in calculator_features}
