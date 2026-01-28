@@ -25,14 +25,14 @@ This guide provides a complete setup for running the PHTS calculator workflow on
 
 ```bash
 # Step 1: Clone repository and setup Python environment
-curl -O https://raw.githubusercontent.com/Jerome3590/phts/main/docs/clone_and_setup.sh
+curl -O https://raw.githubusercontent.com/Jerome3590/phts/main/scripts/bash/clone_and_setup.sh
 chmod +x clone_and_setup.sh
 ./clone_and_setup.sh
 
 # Step 2: Setup GitHub credentials (replace YOUR_TOKEN)
 cd phts
-chmod +x docs/setup_git_credentials_auto.sh
-./docs/setup_git_credentials_auto.sh Jerome3590 YOUR_TOKEN
+chmod +x scripts/bash/setup_git_credentials_auto.sh
+./scripts/bash/setup_git_credentials_auto.sh Jerome3590 YOUR_TOKEN
 
 # Step 3: Start Jupyter notebook
 source phts_env/bin/activate
@@ -60,7 +60,7 @@ ssh -i your-key.pem -L 8888:localhost:8888 ec2-user@your-ec2-ip
 
 ```bash
 # Download and run setup script (shallow clone by default)
-curl -O https://raw.githubusercontent.com/Jerome3590/phts/main/docs/clone_and_setup.sh
+curl -O https://raw.githubusercontent.com/Jerome3590/phts/main/scripts/bash/clone_and_setup.sh
 chmod +x clone_and_setup.sh
 ./clone_and_setup.sh
 ```
@@ -78,7 +78,7 @@ If you need full git history (for development, branching, etc.):
 
 ```bash
 # Download and run full clone script
-curl -O https://raw.githubusercontent.com/Jerome3590/phts/main/docs/clone_and_setup_full.sh
+curl -O https://raw.githubusercontent.com/Jerome3590/phts/main/scripts/bash/clone_and_setup_full.sh
 chmod +x clone_and_setup_full.sh
 ./clone_and_setup_full.sh
 ```
@@ -116,15 +116,15 @@ python -c "import numpy, pandas, catboost, xgboost, shap; print('All packages in
 **Non-Interactive (Recommended):**
 ```bash
 cd phts
-chmod +x docs/setup_git_credentials_auto.sh
-./docs/setup_git_credentials_auto.sh Jerome3590 YOUR_TOKEN
+chmod +x scripts/bash/setup_git_credentials_auto.sh
+./scripts/bash/setup_git_credentials_auto.sh Jerome3590 YOUR_TOKEN
 ```
 
 **Interactive:**
 ```bash
 cd phts
-chmod +x docs/setup_git_credentials.sh
-./docs/setup_git_credentials.sh
+chmod +x scripts/bash/setup_git_credentials.sh
+./scripts/bash/setup_git_credentials.sh
 # Follow prompts
 ```
 
@@ -447,7 +447,7 @@ python run_shap_ffa_workflow.py --cohort Combined --top-k 10 --model-variant enh
 **Problem:** Clone fails with authentication error
 ```bash
 # Solution: Setup credentials first
-./docs/setup_git_credentials_auto.sh Jerome3590 YOUR_TOKEN
+./scripts/bash/setup_git_credentials_auto.sh Jerome3590 YOUR_TOKEN
 ```
 
 **Problem:** Virtual environment creation fails
@@ -589,18 +589,18 @@ docker system prune -a
 
 | Script | Purpose | Location | When to Use |
 |--------|---------|----------|-------------|
-| `clone_and_setup.sh` | Clone repo + setup Python env (shallow) | `docs/` | **Recommended** - First-time setup, faster |
-| `clone_and_setup_full.sh` | Clone repo + setup Python env (full history) | `docs/` | If you need full git history |
-| `setup_git_credentials.sh` | Interactive GitHub PAT setup | `docs/` | First-time credential setup (interactive) |
-| `setup_git_credentials_auto.sh` | Non-interactive GitHub PAT setup | `docs/` | **Recommended** - Automated credential setup |
+| `clone_and_setup.sh` | Clone repo + setup Python env (shallow) | `scripts/bash/` | **Recommended** - First-time setup, faster |
+| `clone_and_setup_full.sh` | Clone repo + setup Python env (full history) | `scripts/bash/` | If you need full git history |
+| `setup_git_credentials.sh` | Interactive GitHub PAT setup | `scripts/bash/` | First-time credential setup (interactive) |
+| `setup_git_credentials_auto.sh` | Non-interactive GitHub PAT setup | `scripts/bash/` | **Recommended** - Automated credential setup |
 | `calculator_workflow.ipynb` | Jupyter notebook for calculator workflow | `graft-loss/cohort_analysis/calculator/` | **Recommended** - Interactive workflow on EC2 |
 
 ### Direct Script Links (GitHub Raw)
 
-- `clone_and_setup.sh`: https://raw.githubusercontent.com/Jerome3590/phts/main/docs/clone_and_setup.sh
-- `clone_and_setup_full.sh`: https://raw.githubusercontent.com/Jerome3590/phts/main/docs/clone_and_setup_full.sh
-- `setup_git_credentials.sh`: https://raw.githubusercontent.com/Jerome3590/phts/main/docs/setup_git_credentials.sh
-- `setup_git_credentials_auto.sh`: https://raw.githubusercontent.com/Jerome3590/phts/main/docs/setup_git_credentials_auto.sh
+- `clone_and_setup.sh`: https://raw.githubusercontent.com/Jerome3590/phts/main/scripts/bash/clone_and_setup.sh
+- `clone_and_setup_full.sh`: https://raw.githubusercontent.com/Jerome3590/phts/main/scripts/bash/clone_and_setup_full.sh
+- `setup_git_credentials.sh`: https://raw.githubusercontent.com/Jerome3590/phts/main/scripts/bash/setup_git_credentials.sh
+- `setup_git_credentials_auto.sh`: https://raw.githubusercontent.com/Jerome3590/phts/main/scripts/bash/setup_git_credentials_auto.sh
 
 ---
 

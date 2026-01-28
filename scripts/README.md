@@ -35,6 +35,38 @@ scripts/
 
 **Note**: Python scripts may use relative imports. When running from different directories, ensure the Python path includes `scripts/py/` or run from the project root.
 
+## Bash Scripts (`scripts/bash/`)
+
+### EC2 Setup Scripts
+- **`clone_and_setup.sh`**: Clone repository and setup Python environment (shallow clone by default)
+- **`clone_and_setup_full.sh`**: Clone repository with full git history
+- **`setup_git_credentials.sh`**: Interactive script to setup GitHub credentials
+- **`setup_git_credentials_auto.sh`**: Non-interactive script to setup GitHub credentials (recommended for automation)
+- **`activate_venv.sh`**: Helper script to activate virtual environment
+
+### Usage
+
+**From EC2:**
+```bash
+# Download and run setup script
+curl -O https://raw.githubusercontent.com/Jerome3590/phts/main/scripts/bash/clone_and_setup.sh
+chmod +x clone_and_setup.sh
+./clone_and_setup.sh
+
+# Setup GitHub credentials
+cd phts
+./scripts/bash/setup_git_credentials_auto.sh Jerome3590 YOUR_TOKEN
+```
+
+**From Local (if cloned):**
+```bash
+# Run setup script
+./scripts/bash/clone_and_setup.sh
+
+# Setup credentials
+./scripts/bash/setup_git_credentials_auto.sh Jerome3590 YOUR_TOKEN
+```
+
 ## Usage
 
 ### From Notebooks
