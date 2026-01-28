@@ -1393,150 +1393,197 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
         plots_dir.mkdir(parents=True, exist_ok=True)
         
         # 1. C-index Comparison
-        logger.info("Creating C-index comparison plot...")
-        fig, ax = plt.subplots(figsize=(8, 4))
-        ax.bar(metrics_df['Model'], metrics_df['C_Index_Mean'], 
-               yerr=metrics_df['C_Index_SD'], capsize=5, alpha=0.7)
-        ax.set_ylabel('C-index (Mean ± SD)')
-        ax.set_xlabel('Model')
-        ax.set_title(f'Model Performance Comparison - C-index ({cohort})')
-        ax.grid(axis='y', alpha=0.3)
-        plt.tight_layout()
-        cindex_plot_path = plots_dir / "cindex_comparison.png"
-        plt.savefig(cindex_plot_path, dpi=300, bbox_inches='tight')
-        plt.close()
-        logger.info(f"  Saved C-index comparison to: {cindex_plot_path}")
+        if 'C_Index_Mean' in metrics_df.columns and not metrics_df['C_Index_Mean'].isna().all():
+            try:
+                logger.info("Creating C-index comparison plot...")
+                valid_cindex = metrics_df.dropna(subset=['C_Index_Mean'])
+                if len(valid_cindex) > 0:
+                    fig, ax = plt.subplots(figsize=(8, 4))
+                    yerr = valid_cindex['C_Index_SD'] if 'C_Index_SD' in valid_cindex.columns else None
+                    ax.bar(valid_cindex['Model'], valid_cindex['C_Index_Mean'], 
+                           yerr=yerr, capsize=5, alpha=0.7)
+                    ax.set_ylabel('C-index (Mean ± SD)')
+                    ax.set_xlabel('Model')
+                    ax.set_title(f'Model Performance Comparison - C-index ({cohort})')
+                    ax.grid(axis='y', alpha=0.3)
+                    plt.tight_layout()
+                    cindex_plot_path = plots_dir / "cindex_comparison.png"
+                    plt.savefig(cindex_plot_path, dpi=300, bbox_inches='tight')
+                    plt.close()
+                    logger.info(f"  Saved C-index comparison to: {cindex_plot_path}")
+                else:
+                    logger.warning("No valid C-index data for plotting")
+            except Exception as e:
+                logger.warning(f"Error creating C-index comparison plot: {e}", exc_info=True)
+        else:
+            logger.warning("C_Index_Mean column not found or all NaN, skipping C-index plot")
         
         # 2. AUC Comparison
-        if not metrics_df['AUC_Mean'].isna().all():
-            logger.info("Creating AUC comparison plot...")
-            fig, ax = plt.subplots(figsize=(8, 4))
-            valid_auc = metrics_df.dropna(subset=['AUC_Mean'])
-            ax.bar(valid_auc['Model'], valid_auc['AUC_Mean'], 
-                   yerr=valid_auc['AUC_SD'], capsize=5, alpha=0.7, color='green')
-            ax.set_ylabel('AUC (Mean ± SD)')
-            ax.set_xlabel('Model')
-            ax.set_title(f'Model Performance Comparison - AUC ({cohort})')
-            ax.grid(axis='y', alpha=0.3)
-            plt.tight_layout()
-            auc_plot_path = plots_dir / "auc_comparison.png"
-            plt.savefig(auc_plot_path, dpi=300, bbox_inches='tight')
-            plt.close()
-            logger.info(f"  Saved AUC comparison to: {auc_plot_path}")
+        if 'AUC_Mean' in metrics_df.columns and not metrics_df['AUC_Mean'].isna().all():
+            try:
+                logger.info("Creating AUC comparison plot...")
+                valid_auc = metrics_df.dropna(subset=['AUC_Mean'])
+                if len(valid_auc) > 0:
+                    fig, ax = plt.subplots(figsize=(8, 4))
+                    yerr = valid_auc['AUC_SD'] if 'AUC_SD' in valid_auc.columns else None
+                    ax.bar(valid_auc['Model'], valid_auc['AUC_Mean'], 
+                           yerr=yerr, capsize=5, alpha=0.7, color='green')
+                    ax.set_ylabel('AUC (Mean ± SD)')
+                    ax.set_xlabel('Model')
+                    ax.set_title(f'Model Performance Comparison - AUC ({cohort})')
+                    ax.grid(axis='y', alpha=0.3)
+                    plt.tight_layout()
+                    auc_plot_path = plots_dir / "auc_comparison.png"
+                    plt.savefig(auc_plot_path, dpi=300, bbox_inches='tight')
+                    plt.close()
+                    logger.info(f"  Saved AUC comparison to: {auc_plot_path}")
+                else:
+                    logger.warning("No valid AUC data for plotting")
+            except Exception as e:
+                logger.warning(f"Error creating AUC comparison plot: {e}", exc_info=True)
+        else:
+            logger.warning("AUC_Mean column not found or all NaN, skipping AUC plot")
         
         # 3. AU-PRC Comparison
-        if not metrics_df['AU_PRC_Mean'].isna().all():
-            logger.info("Creating AU-PRC comparison plot...")
-            fig, ax = plt.subplots(figsize=(8, 4))
-            valid_auprc = metrics_df.dropna(subset=['AU_PRC_Mean'])
-            ax.bar(valid_auprc['Model'], valid_auprc['AU_PRC_Mean'], 
-                   yerr=valid_auprc['AU_PRC_SD'], capsize=5, alpha=0.7, color='orange')
-            ax.set_ylabel('AU-PRC (Mean ± SD)')
-            ax.set_xlabel('Model')
-            ax.set_title(f'Model Performance Comparison - AU-PRC ({cohort})')
-            ax.grid(axis='y', alpha=0.3)
-            plt.tight_layout()
-            auprc_plot_path = plots_dir / "auprc_comparison.png"
-            plt.savefig(auprc_plot_path, dpi=300, bbox_inches='tight')
-            plt.close()
-            logger.info(f"  Saved AU-PRC comparison to: {auprc_plot_path}")
+        if 'AU_PRC_Mean' in metrics_df.columns and not metrics_df['AU_PRC_Mean'].isna().all():
+            try:
+                logger.info("Creating AU-PRC comparison plot...")
+                valid_auprc = metrics_df.dropna(subset=['AU_PRC_Mean'])
+                if len(valid_auprc) > 0:
+                    fig, ax = plt.subplots(figsize=(8, 4))
+                    yerr = valid_auprc['AU_PRC_SD'] if 'AU_PRC_SD' in valid_auprc.columns else None
+                    ax.bar(valid_auprc['Model'], valid_auprc['AU_PRC_Mean'], 
+                           yerr=yerr, capsize=5, alpha=0.7, color='orange')
+                    ax.set_ylabel('AU-PRC (Mean ± SD)')
+                    ax.set_xlabel('Model')
+                    ax.set_title(f'Model Performance Comparison - AU-PRC ({cohort})')
+                    ax.grid(axis='y', alpha=0.3)
+                    plt.tight_layout()
+                    auprc_plot_path = plots_dir / "auprc_comparison.png"
+                    plt.savefig(auprc_plot_path, dpi=300, bbox_inches='tight')
+                    plt.close()
+                    logger.info(f"  Saved AU-PRC comparison to: {auprc_plot_path}")
+                else:
+                    logger.warning("No valid AU-PRC data for plotting")
+            except Exception as e:
+                logger.warning(f"Error creating AU-PRC comparison plot: {e}", exc_info=True)
+        else:
+            logger.warning("AU_PRC_Mean column not found or all NaN, skipping AU-PRC plot")
         
         # 4. Recall Comparison
-        if not metrics_df['Recall_Mean'].isna().all():
-            logger.info("Creating Recall comparison plot...")
-            fig, ax = plt.subplots(figsize=(8, 4))
-            valid_recall = metrics_df.dropna(subset=['Recall_Mean'])
-            ax.bar(valid_recall['Model'], valid_recall['Recall_Mean'], 
-                   yerr=valid_recall['Recall_SD'], capsize=5, alpha=0.7, color='blue')
-            ax.set_ylabel('Recall (Mean ± SD)')
-            ax.set_xlabel('Model')
-            ax.set_title(f'Model Performance Comparison - Recall ({cohort})')
-            ax.grid(axis='y', alpha=0.3)
-            plt.tight_layout()
-            recall_plot_path = plots_dir / "recall_comparison.png"
-            plt.savefig(recall_plot_path, dpi=300, bbox_inches='tight')
-            plt.close()
-            logger.info(f"  Saved Recall comparison to: {recall_plot_path}")
+        if 'Recall_Mean' in metrics_df.columns and not metrics_df['Recall_Mean'].isna().all():
+            try:
+                logger.info("Creating Recall comparison plot...")
+                valid_recall = metrics_df.dropna(subset=['Recall_Mean'])
+                if len(valid_recall) > 0:
+                    fig, ax = plt.subplots(figsize=(8, 4))
+                    yerr = valid_recall['Recall_SD'] if 'Recall_SD' in valid_recall.columns else None
+                    ax.bar(valid_recall['Model'], valid_recall['Recall_Mean'], 
+                           yerr=yerr, capsize=5, alpha=0.7, color='blue')
+                    ax.set_ylabel('Recall (Mean ± SD)')
+                    ax.set_xlabel('Model')
+                    ax.set_title(f'Model Performance Comparison - Recall ({cohort})')
+                    ax.grid(axis='y', alpha=0.3)
+                    plt.tight_layout()
+                    recall_plot_path = plots_dir / "recall_comparison.png"
+                    plt.savefig(recall_plot_path, dpi=300, bbox_inches='tight')
+                    plt.close()
+                    logger.info(f"  Saved Recall comparison to: {recall_plot_path}")
+                else:
+                    logger.warning("No valid Recall data for plotting")
+            except Exception as e:
+                logger.warning(f"Error creating Recall comparison plot: {e}", exc_info=True)
+        else:
+            logger.warning("Recall_Mean column not found or all NaN, skipping Recall plot")
         
         # 5. Combined Metrics Heatmap
         logger.info("Creating combined metrics heatmap...")
-        # Create a heatmap with all metrics
-        heatmap_metrics = ['C_Index_Mean', 'AUC_Mean', 'AU_PRC_Mean', 'Recall_Mean']
-        available_metrics = [m for m in heatmap_metrics if m in metrics_df.columns and not metrics_df[m].isna().all()]
-        
-        if available_metrics:
-            heatmap_data = metrics_df.set_index('Model')[available_metrics].T
-            # Normalize each metric to [0, 1] for visualization
-            # After transposing, rows are metrics and columns are models
-            heatmap_data_norm = heatmap_data.copy()
-            for metric in heatmap_data.index:  # Iterate over row index (metrics)
-                row = heatmap_data.loc[metric]
-                if row.max() > row.min():
-                    heatmap_data_norm.loc[metric] = (row - row.min()) / (row.max() - row.min())
+        try:
+            # Create a heatmap with all metrics
+            heatmap_metrics = ['C_Index_Mean', 'AUC_Mean', 'AU_PRC_Mean', 'Recall_Mean']
+            available_metrics = [m for m in heatmap_metrics if m in metrics_df.columns and not metrics_df[m].isna().all()]
+            
+            if available_metrics and len(available_metrics) > 0:
+                # Verify metrics_df has the required columns
+                if 'Model' not in metrics_df.columns:
+                    logger.warning("metrics_df missing 'Model' column, skipping heatmap")
                 else:
-                    heatmap_data_norm.loc[metric] = 0.5
-            
-            fig, ax = plt.subplots(figsize=(8, 6))
-            sns.heatmap(
-                heatmap_data_norm,
-                annot=heatmap_data,  # Show actual values
-                fmt='.4f',
-                cmap='YlOrRd',
-                cbar_kws={'label': 'Normalized Value'},
-                ax=ax,
-                linewidths=0.5
-            )
-            ax.set_title(f'Model Performance Metrics Heatmap ({cohort})', fontsize=14, fontweight='bold')
-            ax.set_xlabel('Model', fontsize=12)
-            ax.set_ylabel('Metric', fontsize=12)
-            plt.tight_layout()
-            metrics_heatmap_path = plots_dir / "model_metrics_heatmap.png"
-            plt.savefig(metrics_heatmap_path, dpi=300, bbox_inches='tight')
-            plt.close()
-            logger.info(f"  Saved metrics heatmap to: {metrics_heatmap_path}")
-        
-        # 2. Feature Importance Heatmap (if we have aggregated importances)
-        
-        # 2. Feature Importance Heatmap (if we have aggregated importances)
-        if aggregated_importances:
-            logger.info("Creating feature importance heatmap...")
-            
-            # Get top N features (e.g., top 30)
-            top_n = 30
-            all_features = all_importance_df.groupby('feature')['importance_mean'].sum().sort_values(ascending=False)
-            top_features = all_features.head(top_n).index.tolist()
-            
-            # Create matrix: features (rows) × models (columns)
-            heatmap_data = []
-            for model_name in ['CatBoost', 'XGBoost', 'XGBoost RF']:
-                if model_name in aggregated_importances:
-                    model_df = aggregated_importances[model_name]
-                    for feat in top_features:
-                        feat_data = model_df[model_df['feature'] == feat]
-                        if len(feat_data) > 0:
-                            heatmap_data.append({
-                                'feature': feat,
-                                'Model': model_name,
-                                'importance': feat_data['importance_mean'].iloc[0]
-                            })
+                    heatmap_data = metrics_df.set_index('Model')[available_metrics].T
+                    # Normalize each metric to [0, 1] for visualization
+                    # After transposing, rows are metrics and columns are models
+                    heatmap_data_norm = heatmap_data.copy()
+                    for metric in heatmap_data.index:  # Iterate over row index (metrics)
+                        row = heatmap_data.loc[metric]
+                        if row.max() > row.min():
+                            heatmap_data_norm.loc[metric] = (row - row.min()) / (row.max() - row.min())
                         else:
-                            heatmap_data.append({
-                                'feature': feat,
-                                'Model': model_name,
-                                'importance': 0.0
-                            })
+                            heatmap_data_norm.loc[metric] = 0.5
             
-            if heatmap_data:
-                heatmap_df = pd.DataFrame(heatmap_data)
+                    fig, ax = plt.subplots(figsize=(8, 6))
+                    sns.heatmap(
+                        heatmap_data_norm,
+                        annot=heatmap_data,  # Show actual values
+                        fmt='.4f',
+                        cmap='YlOrRd',
+                        cbar_kws={'label': 'Normalized Value'},
+                        ax=ax,
+                        linewidths=0.5
+                    )
+                    ax.set_title(f'Model Performance Metrics Heatmap ({cohort})', fontsize=14, fontweight='bold')
+                    ax.set_xlabel('Model', fontsize=12)
+                    ax.set_ylabel('Metric', fontsize=12)
+                    plt.tight_layout()
+                    metrics_heatmap_path = plots_dir / "model_metrics_heatmap.png"
+                    plt.savefig(metrics_heatmap_path, dpi=300, bbox_inches='tight')
+                    plt.close()
+                    logger.info(f"  Saved metrics heatmap to: {metrics_heatmap_path}")
+            else:
+                logger.warning(f"No available metrics for heatmap. Expected columns: {heatmap_metrics}, found: {list(metrics_df.columns)}")
+        except Exception as e:
+            logger.warning(f"Error creating metrics heatmap: {e}", exc_info=True)
+        
+        # 6. Feature Importance Heatmap (if we have aggregated importances)
+        if aggregated_importances and 'all_importance_df' in locals() and len(all_importance_df) > 0:
+            try:
+                logger.info("Creating feature importance heatmap...")
                 
-                # Normalize importance within each model for visualization
-                for model_name in heatmap_df['Model'].unique():
-                    mask = heatmap_df['Model'] == model_name
-                    max_imp = heatmap_df.loc[mask, 'importance'].max()
-                    if max_imp > 0:
-                        heatmap_df.loc[mask, 'importance_normalized'] = heatmap_df.loc[mask, 'importance'] / max_imp
-                    else:
-                        heatmap_df.loc[mask, 'importance_normalized'] = 0.0
+                # Get top N features (e.g., top 30)
+                top_n = 30
+                if 'importance_mean' in all_importance_df.columns:
+                    all_features = all_importance_df.groupby('feature')['importance_mean'].sum().sort_values(ascending=False)
+                    top_features = all_features.head(top_n).index.tolist()
+                    
+                    # Create matrix: features (rows) × models (columns)
+                    heatmap_data = []
+                    for model_name in ['CatBoost', 'XGBoost', 'XGBoost RF']:
+                        if model_name in aggregated_importances:
+                            model_df = aggregated_importances[model_name]
+                            for feat in top_features:
+                                feat_data = model_df[model_df['feature'] == feat]
+                                if len(feat_data) > 0:
+                                    heatmap_data.append({
+                                        'feature': feat,
+                                        'Model': model_name,
+                                        'importance': feat_data['importance_mean'].iloc[0]
+                                    })
+                                else:
+                                    heatmap_data.append({
+                                        'feature': feat,
+                                        'Model': model_name,
+                                        'importance': 0.0
+                                    })
+                    
+                    if heatmap_data:
+                        heatmap_df = pd.DataFrame(heatmap_data)
+                        
+                        # Normalize importance within each model for visualization
+                        for model_name in heatmap_df['Model'].unique():
+                            mask = heatmap_df['Model'] == model_name
+                            max_imp = heatmap_df.loc[mask, 'importance'].max()
+                            if max_imp > 0:
+                                heatmap_df.loc[mask, 'importance_normalized'] = heatmap_df.loc[mask, 'importance'] / max_imp
+                            else:
+                                heatmap_df.loc[mask, 'importance_normalized'] = 0.0
                 
                 # Create pivot table for heatmap
                 pivot_data = heatmap_df.pivot_table(
@@ -1573,7 +1620,8 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
         logger.warning("Matplotlib/Seaborn not available. Skipping visualizations.")
         logger.warning("  Install with: pip install matplotlib seaborn")
     except Exception as e:
-        logger.warning(f"Error creating visualizations: {e}", exc_info=True)
+        logger.warning(f"Error in visualization section: {e}", exc_info=True)
+        # Continue execution - visualizations are optional
     
     # ============================================================================
     # TRAIN FINAL MODEL ON TEMPORAL SPLIT
