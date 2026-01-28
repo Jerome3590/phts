@@ -84,7 +84,7 @@ graph TB
 |----------|----------|------|---------|--------------|
 | **1. Global Feature Importance** | `graft-loss/feature_importance/` | MC-CV Notebook | RSF, CatBoost, AORSF | 3 time periods, 100-1000 splits, global feature rankings |
 | **2. Clinical Cohort Analysis** | `graft-loss/cohort_analysis/` | MC-CV Notebook (Dynamic) | **Survival**: RSF, AORSF, CatBoost-Cox, XGBoost-Cox<br>**Classification**: CatBoost, CatBoost RF, Traditional RF, XGBoost, XGBoost RF | CHD vs MyoCardio, modifiable clinical features |
-| **3. Interactive Risk Calculator** | `graft-loss/cohort_analysis/calculator/` | Web Dashboard + Lambda API | CatBoost-Cox, XGBoost-Cox, XGBoost-Cox RF | Real-time risk prediction, causal analysis, SHAP/FFA attribution, AWS deployment |
+| **3. Interactive Risk Calculator** | `graft-loss/cohort_analysis/calculator/` | Web Dashboard + Lambda API | CatBoost-Cox, XGBoost-Cox, XGBoost-Cox RF | **Dual models** (Baseline + Extended), **parallel training**, real-time risk prediction, **test set causal analysis**, SHAP/FFA attribution, AWS deployment |
 
 ## Key Components
 
@@ -169,8 +169,15 @@ Comprehensive Monte Carlo cross-validation feature-importance workflow replicati
 
 **Production-ready web-based risk calculator** with interactive dashboard and causal analysis capabilities:
 
+- **Dual Model Architecture**:
+  - **Baseline Model** (`Combined_base`): Uses base calculator features only (~104 features)
+  - **Extended Model** (`Combined_enhanced`): Uses base features + recommended additional features (~120 features)
+  - Both models trained for all cohorts (CHD, Cardiomyopathy, Myocarditis) using Combined cohort
+  - Users can compare predictions from both models side-by-side in dashboard
+
 - **Web Dashboard** (`risk_dashboard/phts_dashboard.html`):
-  - **Risk Calculator Tab**: Real-time risk prediction for CHD, Combined, and Myocardio cohorts
+  - **Baseline Model Tab**: Real-time risk prediction using base calculator features
+  - **Extended Model Tab**: Real-time risk prediction using base + recommended features
   - **Causal Analysis Tab**: Interactive exploration of causal factors with dynamic visualizations
   - **Documentation Tab**: Comprehensive documentation and model details
   - Hosted on AWS S3: `s3://jerome-dixon.io/uva/phts-risk-calculator/`
@@ -180,18 +187,29 @@ Comprehensive Monte Carlo cross-validation feature-importance workflow replicati
   - REST API endpoints: `/risk`, `/causal`, `/metadata`, `/model_features`
   - Model caching for fast inference
   - Risk score normalization (percentile-based, 0-100 scale)
+  - Supports both baseline and extended models via model variant selection
 
 - **Model Training** (`train_python_models.py`):
+  - **Parallel Processing**: Both baseline and enhanced models use parallel processing for MC-CV (uses all CPUs minus 1)
   - Trains CatBoost-Cox, XGBoost-Cox, and XGBoost-Cox RF models
-  - 25 Monte Carlo Cross-Validation splits
-  - Best model selection per cohort based on C-index
+  - 25 Monte Carlo Cross-Validation splits with parallel execution
+  - Best model selection per variant based on C-index (primary), then AU-PRC (tiebreaker)
+  - Temporal 80/20 split for final model training (train on earlier years, test on later years)
   - Excludes non-modifiable features (e.g., `lscntry`, `prim_dx`)
+  - **Idempotent Training**: Skips retraining if all outputs already exist
 
 - **SHAP + FFA Analysis** (`run_shap_ffa_workflow.py`):
+  - **Test Set Application**: All causal analysis performed on test set (unseen data)
+    - Rules extracted from trained model (trained on training set)
+    - Rules applied to test set instances to count actual rule firings
+    - SHAP values computed on test set only (`txpl_year > cutoff_year`)
+    - Rule frequencies counted from test set rule firings (not from rule definitions)
+    - Temporal split cutoff matches training (dynamic 80/20 split, falls back to 2021)
   - SHAP (SHapley Additive exPlanations) for feature importance
   - FFA (Formal Feature Attribution) for causal analysis
   - Extracts top K causal factors with importance and responsibility scores
   - Generates dashboard data with feature metadata
+  - **Causal Responsibility Formula**: `(rule_frequency_from_test_set / total_rule_firings) × SHAP_importance`
 
 - **Deployment**:
   - **Frontend**: S3 static website hosting
@@ -201,7 +219,9 @@ Comprehensive Monte Carlo cross-validation feature-importance workflow replicati
 
 - **Key Features**:
   - **Real-time Risk Prediction**: Instant risk scores with percentile normalization
+  - **Dual Model Comparison**: Side-by-side comparison of baseline vs extended model predictions
   - **Causal Analysis**: Interactive factor adjustment with real-time risk updates
+  - **Test Set Validation**: Causal factors validated on unseen test data for realistic assessment
   - **Feature Metadata**: Automatic detection of binary vs numeric features
   - **Risk Bands**: Low/Medium/High/Very High risk classification
   - **Multiple Cohorts**: CHD, Combined, Myocardio with cohort-specific models
@@ -400,17 +420,36 @@ The pipeline supports analysis across multiple time periods:
 
 ### Interactive Risk Calculator
 
-1. **Train Models**: Navigate to `graft-loss/cohort_analysis/calculator/` and run:
+1. **Train Models**: Navigate to `graft-loss/cohort_analysis/calculator/` and use the Jupyter workflow:
+   - Open `calculator_workflow.ipynb`
+   - **Baseline Model**: Train with base calculator features only (uses parallel processing)
+   - **Extended Model**: Train with base + recommended features (uses parallel processing)
+   - Both models use 25 MC-CV splits with parallel execution for faster training
+   - Training is idempotent - skips if outputs already exist
+
+   Or use command line:
    ```bash
-   python train_python_models.py --cohort Combined
-   python train_python_models.py --cohort CHD
-   python train_python_models.py --cohort Myocardio
+   # Baseline model (base features only)
+   python train_python_models.py --cohort Combined_base --n-jobs <num_cpus>
+   
+   # Extended model (base + recommended features)
+   python train_python_models.py --cohort Combined_enhanced --n-jobs <num_cpus> --include-recommended-features
    ```
 
-2. **Run SHAP/FFA Analysis**: Generate causal factors and dashboard data:
+2. **Run SHAP/FFA Analysis**: Generate causal factors and dashboard data (applies rules to test set):
    ```bash
-   python run_shap_ffa_workflow.py --cohort Combined --top-k 20
+   # Baseline model
+   python run_shap_ffa_workflow.py --cohort Combined_base --top-k 20
+   
+   # Extended model
+   python run_shap_ffa_workflow.py --cohort Combined_enhanced --top-k 20
    ```
+   
+   **Note**: SHAP/FFA analysis automatically:
+   - Computes SHAP values on test set only (unseen data)
+   - Applies rules extracted from trained model to test set instances
+   - Counts rule firings from test set (not from rule definitions)
+   - Ensures temporal split cutoff matches training
 
 3. **Deploy Dashboard**: 
    - Prepare Lambda directory: `python risk_dashboard/prepare_lambda_dir_phts.py`
@@ -477,8 +516,12 @@ See `graft-loss/cohort_analysis/calculator/risk_dashboard/README_DEPLOYMENT.md` 
 
 - **Monte Carlo Cross-Validation**: Robust evaluation with many train/test splits
 - **Stratified Sampling**: Maintains event distribution across splits
-- **Parallel Processing**: Fast execution with furrr/future
+- **Parallel Processing**: 
+  - R workflows: Fast execution with furrr/future
+  - Python calculator: Parallel MC-CV training (uses all CPUs minus 1)
+  - Both baseline and enhanced models use parallel processing
 - **95% Confidence Intervals**: Narrow, precise estimates
+- **Test Set Validation**: Causal analysis validated on unseen test data
 
 ### Dynamic Analysis Modes
 
