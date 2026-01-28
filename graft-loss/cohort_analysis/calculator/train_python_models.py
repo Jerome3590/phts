@@ -1728,7 +1728,7 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
                         heatmap_path = plots_dir / "feature_importance_heatmap.png"
                         plt.savefig(heatmap_path, dpi=300, bbox_inches='tight')
                         plt.close()
-                                logger.info(f"  Saved feature importance heatmap to: {heatmap_path}")
+                        logger.info(f"  Saved feature importance heatmap to: {heatmap_path}")
                     else:
                         logger.warning("No heatmap data generated")
                 else:
