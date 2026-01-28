@@ -998,12 +998,25 @@ def run_calculator_shap_analysis(cohort: str) -> Tuple[Dict[str, float], Dict[st
         logger.info(f"Loaded {len(df)} rows of calculator data")
 
         # Apply temporal split to use TEST SET for SHAP (unseen data)
-        # This matches the training split and ensures we're explaining on test data
+        # IMPORTANT: This must match the training temporal split to ensure we're explaining on the same test set
+        # Training uses dynamic 80/20 split (falls back to 2021), so we use the same logic here
         if 'txpl_year' in df.columns:
-            cutoff_year = 2021  # Same as training
+            # Calculate cutoff to match training (80/20 split)
+            year_counts = df['txpl_year'].value_counts().sort_index()
+            cumsum = year_counts.cumsum()
+            target = int(len(df) * 0.8)
+            cutoff_year = None
+            for year, count in cumsum.items():
+                if count >= target:
+                    cutoff_year = int(year)
+                    break
+            if cutoff_year is None:
+                cutoff_year = 2021  # Fallback to match training default
+                logger.warning(f"Could not calculate cutoff year, using {cutoff_year}")
             test_mask = df['txpl_year'] > cutoff_year
             df = df[test_mask].copy()
             logger.info(f"Using test set (txpl_year > {cutoff_year}): {len(df)} samples for SHAP")
+            logger.info(f"Temporal split cutoff matches training: {cutoff_year}")
         else:
             logger.warning("txpl_year not found, using full dataset for SHAP")
     except (FileNotFoundError, ImportError) as e:
@@ -2105,11 +2118,24 @@ def main():
                 df = prepare_calculator_features(df)
 
                 # Apply temporal split to get test set
+                # IMPORTANT: Must match training temporal split to ensure rules are applied to the same test set
                 if 'txpl_year' in df.columns:
-                    cutoff_year = 2021  # Same as training
+                    # Calculate cutoff to match training (80/20 split)
+                    year_counts = df['txpl_year'].value_counts().sort_index()
+                    cumsum = year_counts.cumsum()
+                    target = int(len(df) * 0.8)
+                    cutoff_year = None
+                    for year, count in cumsum.items():
+                        if count >= target:
+                            cutoff_year = int(year)
+                            break
+                    if cutoff_year is None:
+                        cutoff_year = 2021  # Fallback to match training default
+                        logger.warning(f"Could not calculate cutoff year, using {cutoff_year}")
                     test_mask = df['txpl_year'] > cutoff_year
                     df_test = df[test_mask].copy()
                     logger.info(f"Using test set (txpl_year > {cutoff_year}): {len(df_test)} samples for FFA")
+                    logger.info(f"Temporal split cutoff matches training: {cutoff_year}")
                 else:
                     logger.warning("txpl_year not found, using full dataset for FFA")
                     df_test = df.copy()
