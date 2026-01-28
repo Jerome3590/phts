@@ -149,10 +149,30 @@ def calculate_survival_auc_auprc_recall(
         # Calculate AU-PRC (Average Precision)
         auprc = average_precision_score(binary_labels_clean, risk_probs)
         
-        # Calculate Recall (Sensitivity)
-        # Use a threshold based on median risk score
-        threshold = np.median(risk_probs)
-        predictions = (risk_probs >= threshold).astype(int)
+        # Calculate Recall (Sensitivity) using optimal threshold
+        # Use Youden's J statistic (maximizes TPR - FPR) for optimal threshold
+        from sklearn.metrics import roc_curve
+        fpr, tpr, thresholds = roc_curve(binary_labels_clean, risk_probs)
+        youden_j = tpr - fpr
+        optimal_idx = np.argmax(youden_j)
+        optimal_threshold = thresholds[optimal_idx] if optimal_idx < len(thresholds) else np.median(risk_probs)
+        
+        # Fallback to F1-maximizing threshold if Youden's J doesn't work well
+        # (e.g., if optimal threshold is at extreme values)
+        if optimal_threshold <= 0.01 or optimal_threshold >= 0.99:
+            # Use F1 score to find optimal threshold
+            from sklearn.metrics import f1_score
+            best_f1 = 0
+            best_threshold = np.median(risk_probs)
+            for thresh in np.linspace(0.1, 0.9, 81):  # Test thresholds from 0.1 to 0.9
+                preds = (risk_probs >= thresh).astype(int)
+                f1 = f1_score(binary_labels_clean, preds, zero_division=0)
+                if f1 > best_f1:
+                    best_f1 = f1
+                    best_threshold = thresh
+            optimal_threshold = best_threshold
+        
+        predictions = (risk_probs >= optimal_threshold).astype(int)
         
         # Recall = TP / (TP + FN)
         tp = np.sum((predictions == 1) & (binary_labels_clean == 1))

@@ -1473,6 +1473,49 @@ def run_ffa_with_shap(
             # Convert to numpy array for rule checking
             X_test_array = X_test_aligned.values
 
+            # Get risk scores for threshold-based filtering (same threshold as used for Recall)
+            # Load XGBoost model to get risk scores
+            risk_scores = None
+            risk_threshold = None
+            try:
+                import xgboost as xgb
+                # Find XGBoost model file (same directory as JSON)
+                model_dir = xgboost_model_json.parent
+                xgb_model_path = model_dir / "xgboost_model.ubj"
+                if not xgb_model_path.exists():
+                    # Try alternative location
+                    calculator_models_dir = CALCULATOR_DIR / "outputs" / "models"
+                    model_cohort = model_dir.name if model_dir.name.endswith("_base") or model_dir.name.endswith("_enhanced") else model_dir.name
+                    xgb_model_path = calculator_models_dir / model_cohort / "xgboost_model.ubj"
+                
+                if xgb_model_path.exists():
+                    xgb_model = xgb.XGBRegressor()
+                    xgb_model.load_model(str(xgb_model_path))
+                    
+                    # Prepare data for prediction (convert to DMatrix format)
+                    X_test_for_pred = X_test_aligned.copy()
+                    # Convert categorical to numeric if needed
+                    for col in X_test_for_pred.columns:
+                        if X_test_for_pred[col].dtype == 'object':
+                            X_test_for_pred[col] = pd.Categorical(X_test_for_pred[col]).codes
+                    
+                    # Get risk scores
+                    dmatrix = xgb.DMatrix(X_test_for_pred.values.astype(np.float32))
+                    dmatrix.feature_names = model_feature_names
+                    risk_scores = xgb_model.predict(dmatrix)
+                    
+                    # Calculate threshold using same method as Recall (median or optimal)
+                    # For rule filtering, use median risk score as threshold
+                    # This ensures we only count rules firing for high-risk instances
+                    risk_threshold = np.median(risk_scores)
+                    logger.info(f"Calculated risk threshold (median): {risk_threshold:.4f}")
+                    logger.info(f"Will filter rule firings to instances with risk_score >= {risk_threshold:.4f}")
+                else:
+                    logger.warning(f"XGBoost model not found at {xgb_model_path}, skipping threshold-based filtering")
+            except Exception as e:
+                logger.warning(f"Could not load XGBoost model for threshold calculation: {e}")
+                logger.info("Proceeding without threshold-based filtering (counting all rule firings)")
+
             # Count rule firings on test data
             rule_firing_counts = defaultdict(int)  # Count how many times each rule fires
             feature_rule_firing_counts = defaultdict(int)  # Count feature appearances in firing rules
@@ -1486,15 +1529,26 @@ def run_ffa_with_shap(
                 # Try different methods to check rule satisfaction
                 satisfied_rules = []
                 try:
-                    # Method 1: Try _satisfied_rules if available
-                    if hasattr(explainer, '_satisfied_rules'):
-                        satisfied_rules = explainer._satisfied_rules(x_instance, target_class=None)
+                    # For survival models (Cox regression), we don't have binary class predictions
+                    # Check if this is a survival model by looking at rule_predictions
+                    is_survival_model = False
+                    if hasattr(explainer, 'rule_predictions') and explainer.rule_predictions:
+                        # Check if rule_predictions are binary (0/1) or continuous
+                        unique_preds = set(explainer.rule_predictions)
+                        is_survival_model = not (unique_preds.issubset({0, 1}) and len(unique_preds) <= 2)
+                    
+                    # Method 1: Try _satisfied_rules if available (for classification models)
+                    if hasattr(explainer, '_satisfied_rules') and not is_survival_model:
+                        # Try both classes for classification models
+                        satisfied_rules_0 = explainer._satisfied_rules(x_instance, target_class=0)
+                        satisfied_rules_1 = explainer._satisfied_rules(x_instance, target_class=1)
+                        satisfied_rules = satisfied_rules_0 + satisfied_rules_1
                     # Method 2: Try check_rule_satisfaction if available
                     elif hasattr(explainer, 'check_rule_satisfaction'):
                         for rule_idx, clause in enumerate(explainer.rule_clauses):
                             if explainer.check_rule_satisfaction(x_instance, clause):
                                 satisfied_rules.append(rule_idx)
-                    # Method 3: Manual check using id_condition_map
+                    # Method 3: Manual check using id_condition_map (works for all models including survival)
                     # Note: This is a simplified check - CNF clauses are AND of literals
                     # Each literal is a condition that must be satisfied
                     else:
@@ -1540,9 +1594,53 @@ def run_ffa_with_shap(
                                 satisfied_rules.append(rule_idx)
                 except Exception as e:
                     logger.debug(f"Error checking rules for instance {instance_idx}: {e}")
-                    continue
+                    # Fall back to manual check on error
+                    try:
+                        for rule_idx, clause in enumerate(explainer.rule_clauses):
+                            if not clause:
+                                continue
+                            clause_satisfied = True
+                            for lit in clause:
+                                if lit in explainer.id_condition_map:
+                                    feat_idx, op, threshold = explainer.id_condition_map[lit]
+                                    if feat_idx >= len(x_instance):
+                                        clause_satisfied = False
+                                        break
+                                    feat_val = x_instance[feat_idx]
+                                    if op == '<=' or op == 'le':
+                                        if not (feat_val <= threshold):
+                                            clause_satisfied = False
+                                            break
+                                    elif op == '>' or op == 'gt':
+                                        if not (feat_val > threshold):
+                                            clause_satisfied = False
+                                            break
+                                    elif op == '<' or op == 'lt':
+                                        if not (feat_val < threshold):
+                                            clause_satisfied = False
+                                            break
+                                    elif op == '>=' or op == 'ge':
+                                        if not (feat_val >= threshold):
+                                            clause_satisfied = False
+                                            break
+                                    elif op == '==' or op == 'eq':
+                                        if not (feat_val == threshold):
+                                            clause_satisfied = False
+                                            break
+                            if clause_satisfied:
+                                satisfied_rules.append(rule_idx)
+                    except Exception as e2:
+                        logger.debug(f"Fallback manual check also failed for instance {instance_idx}: {e2}")
+                        continue
 
                 # Count rule firings and feature appearances in firing rules
+                # Only count if instance has risk_score >= threshold (if threshold available)
+                if risk_scores is not None and risk_threshold is not None:
+                    instance_risk = risk_scores[instance_idx]
+                    if instance_risk < risk_threshold:
+                        # Skip low-risk instances - only count rules firing for high-risk instances
+                        continue
+                
                 for rule_idx in satisfied_rules:
                     rule_firing_counts[rule_idx] += 1
                     # Get features in this rule
