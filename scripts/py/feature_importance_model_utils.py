@@ -379,8 +379,26 @@ def get_importance_catboost(model, feature_names, X_test=None, y_test=None, scor
         X_test_aligned = X_test[model_feature_names].copy()
         
         # Determine categorical feature indices
-        # Priority: use provided cat_feature_indices, otherwise check for 'item_' pattern
-        if cat_feature_indices is not None:
+        # Priority order:
+        # 1. Try to get from model's internal storage (most reliable)
+        # 2. Use provided cat_feature_indices (map to aligned feature set)
+        # 3. Fallback: check for 'item_' pattern (for backward compatibility)
+        cat_indices = None
+        
+        # First, try to get categorical feature indices from the model itself
+        # CatBoost models store this information internally
+        try:
+            if hasattr(model, 'get_cat_feature_indices'):
+                model_cat_indices = model.get_cat_feature_indices()
+                if model_cat_indices:
+                    # These indices are relative to model_feature_names
+                    cat_indices = model_cat_indices
+                    logger.debug(f"Retrieved {len(cat_indices)} categorical feature indices from model")
+        except Exception as e:
+            logger.debug(f"Could not get categorical indices from model: {e}")
+        
+        # If model doesn't have categorical indices, try provided cat_feature_indices
+        if cat_indices is None and cat_feature_indices is not None:
             # Map the provided indices to the aligned feature set
             # cat_feature_indices are indices in the original feature_names
             # We need to map them to indices in model_feature_names
@@ -392,10 +410,15 @@ def get_importance_catboost(model, feature_names, X_test=None, y_test=None, scor
                         aligned_idx = list(model_feature_names).index(feature_name)
                         cat_indices.append(aligned_idx)
             cat_indices = cat_indices if cat_indices else None
-        else:
-            # Fallback: check for 'item_' pattern (for backward compatibility)
+            if cat_indices:
+                logger.debug(f"Mapped {len(cat_indices)} categorical feature indices from provided list")
+        
+        # Final fallback: check for 'item_' pattern (for backward compatibility)
+        if cat_indices is None:
             categorical_features = [col for col in X_test_aligned.columns if col.startswith('item_')]
             cat_indices = [X_test_aligned.columns.get_loc(col) for col in categorical_features] if categorical_features else None
+            if cat_indices:
+                logger.debug(f"Found {len(cat_indices)} categorical features by 'item_' pattern")
         
         test_pool = Pool(
             data=X_test_aligned,
