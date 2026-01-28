@@ -2007,13 +2007,24 @@ def main():
                     df['status'] = (df['ev_type'] == 1).astype(int)
 
                 # Apply same temporal split as training (test set only for SHAP)
-                # This ensures we're explaining the model on unseen data
+                # IMPORTANT: Must match training temporal split to ensure SHAP is computed on the same test set
                 if 'txpl_year' in df.columns:
-                    # Use same cutoff as training (2021)
-                    cutoff_year = 2021
+                    # Calculate cutoff to match training (80/20 split)
+                    year_counts = df['txpl_year'].value_counts().sort_index()
+                    cumsum = year_counts.cumsum()
+                    target = int(len(df) * 0.8)
+                    cutoff_year = None
+                    for year, count in cumsum.items():
+                        if count >= target:
+                            cutoff_year = int(year)
+                            break
+                    if cutoff_year is None:
+                        cutoff_year = 2021  # Fallback to match training default
+                        logger.warning(f"Could not calculate cutoff year, using {cutoff_year}")
                     test_mask = df['txpl_year'] > cutoff_year
                     df_test = df[test_mask].copy()
                     logger.info(f"Using test set (txpl_year > {cutoff_year}): {len(df_test)} samples")
+                    logger.info(f"Temporal split cutoff matches training: {cutoff_year}")
                 else:
                     logger.warning("txpl_year not found, using full dataset for SHAP")
                     df_test = df.copy()
