@@ -1479,14 +1479,23 @@ def run_ffa_with_shap(
             risk_threshold = None
             try:
                 import xgboost as xgb
-                # Find XGBoost model file (same directory as JSON)
-                model_dir = xgboost_model_json.parent
+                # Find XGBoost model file
+                # JSON is typically in: {model_cohort}/final_model_json/{model_cohort}_final_model_xgboost.json
+                # Model binary is in: {model_cohort}/xgboost_model.ubj
+                json_dir = xgboost_model_json.parent  # final_model_json/
+                model_dir = json_dir.parent  # {model_cohort}/ (e.g., Combined_base/ or Combined_enhanced/)
                 xgb_model_path = model_dir / "xgboost_model.ubj"
+                
                 if not xgb_model_path.exists():
-                    # Try alternative location
+                    # Try alternative location (parent outputs directory)
                     calculator_models_dir = CALCULATOR_DIR / "outputs" / "models"
-                    model_cohort = model_dir.name if model_dir.name.endswith("_base") or model_dir.name.endswith("_enhanced") else model_dir.name
+                    model_cohort = model_dir.name  # Should be Combined_base or Combined_enhanced
                     xgb_model_path = calculator_models_dir / model_cohort / "xgboost_model.ubj"
+                    
+                    if not xgb_model_path.exists():
+                        # Try parent outputs directory
+                        parent_models_dir = CALCULATOR_DIR.parent / "outputs" / "models"
+                        xgb_model_path = parent_models_dir / model_cohort / "xgboost_model.ubj"
                 
                 if xgb_model_path.exists():
                     xgb_model = xgb.XGBRegressor()
