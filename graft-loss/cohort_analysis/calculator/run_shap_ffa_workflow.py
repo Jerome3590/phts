@@ -1014,24 +1014,31 @@ def run_calculator_shap_analysis(cohort: str) -> Tuple[Dict[str, float], Dict[st
 
     # Feature preparation matches train_python_models.py prepare_calculator_features()
     # This ensures consistency between training and SHAP analysis
-    logger.warning("Using all numeric columns - ensure this matches model training")
-
-    # Select numeric columns only (models expect numeric features)
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    # IMPORTANT: CatBoost models now use native categoricals, so we must include them
+    logger.info("Including all features (numeric + categorical) to match model training")
 
     # Remove outcome columns
     outcome_cols = ['ev_time', 'ev_type', 'time', 'status', 'int_dead', 'int_graft_loss',
                     'graft_loss', 'outcome', 'outcome_int_graft_loss', 'outcome_graft_loss']
-    feature_cols = [col for col in numeric_cols if col not in outcome_cols]
+    
+    # Get all columns except outcomes (includes both numeric and categorical)
+    feature_cols = [col for col in df.columns if col not in outcome_cols]
 
     X = df[feature_cols].copy()
 
-    # Handle NaN values - fill with 0 for numeric features (models were trained this way)
-    # This matches how R handles missing values in survival models
-    X = X.fillna(0)
+    # Handle NaN values
+    # For numeric features: fill with 0 (models were trained this way)
+    # For categorical features: keep as-is (CatBoost handles them natively)
+    for col in X.columns:
+        if X[col].dtype in [np.number, 'int64', 'float64']:
+            X[col] = X[col].fillna(0)
+        # Categorical features (object dtype) are kept as-is for CatBoost
 
     # Remove rows with all zeros (likely invalid)
-    X = X[(X != 0).any(axis=1)]
+    # Only check numeric columns for this (categorical columns may have non-numeric values)
+    numeric_cols_in_X = X.select_dtypes(include=[np.number]).columns
+    if len(numeric_cols_in_X) > 0:
+        X = X[(X[numeric_cols_in_X] != 0).any(axis=1)]
 
     if len(X) == 0:
         raise ValueError("No valid data rows after filtering")
