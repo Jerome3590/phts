@@ -52,6 +52,10 @@ docs/
 
 - **[Standards & Conventions](scripts/README_standards.md)** - Consolidated standards document covering logging, outputs structure, and script organization
 
+### EC2 Setup (`docs/`)
+
+- **[Complete EC2 Setup Guide](README_ec2_notebook.md)** - Complete guide for setting up EC2, GitHub credentials, Jupyter notebooks, and Docker for the calculator workflow
+
 ## Quick Links
 
 - **Main Project README**: [../README.md](../README.md)
