@@ -36,10 +36,14 @@ graph TB
     GL_cohort --> GL_cohort_outputs[cohort outputs: survival + classification]
     
     GL_cohort --> GL_calc[calculator: Interactive Risk Calculator]
-    GL_calc --> GL_calc_train[train_python_models.py]
-    GL_calc --> GL_calc_shap[run_shap_ffa_workflow.py]
+    GL_calc --> GL_calc_workflow[calculator_workflow.ipynb<br/>Dual Model Training]
+    GL_calc --> GL_calc_train[train_python_models.py<br/>Parallel MC-CV Training]
+    GL_calc --> GL_calc_shap[run_shap_ffa_workflow.py<br/>SHAP + FFA on Test Set]
+    GL_calc --> GL_calc_models[models/<br/>Baseline + Extended]
+    GL_calc_models --> GL_calc_base[Combined_base/<br/>Base Features Only]
+    GL_calc_models --> GL_calc_enhanced[Combined_enhanced/<br/>Base + Recommended]
     GL_calc --> GL_calc_dash[risk_dashboard: Web Dashboard]
-    GL_calc_dash --> GL_calc_html[phts_dashboard.html]
+    GL_calc_dash --> GL_calc_html[phts_dashboard.html<br/>Dual Model Tabs]
     GL_calc_dash --> GL_calc_lambda[Lambda Function + Docker]
     GL_calc_dash --> GL_calc_deploy[AWS: S3 + Lambda + API Gateway]
 ```
