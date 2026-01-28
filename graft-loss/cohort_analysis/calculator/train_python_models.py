@@ -198,6 +198,99 @@ OUTPUTS_DIR = CALCULATOR_DIR / "outputs"
 MODELS_DIR = OUTPUTS_DIR / "models"
 
 
+def check_training_complete(cohort_output_dir: Path, n_mc_splits: int) -> bool:
+    """
+    Check if all training outputs are complete and training can be skipped.
+
+    Args:
+        cohort_output_dir: Output directory for the cohort (e.g., outputs/models/Combined_base)
+        n_mc_splits: Expected number of MC-CV splits
+
+    Returns:
+        True if all outputs are complete, False otherwise
+    """
+    if not cohort_output_dir.exists():
+        return False
+
+    mc_cv_output_dir = cohort_output_dir / "mc_cv"
+    plots_dir = cohort_output_dir / "plots"
+
+    # Check MC-CV models for all splits
+    required_splits = set(range(n_mc_splits))
+    found_splits = set()
+
+    for split_dir in mc_cv_output_dir.glob("split_*"):
+        try:
+            split_num = int(split_dir.name.split("_")[1])
+            if split_num in required_splits:
+                # Check for all three model files
+                catboost_model = split_dir / "catboost_model.cbm"
+                xgboost_model = split_dir / "xgboost_model.ubj"
+                xgboost_rf_model = split_dir / "xgboost_rf_model.ubj"
+
+                # Check for JSON models (at least one should exist)
+                json_dir = split_dir / "final_model_json"
+                json_files = list(json_dir.glob("*.json")) if json_dir.exists() else []
+
+                if catboost_model.exists() and xgboost_model.exists() and xgboost_rf_model.exists() and len(json_files) > 0:
+                    found_splits.add(split_num)
+        except (ValueError, IndexError):
+            continue
+
+    if len(found_splits) < n_mc_splits:
+        logger.info(f"MC-CV incomplete: {len(found_splits)}/{n_mc_splits} splits found")
+        return False
+
+    # Check aggregated outputs
+    required_files = [
+        cohort_output_dir / "mc_cv_model_metrics.csv",
+        cohort_output_dir / "mc_cv_catboost_feature_importance.csv",
+        cohort_output_dir / "mc_cv_xgboost_feature_importance.csv",
+        cohort_output_dir / "mc_cv_xgboost_rf_feature_importance.csv",
+        cohort_output_dir / "mc_cv_all_models_feature_importance.csv",
+        cohort_output_dir / "best_model.txt",
+    ]
+
+    for file_path in required_files:
+        if not file_path.exists():
+            logger.info(f"Missing aggregated output: {file_path.name}")
+            return False
+
+    # Check final models (temporal split)
+    final_models = [
+        cohort_output_dir / "catboost_model.cbm",
+        cohort_output_dir / "xgboost_model.ubj",
+        cohort_output_dir / "xgboost_rf_model.ubj",
+    ]
+
+    for model_path in final_models:
+        if not model_path.exists():
+            logger.info(f"Missing final model: {model_path.name}")
+            return False
+
+    # Check final model JSON files
+    final_json_dir = cohort_output_dir / "final_model_json"
+    if not final_json_dir.exists():
+        logger.info("Missing final_model_json directory")
+        return False
+
+    final_json_files = list(final_json_dir.glob("*.json"))
+    if len(final_json_files) == 0:
+        logger.info("No JSON files in final_model_json directory")
+        return False
+
+    # Check visualizations (optional but good to have)
+    # We'll check for at least one plot to ensure visualizations ran
+    if plots_dir.exists():
+        plot_files = list(plots_dir.glob("*.png"))
+        if len(plot_files) == 0:
+            logger.info("No visualization plots found (optional, but expected)")
+            # Don't fail on missing plots - they're optional
+
+    logger.info(f"All training outputs complete for {cohort_output_dir.name}")
+    return True
+
+
 def get_survival_leakage_keywords(cohort: Optional[str] = None) -> List[str]:
     """
     Get list of keywords that indicate target leakage in survival models.
@@ -1074,6 +1167,27 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
     mc_cv_output_dir.mkdir(parents=True, exist_ok=True)
     
     # ============================================================================
+    # IDEMPOTENCY CHECK: Skip training if all outputs already exist
+    # ============================================================================
+    logger.info("\n" + "="*80)
+    logger.info("CHECKING FOR EXISTING OUTPUTS (IDEMPOTENCY CHECK)")
+    logger.info("="*80)
+    
+    if check_training_complete(cohort_output_dir, n_mc_splits):
+        logger.info(f"\n✓ All training outputs already complete for {cohort_output_dir.name}")
+        logger.info(f"  Skipping model training. Outputs found:")
+        logger.info(f"    - MC-CV models: {n_mc_splits} splits with all 3 models")
+        logger.info(f"    - Aggregated metrics and feature importances")
+        logger.info(f"    - Final models (temporal split)")
+        logger.info(f"    - Best model info")
+        logger.info(f"\n  To retrain, delete the output directory: {cohort_output_dir}")
+        logger.info("="*80)
+        return
+    
+    logger.info(f"Training outputs incomplete or missing. Proceeding with training...")
+    logger.info("="*80)
+    
+    # ============================================================================
     # MONTE CARLO CROSS-VALIDATION (25 splits)
     # ============================================================================
     logger.info("\n" + "="*80)
@@ -1584,38 +1698,46 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
                                 heatmap_df.loc[mask, 'importance_normalized'] = heatmap_df.loc[mask, 'importance'] / max_imp
                             else:
                                 heatmap_df.loc[mask, 'importance_normalized'] = 0.0
-                
-                # Create pivot table for heatmap
-                pivot_data = heatmap_df.pivot_table(
-                    values='importance_normalized',
-                    index='feature',
-                    columns='Model',
-                    fill_value=0.0
-                )
-                
-                # Sort features by total importance
-                feature_order = heatmap_df.groupby('feature')['importance'].sum().sort_values(ascending=False).index
-                pivot_data = pivot_data.reindex(feature_order)
-                
-                # Create heatmap
-                fig, ax = plt.subplots(figsize=(10, max(12, len(top_features) * 0.4)))
-                sns.heatmap(
-                    pivot_data,
-                    annot=False,
-                    cmap='YlOrRd',
-                    cbar_kws={'label': 'Normalized Importance'},
-                    ax=ax,
-                    linewidths=0.5
-                )
-                ax.set_title(f'Feature Importance Heatmap by Model ({cohort}, Top {top_n} Features)', fontsize=14, fontweight='bold')
-                ax.set_xlabel('Model', fontsize=12)
-                ax.set_ylabel('Feature', fontsize=12)
-                plt.tight_layout()
-                heatmap_path = plots_dir / "feature_importance_heatmap.png"
-                plt.savefig(heatmap_path, dpi=300, bbox_inches='tight')
-                plt.close()
-                logger.info(f"  Saved feature importance heatmap to: {heatmap_path}")
-        
+
+                        # Create pivot table for heatmap
+                        pivot_data = heatmap_df.pivot_table(
+                            values='importance_normalized',
+                            index='feature',
+                            columns='Model',
+                            fill_value=0.0
+                        )
+
+                        # Sort features by total importance
+                        feature_order = heatmap_df.groupby('feature')['importance'].sum().sort_values(ascending=False).index
+                        pivot_data = pivot_data.reindex(feature_order)
+
+                        # Create heatmap
+                        fig, ax = plt.subplots(figsize=(10, max(12, len(top_features) * 0.4)))
+                        sns.heatmap(
+                            pivot_data,
+                            annot=False,
+                            cmap='YlOrRd',
+                            cbar_kws={'label': 'Normalized Importance'},
+                            ax=ax,
+                            linewidths=0.5
+                        )
+                        ax.set_title(f'Feature Importance Heatmap by Model ({cohort}, Top {top_n} Features)', fontsize=14, fontweight='bold')
+                        ax.set_xlabel('Model', fontsize=12)
+                        ax.set_ylabel('Feature', fontsize=12)
+                        plt.tight_layout()
+                        heatmap_path = plots_dir / "feature_importance_heatmap.png"
+                        plt.savefig(heatmap_path, dpi=300, bbox_inches='tight')
+                        plt.close()
+                                logger.info(f"  Saved feature importance heatmap to: {heatmap_path}")
+                    else:
+                        logger.warning("No heatmap data generated")
+                else:
+                    logger.warning("importance_mean column not found in all_importance_df")
+            except Exception as e:
+                logger.warning(f"Error creating feature importance heatmap: {e}", exc_info=True)
+        else:
+            logger.warning("No aggregated importances available, skipping feature importance heatmap")
+
     except ImportError:
         logger.warning("Matplotlib/Seaborn not available. Skipping visualizations.")
         logger.warning("  Install with: pip install matplotlib seaborn")
