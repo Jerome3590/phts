@@ -1069,10 +1069,21 @@ def run_calculator_shap_analysis(cohort: str) -> Tuple[Dict[str, float], Dict[st
         raise RuntimeError(f"Failed to compute CatBoost SHAP values: {e}") from e
 
     # Compute SHAP values for XGBoost
+    # IMPORTANT: XGBoost was trained on numeric-encoded categoricals, so we need to convert
+    # categoricals to numeric codes to match the training data format
     logger.info("Computing XGBoost SHAP values...")
+    logger.info("Converting categorical features to numeric codes to match XGBoost training format...")
+    X_for_xgb_shap = X.copy()
+    categorical_cols_for_shap = [col for col in X_for_xgb_shap.columns if X_for_xgb_shap[col].dtype == 'object' or X_for_xgb_shap[col].dtype.name == 'category']
+    for col in categorical_cols_for_shap:
+        # Convert to numeric codes (same encoding as used during training)
+        X_for_xgb_shap[col] = pd.Categorical(X[col].astype(str).fillna('')).codes
+    if categorical_cols_for_shap:
+        logger.info(f"Converted {len(categorical_cols_for_shap)} categorical features to numeric codes for XGBoost SHAP")
+    
     try:
         xgb_shap_values, xgb_shap_df = compute_calculator_shap_values(
-            xgb_model, X, 'xgboost', n_samples=2000
+            xgb_model, X_for_xgb_shap, 'xgboost', n_samples=2000
         )
 
         # Create global SHAP map (mean absolute SHAP per feature)
