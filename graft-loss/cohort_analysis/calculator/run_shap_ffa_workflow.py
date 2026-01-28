@@ -112,18 +112,56 @@ except ImportError:
         remove_leakage_predictors = None
 
 
-def get_best_model(cohort: str) -> Optional[str]:
+def get_model_cohort_name(cohort: str, model_variant: Optional[str] = None) -> str:
+    """
+    Get the model directory name based on cohort and variant.
+    
+    Args:
+        cohort: Base cohort name (e.g., "Combined")
+        model_variant: Model variant ("base", "enhanced", or None for auto-detect)
+    
+    Returns:
+        Model directory name (e.g., "Combined_base", "Combined_enhanced", or "Combined")
+    """
+    if model_variant is None or model_variant == "auto":
+        # Try to auto-detect: check both _base and _enhanced
+        base_path = CALCULATOR_DIR / "outputs" / "models" / f"{cohort}_base" / "best_model.txt"
+        enhanced_path = CALCULATOR_DIR / "outputs" / "models" / f"{cohort}_enhanced" / "best_model.txt"
+        
+        if enhanced_path.exists():
+            return f"{cohort}_enhanced"
+        elif base_path.exists():
+            return f"{cohort}_base"
+        else:
+            # Fallback to old structure (no suffix)
+            return cohort
+    elif model_variant == "base":
+        return f"{cohort}_base"
+    elif model_variant == "enhanced":
+        return f"{cohort}_enhanced"
+    else:
+        # Unknown variant, return as-is (for backward compatibility)
+        return cohort
+
+
+def get_best_model(cohort: str, model_variant: Optional[str] = None) -> Optional[str]:
     """
     Read the best model from best_model.txt file.
 
     Checks both calculator outputs and parent outputs directories.
+    
+    Args:
+        cohort: Base cohort name (e.g., "Combined")
+        model_variant: Model variant ("base", "enhanced", or None for auto-detect)
 
     Returns:
         Best model name (e.g., "XGBoost", "CatBoost", "XGBoost RF") or None if not found
     """
+    model_cohort = get_model_cohort_name(cohort, model_variant)
+    
     # Check both locations
-    calculator_best_path = CALCULATOR_DIR / "outputs" / "models" / cohort / "best_model.txt"
-    parent_best_path = CALCULATOR_DIR.parent / "outputs" / "models" / cohort / "best_model.txt"
+    calculator_best_path = CALCULATOR_DIR / "outputs" / "models" / model_cohort / "best_model.txt"
+    parent_best_path = CALCULATOR_DIR.parent / "outputs" / "models" / model_cohort / "best_model.txt"
 
     best_model_path = None
     if calculator_best_path.exists():
@@ -153,16 +191,22 @@ def get_best_model(cohort: str) -> Optional[str]:
     return None
 
 
-def get_model_c_indices(cohort: str) -> Dict[str, float]:
+def get_model_c_indices(cohort: str, model_variant: Optional[str] = None) -> Dict[str, float]:
     """
     Read C-index values for all models from best_model.txt file.
+    
+    Args:
+        cohort: Base cohort name (e.g., "Combined")
+        model_variant: Model variant ("base", "enhanced", or None for auto-detect)
     
     Returns:
         Dictionary mapping model names to C-index values
         e.g., {"CatBoost": 0.677, "XGBoost": 0.645, "XGBoost RF": 0.620}
     """
-    calculator_best_path = CALCULATOR_DIR / "outputs" / "models" / cohort / "best_model.txt"
-    parent_best_path = CALCULATOR_DIR.parent / "outputs" / "models" / cohort / "best_model.txt"
+    model_cohort = get_model_cohort_name(cohort, model_variant)
+    
+    calculator_best_path = CALCULATOR_DIR / "outputs" / "models" / model_cohort / "best_model.txt"
+    parent_best_path = CALCULATOR_DIR.parent / "outputs" / "models" / model_cohort / "best_model.txt"
 
     best_model_path = None
     if calculator_best_path.exists():
@@ -194,7 +238,7 @@ def get_model_c_indices(cohort: str) -> Dict[str, float]:
     return c_indices
 
 
-def determine_shap_weights(cohort: str, best_model: Optional[str] = None) -> Tuple[float, float]:
+def determine_shap_weights(cohort: str, best_model: Optional[str] = None, model_variant: Optional[str] = None) -> Tuple[float, float]:
     """
     Automatically determine SHAP weights based on best model and C-index values.
     
@@ -206,14 +250,15 @@ def determine_shap_weights(cohort: str, best_model: Optional[str] = None) -> Tup
       - Weights normalized to sum to 1.0
     
     Args:
-        cohort: Cohort name
+        cohort: Base cohort name (e.g., "Combined")
         best_model: Best model name (if None, will be read from file)
+        model_variant: Model variant ("base", "enhanced", or None for auto-detect)
     
     Returns:
         Tuple of (weight_catboost, weight_xgboost)
     """
     if best_model is None:
-        best_model = get_best_model(cohort)
+        best_model = get_best_model(cohort, model_variant)
     
     # If XGBoost is best, we use XGBoost only (no weights needed)
     if best_model == "XGBoost" or best_model == "XGBoost RF":
@@ -221,7 +266,7 @@ def determine_shap_weights(cohort: str, best_model: Optional[str] = None) -> Tup
     
     # If CatBoost is best, determine weights based on C-index values
     if best_model == "CatBoost":
-        c_indices = get_model_c_indices(cohort)
+        c_indices = get_model_c_indices(cohort, model_variant)
         
         cb_cindex = c_indices.get("CatBoost", 0.0)
         xgb_cindex = c_indices.get("XGBoost", 0.0)
@@ -245,26 +290,41 @@ def determine_shap_weights(cohort: str, best_model: Optional[str] = None) -> Tup
     return (0.6, 0.4)
 
 
-def load_calculator_importance(cohort: str) -> Dict[str, pd.DataFrame]:
+def load_calculator_importance(cohort: str, model_variant: Optional[str] = None) -> Dict[str, pd.DataFrame]:
     """
     Load aggregated feature importance from calculator outputs.
 
-    Feature importance files are saved by calculator_models.R to:
-    - Parent outputs: graft-loss/cohort_analysis/outputs/importance_{cohort}_{model}.csv
+    Feature importance files are saved by train_python_models.py to:
+    - Calculator outputs: calculator/outputs/models/{cohort}_{variant}/mc_cv_{model}_feature_importance.csv
     - These contain mean importance across MC-CV splits
 
-    Also checks calculator/outputs as fallback for Python-trained models.
+    Also checks parent outputs directory for backward compatibility.
+    
+    Args:
+        cohort: Base cohort name (e.g., "Combined")
+        model_variant: Model variant ("base", "enhanced", or None for auto-detect)
     """
-    # Primary location: parent outputs directory (where R calculator saves)
+    model_cohort = get_model_cohort_name(cohort, model_variant)
+    
+    # Primary location: calculator-specific outputs (where Python models save)
+    calculator_models_dir = CALCULATOR_DIR / "outputs" / "models" / model_cohort
+    # Fallback: parent outputs directory (where R calculator might save)
     output_dir = CALCULATOR_DIR.parent / "outputs"
-    # Fallback: calculator-specific outputs (for Python-trained models)
     calculator_output_dir = CALCULATOR_DIR / "outputs"
 
     importance_files = {
-        'CatBoost': [output_dir / f"importance_{cohort}_CatBoost.csv",
-                     calculator_output_dir / f"importance_{cohort}_CatBoost.csv"],
-        'XGBoost': [output_dir / f"importance_{cohort}_XGBoost.csv",
-                    calculator_output_dir / f"importance_{cohort}_XGBoost.csv"]
+        'CatBoost': [
+            calculator_models_dir / "mc_cv_catboost_feature_importance.csv",
+            calculator_models_dir / "mc_cv_all_models_feature_importance.csv",
+            output_dir / f"importance_{cohort}_CatBoost.csv",  # Legacy R format
+            calculator_output_dir / f"importance_{cohort}_CatBoost.csv",  # Legacy R format
+        ],
+        'XGBoost': [
+            calculator_models_dir / "mc_cv_xgboost_feature_importance.csv",
+            calculator_models_dir / "mc_cv_all_models_feature_importance.csv",
+            output_dir / f"importance_{cohort}_XGBoost.csv",  # Legacy R format
+            calculator_output_dir / f"importance_{cohort}_XGBoost.csv",  # Legacy R format
+        ]
     }
 
     importance_data = {}
@@ -362,7 +422,7 @@ def combine_shap_maps(
     return combined_map
 
 
-def find_xgboost_model_json(cohort: str) -> Optional[Path]:
+def find_xgboost_model_json(cohort: str, model_variant: Optional[str] = None) -> Optional[Path]:
     """
     Find XGBoost model JSON file for FFA explainer.
 
@@ -371,22 +431,32 @@ def find_xgboost_model_json(cohort: str) -> Optional[Path]:
     - XGBoost JSON is easier to parse and extract rules from
     - Rules are then filtered using combined SHAP values from both models
 
+    Args:
+        cohort: Base cohort name (e.g., "Combined")
+        model_variant: Model variant ("base", "enhanced", or None for auto-detect)
+
     Expected locations:
-    - Primary: calculator/outputs/models/{cohort}/final_model_json/{cohort}_final_model_xgboost.json
-    - Fallback: parent outputs/models/{cohort}/final_model_json/{cohort}_final_model_xgboost.json
+    - Primary: calculator/outputs/models/{cohort}_{variant}/final_model_json/{cohort}_final_model_xgboost.json
+    - Fallback: parent outputs/models/{cohort}_{variant}/final_model_json/{cohort}_final_model_xgboost.json
     """
+    model_cohort = get_model_cohort_name(cohort, model_variant)
+    
     # Primary: calculator outputs (where train_python_models.py saves)
-    calculator_models_dir = CALCULATOR_DIR / "outputs" / "models" / cohort
+    calculator_models_dir = CALCULATOR_DIR / "outputs" / "models" / model_cohort
     calculator_json_dir = calculator_models_dir / "final_model_json"
 
     # Fallback: parent outputs directory (where R calculator might save)
-    parent_models_dir = CALCULATOR_DIR.parent / "outputs" / "models" / cohort
+    parent_models_dir = CALCULATOR_DIR.parent / "outputs" / "models" / model_cohort
     parent_json_dir = parent_models_dir / "final_model_json"
 
     xgboost_paths = [
-        calculator_json_dir / f"{cohort}_final_model_xgboost.json",  # Primary: Python-trained models
+        calculator_json_dir / f"{model_cohort}_final_model_xgboost.json",  # Primary: Python-trained models
+        calculator_json_dir / f"{cohort}_final_model_xgboost.json",  # Also try without variant suffix
+        calculator_models_dir / f"{model_cohort}_final_model_xgboost.json",
         calculator_models_dir / f"{cohort}_final_model_xgboost.json",
-        parent_json_dir / f"{cohort}_final_model_xgboost.json",  # Fallback: R-trained models
+        parent_json_dir / f"{model_cohort}_final_model_xgboost.json",  # Fallback: R-trained models
+        parent_json_dir / f"{cohort}_final_model_xgboost.json",
+        parent_models_dir / f"{model_cohort}_final_model_xgboost.json",
         parent_models_dir / f"{cohort}_final_model_xgboost.json",
         # Legacy paths (for backward compatibility)
         CALCULATOR_DIR / "outputs" / "models" / f"{cohort}_XGBoost_model.json",
@@ -916,11 +986,15 @@ def compute_calculator_shap_values(
         raise
 
 
-def run_calculator_shap_analysis(cohort: str) -> Tuple[Dict[str, float], Dict[str, float], pd.DataFrame, pd.DataFrame]:
+def run_calculator_shap_analysis(cohort: str, model_variant: Optional[str] = None) -> Tuple[Dict[str, float], Dict[str, float], pd.DataFrame, pd.DataFrame]:
     """
     Run full SHAP analysis for calculator models.
 
     This function computes actual SHAP values from the models, not proxies.
+
+    Args:
+        cohort: Base cohort name (e.g., "Combined")
+        model_variant: Model variant ("base", "enhanced", or None for auto-detect)
 
     Returns:
         Tuple of (catboost_shap_map, xgboost_shap_map, catboost_shap_df, xgboost_shap_df)
@@ -934,7 +1008,8 @@ def run_calculator_shap_analysis(cohort: str) -> Tuple[Dict[str, float], Dict[st
     except ImportError:
         raise ImportError("SHAP library not available. Install with: pip install shap")
 
-    logger.info(f"Running FULL SHAP analysis for calculator models (cohort: {cohort})...")
+    model_cohort = get_model_cohort_name(cohort, model_variant)
+    logger.info(f"Running FULL SHAP analysis for calculator models (cohort: {model_cohort})...")
     logger.info("This will compute actual SHAP values from models (not proxies)")
 
     # Load calculator models directly
@@ -943,8 +1018,8 @@ def run_calculator_shap_analysis(cohort: str) -> Tuple[Dict[str, float], Dict[st
         import xgboost as xgb
 
         # Check both calculator outputs and parent outputs
-        calculator_models_dir = CALCULATOR_DIR / "outputs" / "models" / cohort
-        parent_models_dir = CALCULATOR_DIR.parent / "outputs" / "models" / cohort
+        calculator_models_dir = CALCULATOR_DIR / "outputs" / "models" / model_cohort
+        parent_models_dir = CALCULATOR_DIR.parent / "outputs" / "models" / model_cohort
 
         # Load CatBoost model
         cb_path = None
@@ -1882,6 +1957,13 @@ def main():
         default=None,
         help="Weight for XGBoost SHAP (default: auto-determined from best model C-index)"
     )
+    parser.add_argument(
+        "--model-variant",
+        type=str,
+        default="auto",
+        choices=["base", "enhanced", "auto"],
+        help="Model variant to use: 'base' for baseline model, 'enhanced' for extended model, 'auto' to auto-detect (default: auto)"
+    )
 
     args = parser.parse_args()
 
@@ -1898,10 +1980,14 @@ def main():
         args.weight_catboost /= total
         args.weight_xgboost /= total
 
+    # Determine model cohort name (with variant suffix)
+    model_cohort = get_model_cohort_name(args.cohort, args.model_variant)
+    logger.info(f"Using model variant: {args.model_variant} -> model directory: {model_cohort}")
+
     # Set output directory
     # SHAP/FFA outputs go to calculator-specific outputs directory
     if args.output_dir is None:
-        output_dir = CALCULATOR_DIR / "outputs" / "shap_ffa" / args.cohort
+        output_dir = CALCULATOR_DIR / "outputs" / "shap_ffa" / model_cohort
     else:
         output_dir = Path(args.output_dir)
 
@@ -1909,12 +1995,12 @@ def main():
     logger.info(f"Output directory: {output_dir}")
 
     # Check which model is best
-    best_model = get_best_model(args.cohort)
+    best_model = get_best_model(args.cohort, args.model_variant)
     use_xgboost_only = (best_model == "XGBoost" or best_model == "XGBoost RF")
 
     # Automatically determine weights based on best model and C-index values
     if not use_xgboost_only:
-        auto_weight_cb, auto_weight_xgb = determine_shap_weights(args.cohort, best_model)
+        auto_weight_cb, auto_weight_xgb = determine_shap_weights(args.cohort, best_model, args.model_variant)
         # Override manual weights with auto-determined weights
         args.weight_catboost = auto_weight_cb
         args.weight_xgboost = auto_weight_xgb
@@ -1939,11 +2025,11 @@ def main():
     try:
         # Step 1: Find XGBoost model JSON (required for FFA)
         logger.info("Step 1: Finding XGBoost model JSON for FFA explainer...")
-        xgboost_json = find_xgboost_model_json(args.cohort)
+        xgboost_json = find_xgboost_model_json(args.cohort, args.model_variant)
 
         if not xgboost_json:
             raise FileNotFoundError(
-                f"XGBoost model JSON not found for cohort {args.cohort}. "
+                f"XGBoost model JSON not found for cohort {model_cohort}. "
                 "This is required for full rule-based FFA analysis. "
                 "Please run train_python_models.py first to generate the model JSON."
             )
@@ -1961,8 +2047,8 @@ def main():
                 # Load only XGBoost model
                 import xgboost as xgb
                 # Check both calculator outputs and parent outputs
-                calculator_models_dir = CALCULATOR_DIR / "outputs" / "models" / args.cohort
-                parent_models_dir = CALCULATOR_DIR.parent / "outputs" / "models" / args.cohort
+                calculator_models_dir = CALCULATOR_DIR / "outputs" / "models" / model_cohort
+                parent_models_dir = CALCULATOR_DIR.parent / "outputs" / "models" / model_cohort
 
                 xgb_path = None
                 for models_dir in [calculator_models_dir, parent_models_dir]:
@@ -2088,7 +2174,7 @@ def main():
         else:
             # Full pipeline: Compute both and combine
             try:
-                cb_shap_map, xgb_shap_map, cb_shap_df, xgb_shap_df = run_calculator_shap_analysis(args.cohort)
+                cb_shap_map, xgb_shap_map, cb_shap_df, xgb_shap_df = run_calculator_shap_analysis(args.cohort, args.model_variant)
             except Exception as e:
                 raise RuntimeError(
                     f"Failed to compute SHAP values: {e}. "
@@ -2163,16 +2249,12 @@ def main():
                 all_feature_cols = [col for col in df_clean.columns if col not in ['time', 'status', 'txpl_year']]
                 
                 # Filter to calculator features to match the model
-                # Check if model directory has _base or _enhanced suffix to determine feature set
-                xgboost_json = find_xgboost_model_json(args.cohort)
-                include_recommended = False
-                if xgboost_json:
-                    # Check if model is from _enhanced directory
-                    if '_enhanced' in str(xgboost_json):
-                        include_recommended = True
-                        logger.info("Detected enhanced model - will include recommended features in test data")
-                    else:
-                        logger.info("Detected base model - will use base calculator features only")
+                # Use the model variant to determine feature set
+                include_recommended = (args.model_variant == "enhanced")
+                if include_recommended:
+                    logger.info("Using enhanced model - will include recommended features in test data")
+                else:
+                    logger.info("Detected base model - will use base calculator features only")
                 
                 # Filter to calculator features
                 try:
@@ -2226,7 +2308,7 @@ def main():
         # Get importance for dashboard
         if use_xgboost_only:
             # Use XGBoost importance only
-            importance_data = load_calculator_importance(args.cohort)
+            importance_data = load_calculator_importance(args.cohort, args.model_variant)
             if 'XGBoost' in importance_data:
                 combined_importance = importance_data['XGBoost'].copy()
                 combined_importance['combined_importance'] = combined_importance['importance']
@@ -2247,7 +2329,7 @@ def main():
                 }).sort_values('combined_importance', ascending=False)
         else:
             # Get combined importance for dashboard
-            importance_data = load_calculator_importance(args.cohort)
+            importance_data = load_calculator_importance(args.cohort, args.model_variant)
             combined_importance, _ = combine_importance_to_shap(
                 importance_data,
                 weight_catboost=args.weight_catboost,
