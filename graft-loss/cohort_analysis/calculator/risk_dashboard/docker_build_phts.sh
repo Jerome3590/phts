@@ -79,16 +79,14 @@ echo -e "${GREEN}✓ Docker access verified${NC}"
 echo ""
 
 # Step 4: Build Docker image
-# IMPORTANT: Lambda requires Docker format, not OCI format
-# Disable BuildKit to ensure Docker format
-echo -e "${YELLOW}Building Docker image (Docker format for Lambda compatibility)...${NC}"
-# Use DOCKER_BUILDKIT=0 to ensure Docker format (not OCI)
-DOCKER_BUILDKIT=0 docker build -f Dockerfile.phts -t ${ECR_REPOSITORY}:${IMAGE_TAG} .
+# Use buildx with --load to build and load into local Docker (Docker format for Lambda)
+echo -e "${YELLOW}Building Docker image...${NC}"
+docker buildx build --load --platform linux/amd64 -f Dockerfile.phts -t ${ECR_REPOSITORY}:${IMAGE_TAG} .
 if [ $? -ne 0 ]; then
     echo -e "${RED}Error: Docker build failed${NC}"
     exit 1
 fi
-echo -e "${GREEN}✓ Docker image built successfully (Docker format)${NC}"
+echo -e "${GREEN}✓ Docker image built successfully${NC}"
 echo ""
 
 # Step 5: Get ECR login token
