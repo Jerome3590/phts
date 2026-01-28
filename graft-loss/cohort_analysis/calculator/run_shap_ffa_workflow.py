@@ -775,62 +775,144 @@ def compute_calculator_shap_values(
             # For CatBoost, use native SHAP computation which handles categoricals correctly
             from catboost import Pool
 
-            # Fill NaN values
-            X_sample_clean = X_sample.fillna(0).copy()
-
-            # Get feature names from model and align data columns
+            # Get feature names and categorical indices from model FIRST (before alignment)
             try:
                 model_feature_names = model.feature_names_
+                cat_feature_indices = model.get_cat_feature_indices()
+                
                 if model_feature_names:
                     logger.info(f"Model expects {len(model_feature_names)} features")
-                    # Create mapping: lowercase both for comparison
-                    data_cols_lower = {col.lower(): col for col in X_sample_clean.columns}
-                    model_cols_lower = {col.lower(): col for col in model_feature_names}
+                    if cat_feature_indices:
+                        logger.info(f"Model has {len(cat_feature_indices)} categorical features at indices: {cat_feature_indices[:10]}{'...' if len(cat_feature_indices) > 10 else ''}")
+                        # Map categorical indices to feature names
+                        cat_feat_names = {model_feature_names[idx] for idx in cat_feature_indices if idx < len(model_feature_names)}
+                        logger.info(f"Categorical feature names (first 10): {list(cat_feat_names)[:10]}")
+                    else:
+                        cat_feature_indices = None
+                        cat_feat_names = set()
+                else:
+                    cat_feature_indices = None
+                    cat_feat_names = set()
+            except (AttributeError, TypeError) as e:
+                logger.warning(f"Could not get model feature info: {e}")
+                model_feature_names = None
+                cat_feature_indices = None
+                cat_feat_names = set()
 
-                    # Reorder and rename columns to match model
+            # Get feature names from model and align data columns
+            if model_feature_names:
+                try:
+                    # Create mapping: lowercase both for comparison
+                    data_cols_lower = {col.lower(): col for col in X_sample.columns}
+                    
                     aligned_cols = []
                     for model_feat in model_feature_names:
                         model_feat_lower = model_feat.lower()
+                        is_categorical = model_feat in cat_feat_names
+                        
                         if model_feat_lower in data_cols_lower:
-                            aligned_cols.append(data_cols_lower[model_feat_lower])
-                        elif model_feat in X_sample_clean.columns:
+                            source_col = data_cols_lower[model_feat_lower]
+                            aligned_cols.append(source_col)
+                            # Preserve categorical dtype if this is a categorical feature
+                            if is_categorical and X_sample[source_col].dtype != 'object':
+                                logger.debug(f"Converting '{source_col}' to object dtype for categorical feature '{model_feat}'")
+                                X_sample[source_col] = X_sample[source_col].astype('object')
+                        elif model_feat in X_sample.columns:
                             aligned_cols.append(model_feat)
+                            # Preserve categorical dtype if this is a categorical feature
+                            if is_categorical and X_sample[model_feat].dtype != 'object':
+                                logger.debug(f"Converting '{model_feat}' to object dtype for categorical feature")
+                                X_sample[model_feat] = X_sample[model_feat].astype('object')
                         else:
-                            logger.warning(f"Model feature '{model_feat}' not found in data, using zeros")
-                            # Add column with zeros
-                            X_sample_clean[model_feat] = 0
+                            logger.warning(f"Model feature '{model_feat}' not found in data, using default value")
+                            # Add column with appropriate default based on type
+                            if is_categorical:
+                                X_sample[model_feat] = ''  # Empty string for categorical, object dtype
+                                X_sample[model_feat] = X_sample[model_feat].astype('object')
+                            else:
+                                X_sample[model_feat] = 0  # Zero for numeric
                             aligned_cols.append(model_feat)
 
                     # Reorder columns to match model order
-                    X_sample_clean = X_sample_clean[aligned_cols].copy()
+                    X_sample_clean = X_sample[aligned_cols].copy()
                     # Rename to match model exactly
                     X_sample_clean.columns = model_feature_names
                     logger.info(f"Aligned {len(aligned_cols)} features to match model")
-            except (AttributeError, TypeError) as e:
-                logger.warning(f"Could not align feature names: {e}, using data as-is")
-
-            # Get categorical feature indices from model
-            try:
-                cat_feature_indices = model.get_cat_feature_indices()
-                if cat_feature_indices:
-                    logger.info(f"Model has {len(cat_feature_indices)} categorical features")
-                    # Convert categorical features to strings (CatBoost requirement)
-                    for idx in cat_feature_indices:
-                        if idx < len(X_sample_clean.columns):
-                            col_name = X_sample_clean.columns[idx]
-                            # Convert to string, handling NaN
-                            X_sample_clean[col_name] = X_sample_clean[col_name].astype(str).replace('nan', '')
-                else:
+                    
+                    # Log categorical column dtypes after alignment for debugging
+                    if cat_feature_indices:
+                        logger.debug("Categorical column dtypes after alignment:")
+                        for idx in cat_feature_indices[:5]:  # Log first 5
+                            if idx < len(X_sample_clean.columns):
+                                col_name = X_sample_clean.columns[idx]
+                                logger.debug(f"  {col_name} (idx {idx}): dtype={X_sample_clean[col_name].dtype}, sample value: {X_sample_clean[col_name].iloc[0] if len(X_sample_clean) > 0 else 'N/A'}")
+                    
+                    # After alignment, categorical indices remain the same (columns are just reordered)
+                    # So cat_feature_indices from model still applies to the aligned DataFrame
+                except Exception as e:
+                    logger.warning(f"Could not align feature names: {e}, using data as-is")
+                    X_sample_clean = X_sample.copy()
+                    # If alignment failed, we can't use the model's categorical indices
                     cat_feature_indices = None
-            except (AttributeError, TypeError):
+            else:
+                X_sample_clean = X_sample.copy()
                 cat_feature_indices = None
-                logger.info("Could not get categorical feature indices from model")
+
+            # Handle NaN values: only fill numeric columns, preserve categoricals
+            # Identify which columns are categorical (by index after alignment)
+            if cat_feature_indices:
+                cat_col_names = [X_sample_clean.columns[idx] for idx in cat_feature_indices if idx < len(X_sample_clean.columns)]
+                numeric_col_names = [col for col in X_sample_clean.columns if col not in cat_col_names]
+                
+                # Fill NaN only for numeric columns
+                for col in numeric_col_names:
+                    if pd.api.types.is_numeric_dtype(X_sample_clean[col]):
+                        X_sample_clean[col] = X_sample_clean[col].fillna(0)
+                
+                # For categorical columns, ensure they are strings and handle NaN/None
+                for col in cat_col_names:
+                    # Convert to string first (handles any dtype)
+                    X_sample_clean[col] = X_sample_clean[col].astype(str)
+                    # Replace NaN/None representations with empty string
+                    X_sample_clean[col] = X_sample_clean[col].replace(['nan', 'None', 'NaN', 'NONE', 'NaT'], '', regex=False)
+                    # Also handle actual NaN values that might still exist
+                    X_sample_clean[col] = X_sample_clean[col].fillna('')
+                    # Ensure dtype is object (string) to prevent CatBoost from treating as numeric
+                    X_sample_clean[col] = X_sample_clean[col].astype('object')
+            else:
+                # No categorical features identified, fill all numeric columns
+                for col in X_sample_clean.columns:
+                    if pd.api.types.is_numeric_dtype(X_sample_clean[col]):
+                        X_sample_clean[col] = X_sample_clean[col].fillna(0)
 
             # Create Pool with categorical features specified
             # For survival models, we don't need labels for SHAP
+            # Ensure categorical columns are properly typed before creating Pool
             if cat_feature_indices:
+                # Final check: ensure all categorical columns are object dtype and contain strings
+                logger.debug(f"Final check: Verifying {len(cat_feature_indices)} categorical features before creating Pool...")
+                for idx in cat_feature_indices:
+                    if idx < len(X_sample_clean.columns):
+                        col_name = X_sample_clean.columns[idx]
+                        current_dtype = X_sample_clean[col_name].dtype
+                        
+                        # Force conversion to object/string if needed
+                        if current_dtype != 'object':
+                            logger.warning(f"Categorical column '{col_name}' (idx {idx}) is {current_dtype}, converting to object...")
+                            X_sample_clean[col_name] = X_sample_clean[col_name].astype(str).astype('object')
+                        else:
+                            # Even if object dtype, ensure values are strings
+                            X_sample_clean[col_name] = X_sample_clean[col_name].astype(str).astype('object')
+                        
+                        # Log a sample value for debugging
+                        if len(X_sample_clean) > 0:
+                            sample_val = X_sample_clean[col_name].iloc[0]
+                            logger.debug(f"  Categorical '{col_name}' (idx {idx}): dtype={X_sample_clean[col_name].dtype}, sample='{sample_val}'")
+                
+                logger.info(f"Creating CatBoost Pool with {len(cat_feature_indices)} categorical features...")
                 pool = Pool(X_sample_clean, cat_features=cat_feature_indices)
             else:
+                logger.info("Creating CatBoost Pool with no categorical features specified...")
                 pool = Pool(X_sample_clean)
 
             # Get SHAP values using CatBoost's native method
@@ -1118,7 +1200,8 @@ def run_calculator_shap_analysis(cohort: str, model_variant: Optional[str] = Non
     # For numeric features: fill with 0 (models were trained this way)
     # For categorical features: keep as-is (CatBoost handles them natively)
     for col in X.columns:
-        if X[col].dtype in [np.number, 'int64', 'float64']:
+        # Check if column is numeric using pandas API (avoids deprecation warning)
+        if pd.api.types.is_numeric_dtype(X[col]):
             X[col] = X[col].fillna(0)
         # Categorical features (object dtype) are kept as-is for CatBoost
 
