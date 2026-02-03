@@ -70,6 +70,16 @@ aws s3 cp phts_dashboard.html \
     --content-type "text/html" \
     --cache-control "no-cache" \
     --region us-east-1
+aws s3 cp phts_readme.html \
+    s3://jerome-dixon.io/uva/phts-risk-calculator/phts_readme.html \
+    --content-type "text/html" \
+    --cache-control "no-cache" \
+    --region us-east-1
+```
+
+**Documentation tab:** The Documentation button opens `phts_readme.html`. You must upload `phts_readme.html` to the same S3 prefix as the dashboard (e.g. `uva/phts-risk-calculator/phts_readme.html`) or the Documentation tab will 404 or show an old version. After updating the doc, re-upload it:
+```bash
+aws s3 cp phts_readme.html s3://YOUR_BUCKET/YOUR_PREFIX/phts_readme.html --content-type "text/html" --region us-east-1
 ```
 
 **Verification:**

@@ -126,7 +126,14 @@ if ! aws s3 cp phts_dashboard.html \
     echo -e "${RED}Error: Failed to upload HTML to S3${NC}"
     exit 1
 fi
-echo -e "${GREEN}✓ HTML uploaded to S3${NC}"
+if ! aws s3 cp phts_readme.html \
+    s3://${S3_BUCKET}/${S3_PREFIX}/phts_readme.html \
+    --content-type "text/html" \
+    --region ${AWS_REGION}; then
+    echo -e "${YELLOW}Warning: Failed to upload Documentation (phts_readme.html) to S3${NC}"
+else
+    echo -e "${GREEN}✓ Dashboard and Documentation uploaded to S3${NC}"
+fi
 echo ""
 
 # Summary
@@ -139,6 +146,7 @@ echo "  ✓ Lambda Function: ${LAMBDA_FUNCTION_NAME}"
 echo "  ✓ ECR Image: ${ECR_URI}"
 echo "  ✓ API Gateway: ${API_URL}"
 echo "  ✓ S3 Dashboard: s3://${S3_BUCKET}/${S3_PREFIX}/index.html"
+echo "  ✓ S3 Documentation: s3://${S3_BUCKET}/${S3_PREFIX}/phts_readme.html"
 echo ""
 echo "Dashboard URL:"
 echo "  https://${S3_BUCKET}/${S3_PREFIX}/"
