@@ -195,7 +195,7 @@
                 <li><strong>Baseline Model</strong>: Base calculator features only (~104 features)</li>
                 <li><strong>Extended Model</strong>: Base features plus recommended additional features (~120 features, e.g. BNP, CRP, secondary/tertiary diagnosis, lipid panel)</li>
             </ul>
-            <p>Each variant is trained and evaluated separately; the best-performing model type is selected per variant and deployed for that tab.</p>
+            <p>Each variant is trained and evaluated separately; the best-performing model type is selected per variant and deployed for that tab. The full pipeline (training → SHAP/FFA → deployment) is described in <a href="#workflow">End-to-End Workflow</a>.</p>
 
             <h3>Clinical Features</h3>
             <p>The calculator uses <strong>modifiable clinical features</strong> that can be influenced by clinical intervention:</p>
@@ -212,6 +212,29 @@
             <div class="info-box">
                 <strong>Note:</strong> The calculator focuses on modifiable features that clinicians can influence through intervention, rather than fixed demographic or diagnostic variables.
             </div>
+
+            <h3>Dashboard Tabs</h3>
+            <p>The risk calculator has four main tabs:</p>
+            <ul>
+                <li><strong>Baseline Model</strong>: Risk prediction using the Baseline model (<code>Combined_base/</code>). Uses base features only.</li>
+                <li><strong>Extended Model</strong>: Risk prediction using the Extended model (<code>Combined_enhanced/</code>). Uses base plus recommended features.</li>
+                <li><strong>Model Comparison</strong>: Same patient inputs sent to both models; compares risk scores and top causal factors side-by-side.</li>
+                <li><strong>Causal Analysis</strong>: Choose Baseline or Extended model, then adjust top causal factors and see risk update in real time.</li>
+            </ul>
+        </section>
+
+        <!-- Workflow Section -->
+        <section id="workflow">
+            <h2>End-to-End Workflow</h2>
+            <p>The calculator is produced by the following pipeline (run via the calculator workflow notebook or scripts):</p>
+            <ol>
+                <li><strong>Train Baseline model</strong>: Train CatBoost, XGBoost, and XGBoost RF on the Combined cohort with base features only. Evaluate with MC-CV; select best model by C-index (then AU-PRC). Save models and <code>best_model.txt</code> to <code>outputs/models/Combined_base/</code>.</li>
+                <li><strong>Train Extended model</strong>: Same process with base plus recommended features. Save to <code>outputs/models/Combined_enhanced/</code>.</li>
+                <li><strong>SHAP/FFA for Baseline</strong>: Load best model from <code>Combined_base/</code>; compute SHAP on the temporal test set; extract rules from the XGBoost JSON (always XGBoost for rules); apply rules to the test set; compute causal responsibility. Write <code>dashboard_data.json</code> and <code>top_causal_factors.csv</code> to <code>outputs/shap_ffa/Combined_base/</code>.</li>
+                <li><strong>SHAP/FFA for Extended</strong>: Same steps for <code>Combined_enhanced/</code>; output to <code>outputs/shap_ffa/Combined_enhanced/</code>.</li>
+                <li><strong>Deploy</strong>: Package models and dashboard data (and optional Lambda assets) for the risk calculator. The dashboard reads from <code>Combined_base/</code> and <code>Combined_enhanced/</code>; if only <code>Combined/</code> exists, it is used as a fallback for both variants.</li>
+            </ol>
+            <p>SHAP values: if the best model is XGBoost, only XGBoost SHAP is used; if the best model is CatBoost, SHAP is combined from CatBoost and XGBoost with weights derived from C-index. Rules are always extracted from the XGBoost JSON for that variant.</p>
         </section>
 
         <!-- Models and Results Section -->
@@ -286,7 +309,7 @@
             </ol>
 
             <h3>Risk Score Normalization</h3>
-            <p>Raw risk scores from models have different scales across cohorts and models. The calculator <strong>normalizes risk scores to percentiles (0-100)</strong> for consistent interpretation:</p>
+            <p>Raw risk scores are on model-specific scales. The calculator <strong>normalizes risk scores to percentiles (0–100)</strong> using the training distribution for that variant:</p>
             <ul>
                 <li><strong>Percentile 0-100</strong>: Represents where the patient's risk falls relative to the training population</li>
                 <li><strong>Percentile 50</strong> = Median risk (50% of patients have lower risk)</li>
@@ -303,12 +326,11 @@
             </ul>
 
             <h3>Model Training</h3>
-            <p>Models are trained per variant (Baseline and Extended) using:</p>
+            <p>Per variant (Baseline and Extended), training uses:</p>
             <ul>
-                <li><strong>Data split</strong>: Monte Carlo cross-validation (MC-CV) over multiple splits</li>
-                <li><strong>Feature engineering</strong>: Clinical features prepared and standardized per variant</li>
-                <li><strong>Evaluation metrics</strong>: C-index (primary), AU-PRC, AUC, and Recall at a fixed time horizon</li>
-                <li><strong>Selection</strong>: Best model per variant by mean C-index; AU-PRC used as tiebreaker</li>
+                <li><strong>Data</strong>: Combined cohort; temporal split (e.g. 80% train / 20% test by transplant year) for evaluation; MC-CV over multiple splits for model selection</li>
+                <li><strong>Feature engineering</strong>: Base features (and for Extended, recommended additional features) prepared and standardized per variant</li>
+                <li><strong>Evaluation</strong>: C-index (primary), AU-PRC (tiebreaker), AUC and Recall at a fixed time horizon; best model written to <code>best_model.txt</code></li>
             </ul>
         </section>
 
@@ -328,23 +350,24 @@
 
             <h3>What is Causal Analysis?</h3>
             <p>
-                Causal analysis identifies which clinical features have <strong>causal responsibility</strong> for graft loss risk, not just correlation. It combines:
+                Causal analysis identifies which clinical features have <strong>causal responsibility</strong> for graft loss risk. The pipeline:
             </p>
             <ol>
-                <li><strong>Rule-Based Analysis</strong>: Extracts symbolic rules from trained models (XGBoost JSON)</li>
-                <li><strong>SHAP Importance</strong>: Uses SHAP values to filter and prioritize rules</li>
-                <li><strong>Causal Responsibility</strong>: Calculates how much each feature contributes causally to the outcome</li>
+                <li><strong>Rules</strong>: Extracted from the XGBoost JSON model for that variant; applied to the temporal test set to count rule firings per feature</li>
+                <li><strong>SHAP</strong>: Computed on the test set (XGBoost only if XGBoost is best; otherwise combined CatBoost + XGBoost with C-index–based weights)</li>
+                <li><strong>Causal responsibility</strong>: (rule firings / total firings) × SHAP importance, then normalized for the top factors used in the dashboard</li>
             </ol>
 
             <h3>Causal Responsibility Calculation</h3>
             <p>For each feature, causal responsibility is computed as:</p>
-            <pre><code>causal_responsibility = (rule_frequency / total_rules) × SHAP_importance</code></pre>
+            <pre><code>causal_responsibility = (rule_frequency / total_rule_firings) × SHAP_importance</code></pre>
             <p>Where:</p>
             <ul>
-                <li><strong>rule_frequency</strong>: Number of rules containing the feature</li>
-                <li><strong>total_rules</strong>: Total number of extracted rules</li>
-                <li><strong>SHAP_importance</strong>: Combined SHAP importance from CatBoost and XGBoost</li>
+                <li><strong>rule_frequency</strong>: Count of rule firings involving that feature on the <strong>test set</strong> (rules are applied to test-set instances)</li>
+                <li><strong>total_rule_firings</strong>: Total rule firings on the test set</li>
+                <li><strong>SHAP_importance</strong>: Per-feature importance from SHAP values computed on the test set (XGBoost only if XGBoost is best model; otherwise combined CatBoost + XGBoost with C-index–based weights)</li>
             </ul>
+            <p>Rules are always extracted from the <strong>XGBoost JSON</strong> model for that variant. SHAP and rule application use the <strong>temporal test set</strong> only, to avoid overfitting and match evaluation methodology.</p>
 
             <h3>Why Causal Analysis Matters</h3>
             <ul>
