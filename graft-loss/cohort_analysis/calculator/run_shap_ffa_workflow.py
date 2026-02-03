@@ -337,6 +337,10 @@ def load_calculator_importance(cohort: str, model_variant: Optional[str] = None)
 
         if file_path:
             df = pd.read_csv(file_path)
+            # MC-CV outputs use importance_mean; normalize to 'importance' for downstream use
+            if 'importance_mean' in df.columns and 'importance' not in df.columns:
+                df = df.copy()
+                df['importance'] = df['importance_mean']
             importance_data[model_name] = df
             logger.info(f"Loaded {model_name} importance: {len(df)} features from {file_path}")
         else:
@@ -1867,17 +1871,32 @@ def combine_importance_to_shap(
     if 'CatBoost' not in importance_data and 'XGBoost' not in importance_data:
         raise ValueError("Need at least one model's importance data")
 
+    def _imp_col(df: pd.DataFrame) -> str:
+        return 'importance' if 'importance' in df.columns else 'importance_mean'
+
     # Start with CatBoost if available
     if 'CatBoost' in importance_data:
-        combined = importance_data['CatBoost'].copy()
+        cb_df = importance_data['CatBoost']
+        imp_col = _imp_col(cb_df)
+        combined = cb_df.copy()
+        if imp_col != 'importance':
+            combined['importance'] = combined[imp_col]
         combined['combined_importance'] = weight_catboost * combined['importance']
     else:
-        combined = importance_data['XGBoost'].copy()
+        xgb_df = importance_data['XGBoost']
+        imp_col = _imp_col(xgb_df)
+        combined = xgb_df.copy()
+        if imp_col != 'importance':
+            combined['importance'] = combined[imp_col]
         combined['combined_importance'] = 0.0
 
     # Add XGBoost if available
     if 'XGBoost' in importance_data:
         xgb_imp = importance_data['XGBoost']
+        xgb_imp_col = _imp_col(xgb_imp)
+        if xgb_imp_col != 'importance':
+            xgb_imp = xgb_imp.copy()
+            xgb_imp['importance'] = xgb_imp[xgb_imp_col]
         # Merge on feature name
         combined = combined.merge(
             xgb_imp[['feature', 'importance']],
