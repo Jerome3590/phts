@@ -12,10 +12,11 @@ This guide provides a complete setup for running the PHTS calculator workflow on
 2. [Repository Setup](#repository-setup)
 3. [GitHub Credentials Setup](#github-credentials-setup)
 4. [Jupyter Notebook Setup](#jupyter-notebook-setup)
-5. [Docker Setup (For Lambda Deployment)](#docker-setup-for-lambda-deployment)
-6. [Running the Workflow](#running-the-workflow)
-7. [Troubleshooting](#troubleshooting)
-8. [Script Reference](#script-reference)
+5. [Best practice: sync data to local / mnt (NVMe) first](#best-practice-sync-data-to-local--mnt-nvme-first)
+6. [Docker Setup (For Lambda Deployment)](#docker-setup-for-lambda-deployment)
+7. [Running the Workflow](#running-the-workflow)
+8. [Troubleshooting](#troubleshooting)
+9. [Script Reference](#script-reference)
 
 ---
 
@@ -294,6 +295,36 @@ WEIGHT_XGBOOST = None   # Auto-determined from best model
 - Model Training (per model): 15-30 minutes
 - SHAP/FFA (per model): 10-20 minutes
 - Total (both models): ~50-100 minutes
+
+---
+
+## Best practice: sync data to local / mnt (NVMe) first
+
+Before running the workflow (or any job that reads from S3), **sync your data to local or instance storage** instead of reading directly from S3 in the notebook. This reduces S3 API requests, speeds up reads, and lowers cost.
+
+**Benefits:**
+- **Fewer S3 API calls** – one sync instead of many GET/List requests during training or analysis
+- **Faster I/O** – local or NVMe is much faster than repeated S3 reads
+- **Lower cost** – fewer requests and less data transfer
+
+**Where to sync:**
+- **EBS volume:** e.g. `/mnt/data` (if you mounted an EBS volume at `/mnt/data`)
+- **Instance store (NVMe):** e.g. `/mnt/nvme` or the path shown by `lsblk` for your instance store (ephemeral; data is lost on stop/termination)
+
+**Example – sync a bucket prefix to local:**
+
+```bash
+# Create target directory (use EBS mount or instance store)
+sudo mkdir -p /mnt/data/phts
+sudo chown $USER:$USER /mnt/data/phts
+
+# Sync from S3 (only copies new/changed files on re-runs)
+aws s3 sync s3://YOUR_BUCKET/phts/data /mnt/data/phts/data
+# Or a specific prefix:
+# aws s3 sync s3://YOUR_BUCKET/prefix/ /mnt/data/phts/
+```
+
+Then point your notebook or scripts at the local paths (e.g. `/mnt/data/phts/data/...`) instead of `s3://...` URIs.
 
 ---
 

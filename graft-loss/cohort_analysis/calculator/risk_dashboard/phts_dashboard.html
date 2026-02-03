@@ -422,8 +422,6 @@
       <label for="cohort">Cohort:</label>
       <select id="cohort">
         <option value="Combined">Combined</option>
-        <option value="CHD">CHD (Congenital Heart Disease)</option>
-        <option value="Myocardio">Myocardio (Cardiomyopathy/Myocarditis)</option>
       </select>
     </div>
     
@@ -537,8 +535,6 @@
       <label for="cohort-extended">Cohort:</label>
       <select id="cohort-extended">
         <option value="Combined">Combined</option>
-        <option value="CHD">CHD (Congenital Heart Disease)</option>
-        <option value="Myocardio">Myocardio (Cardiomyopathy/Myocarditis)</option>
       </select>
     </div>
     
@@ -652,8 +648,6 @@
         <label for="cohort-comparison">Cohort:</label>
         <select id="cohort-comparison">
           <option value="Combined">Combined</option>
-          <option value="CHD">CHD (Congenital Heart Disease)</option>
-          <option value="Myocardio">Myocardio (Cardiomyopathy/Myocarditis)</option>
         </select>
         <button class="primary" onclick="compareModels()" style="margin-left: 1rem;">Compare Models</button>
       </div>
@@ -730,8 +724,6 @@
         <label for="cohort-causal">Cohort:</label>
         <select id="cohort-causal">
           <option value="Combined">Combined</option>
-          <option value="CHD">CHD (Congenital Heart Disease)</option>
-          <option value="Myocardio">Myocardio (Cardiomyopathy/Myocarditis)</option>
         </select>
         <label for="model-variant-causal" style="margin-left: 2rem;">Model:</label>
         <select id="model-variant-causal">
@@ -1797,7 +1789,10 @@
         ]);
         
         if (!baselineCausalResponse.ok || !enhancedCausalResponse.ok) {
-          throw new Error('Failed to fetch causal factors');
+          const baselineErr = baselineCausalResponse.ok ? '' : await baselineCausalResponse.text();
+          const enhancedErr = enhancedCausalResponse.ok ? '' : await enhancedCausalResponse.text();
+          const msg = [baselineErr, enhancedErr].filter(Boolean).join('; ') || 'Failed to fetch causal factors';
+          throw new Error(msg);
         }
         
         const baselineCausal = await baselineCausalResponse.json();

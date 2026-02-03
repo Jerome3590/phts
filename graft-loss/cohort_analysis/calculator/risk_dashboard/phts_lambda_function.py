@@ -65,11 +65,9 @@ DASHBOARD_DATA_PATH = os.environ.get("DASHBOARD_DATA_PATH", "/var/task/dashboard
 RISK_DISTRIBUTION_PATH = os.environ.get("RISK_DISTRIBUTION_PATH", "/var/task/risk_distributions")
 MODEL_CACHE_TTL = int(os.environ.get("MODEL_CACHE_TTL", "3600"))
 
-# Available cohorts
-# NOTE: Using single Combined model for all cohorts
-# All cohorts use the same Combined model, but may have different dashboard data
-AVAILABLE_COHORTS = ["CHD", "Combined", "Myocardio"]
-COHORTS_WITH_DATA = ["CHD", "Combined", "Myocardio"]
+# Available cohorts - only Combined for both Baseline and Extended model
+AVAILABLE_COHORTS = ["Combined"]
+COHORTS_WITH_DATA = ["Combined"]
 # Model cohort (always Combined - single model for all)
 MODEL_COHORT = "Combined"
 
@@ -183,9 +181,8 @@ def load_dashboard_data(cohort: str, model_variant: Optional[str] = None) -> Dic
     1. Container filesystem (DASHBOARD_DATA_PATH)
     2. S3 bucket
     
-    Dashboard data is stored in directories like:
-    - Combined_base/dashboard_data.json (baseline model)
-    - Combined_enhanced/dashboard_data.json (extended model)
+    For cohort "Combined": tries Combined_base / Combined_enhanced first;
+    if not found, falls back to Combined (single dashboard data for both models).
     """
     # Determine model cohort name (with variant suffix)
     if model_variant == "enhanced":
@@ -193,15 +190,17 @@ def load_dashboard_data(cohort: str, model_variant: Optional[str] = None) -> Dic
     elif model_variant == "base":
         model_cohort = f"{cohort}_base"
     else:
-        # Auto-detect: try enhanced first, then base
+        # Auto-detect: try enhanced first, then base, then cohort
         enhanced_path = Path(DASHBOARD_DATA_PATH) / f"{cohort}_enhanced" / "dashboard_data.json"
         base_path = Path(DASHBOARD_DATA_PATH) / f"{cohort}_base" / "dashboard_data.json"
+        cohort_path = Path(DASHBOARD_DATA_PATH) / cohort / "dashboard_data.json"
         if enhanced_path.exists():
             model_cohort = f"{cohort}_enhanced"
         elif base_path.exists():
             model_cohort = f"{cohort}_base"
+        elif cohort_path.exists():
+            model_cohort = cohort
         else:
-            # Fallback to base cohort name (backward compatibility)
             model_cohort = cohort
     
     # Use model_cohort as cache key
@@ -209,8 +208,13 @@ def load_dashboard_data(cohort: str, model_variant: Optional[str] = None) -> Dic
     if cache_key in _dashboard_data_cache:
         return _dashboard_data_cache[cache_key]
     
-    # Try container filesystem first
+    # Try container filesystem: variant path first, then fallback to cohort (e.g. Combined)
     container_path = Path(DASHBOARD_DATA_PATH) / model_cohort / "dashboard_data.json"
+    if not container_path.exists() and model_cohort in (f"{cohort}_base", f"{cohort}_enhanced"):
+        fallback_path = Path(DASHBOARD_DATA_PATH) / cohort / "dashboard_data.json"
+        if fallback_path.exists():
+            logger.info(f"Using single dashboard data for both models: {fallback_path}")
+            container_path = fallback_path
     if container_path.exists():
         logger.info(f"Loading dashboard data from container: {container_path}")
         with open(container_path, 'r') as f:
@@ -218,25 +222,26 @@ def load_dashboard_data(cohort: str, model_variant: Optional[str] = None) -> Dic
         _dashboard_data_cache[cache_key] = data
         return data
     
-    # Try S3 (if client is available)
+    # Try S3 (if client is available): variant key first, then fallback to cohort
     if s3_client is not None:
-        s3_key = f"{S3_PREFIX}/dashboard_data/{model_cohort}/dashboard_data.json"
-        try:
-            logger.info(f"Loading dashboard data from S3: s3://{S3_BUCKET}/{s3_key}")
-            response = s3_client.get_object(Bucket=S3_BUCKET, Key=s3_key)
-            data = json.loads(response['Body'].read().decode('utf-8'))
-            _dashboard_data_cache[cache_key] = data
-            return data
-        except ClientError as e:
-            if e.response['Error']['Code'] == 'NoSuchKey':
-                logger.warning(f"Dashboard data not found in S3: {s3_key}")
-            else:
+        for try_key in [f"{S3_PREFIX}/dashboard_data/{model_cohort}/dashboard_data.json",
+                        f"{S3_PREFIX}/dashboard_data/{cohort}/dashboard_data.json"]:
+            try:
+                logger.info(f"Loading dashboard data from S3: s3://{S3_BUCKET}/{try_key}")
+                response = s3_client.get_object(Bucket=S3_BUCKET, Key=try_key)
+                data = json.loads(response['Body'].read().decode('utf-8'))
+                _dashboard_data_cache[cache_key] = data
+                return data
+            except ClientError as e:
+                if e.response['Error']['Code'] == 'NoSuchKey':
+                    continue
                 logger.error(f"Error loading dashboard data from S3: {e}")
-        except Exception as e:
-            logger.error(f"Error accessing S3: {e}")
+                break
+            except Exception as e:
+                logger.error(f"Error accessing S3: {e}")
+                break
     
-    # If we get here, dashboard data not found
-    raise FileNotFoundError(f"Dashboard data not found for cohort: {model_cohort}")
+    raise FileNotFoundError(f"Dashboard data not found for cohort: {model_cohort} (tried fallback {cohort})")
 
 
 def load_risk_distribution(cohort: str) -> Optional[Dict[str, Any]]:
@@ -442,17 +447,30 @@ def _percentile_to_risk_band(percentile: float) -> str:
         return "very_high"
 
 
+def _resolve_model_cohort_for_models(model_cohort: str) -> str:
+    """If model_cohort is Combined_base or Combined_enhanced but that path doesn't exist, use Combined (single model)."""
+    if model_cohort in ("Combined_base", "Combined_enhanced"):
+        variant_path = Path(MODEL_BASE_PATH) / model_cohort
+        if not variant_path.exists():
+            combined_path = Path(MODEL_BASE_PATH) / "Combined"
+            if combined_path.exists():
+                logger.info(f"Using single Combined model for variant {model_cohort}")
+                return "Combined"
+    return model_cohort
+
+
 def load_model(cohort: str, model_type: str) -> Any:
     """
     Load a trained model for a cohort.
     
     Args:
-        cohort: Cohort name (CHD, Combined, Myocardio)
+        cohort: Cohort name (CHD, Combined, Myocardio, or Combined_base/Combined_enhanced)
         model_type: Model type ('catboost', 'xgboost', 'xgboost_rf')
     
     Returns:
         Loaded model object
     """
+    cohort = _resolve_model_cohort_for_models(cohort)
     cache_key = f"{cohort}_{model_type}"
     
     # Check cache
@@ -517,6 +535,7 @@ def load_model(cohort: str, model_type: str) -> Any:
 
 def get_best_model(cohort: str) -> str:
     """Get the best model type for a cohort from best_model.txt."""
+    cohort = _resolve_model_cohort_for_models(cohort)
     # Try container filesystem
     best_model_path = Path(MODEL_BASE_PATH) / cohort / "best_model.txt"
     if best_model_path.exists():
@@ -1116,6 +1135,7 @@ def handle_causal(event: Dict[str, Any]) -> Dict[str, Any]:
         "model_variant": "base" | "enhanced",  // optional, default: "base"
         "top_k": 10  // optional, default: 10
     }
+    Baseline values are not required for this endpoint; it returns causal factors and feature metadata only.
     """
     try:
         body = json.loads(event.get("body") or "{}")
@@ -1126,12 +1146,14 @@ def handle_causal(event: Dict[str, Any]) -> Dict[str, Any]:
         if cohort not in AVAILABLE_COHORTS:
             return _response(400, {"error": f"Invalid cohort. Must be one of: {AVAILABLE_COHORTS}"})
         
-        # Load dashboard data for the specific model variant
+        # Load dashboard data for the specific model variant (fallback to Combined if variant dirs missing)
         dashboard_data = load_dashboard_data(cohort, model_variant=model_variant)
         top_causal = dashboard_data.get("top_causal_factors", [])[:top_k]
         
-        # Get feature metadata from dedicated model_features path (always available in Lambda)
-        feature_metadata = get_feature_metadata(cohort)
+        # Feature metadata: prefer from dashboard_data (avoids separate path lookup); fallback to get_feature_metadata
+        feature_metadata = dashboard_data.get("feature_metadata", {})
+        if not feature_metadata:
+            feature_metadata = get_feature_metadata(cohort)
         
         return _response(200, {
             "cohort": cohort,
@@ -1142,5 +1164,6 @@ def handle_causal(event: Dict[str, Any]) -> Dict[str, Any]:
         })
     
     except Exception as e:
-        logger.error(f"Error in handle_causal: {e}")
+        import traceback
+        logger.error(f"Error in handle_causal: {e}\n{traceback.format_exc()}")
         return _response(500, {"error": str(e)})
