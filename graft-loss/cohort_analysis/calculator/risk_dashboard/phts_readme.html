@@ -180,22 +180,22 @@
     </header>
 
     <div class="container">
-        <a href="index.html" class="back-link">← Back to Risk Calculator</a>
+        <a href="phts_dashboard.html" class="back-link">← Back to Risk Calculator</a>
 
         <!-- Overview Section -->
         <section id="overview">
             <h2>Overview</h2>
             <p>
-                The PHTS (Pediatric Heart Transplant Survival) Risk Calculator uses machine learning models to predict graft loss risk for pediatric heart transplant patients. The calculator supports three diagnostic cohorts and provides both risk prediction and causal analysis capabilities.
+                The PHTS (Pediatric Heart Transplant Survival) Risk Calculator uses machine learning models to predict graft loss risk for pediatric heart transplant patients. The calculator uses a <strong>single Combined cohort</strong> (all primary diagnoses, with <code>primary_etiology</code> as a feature) and provides two model variants plus risk prediction and causal analysis.
             </p>
 
-            <h3>Cohorts</h3>
-            <p>The calculator supports three diagnostic cohorts:</p>
+            <h3>Cohort and Model Variants</h3>
+            <p>The calculator uses the <strong>Combined</strong> cohort with two model variants:</p>
             <ul>
-                <li><strong>CHD (Congenital Heart Disease)</strong>: Patients with congenital heart disease</li>
-                <li><strong>Combined</strong>: All primary diagnoses (includes <code>primary_etiology</code> as a feature)</li>
-                <li><strong>Myocardio</strong>: Cardiomyopathy and Myocarditis cohort</li>
+                <li><strong>Baseline Model</strong>: Base calculator features only (~104 features)</li>
+                <li><strong>Extended Model</strong>: Base features plus recommended additional features (~120 features, e.g. BNP, CRP, secondary/tertiary diagnosis, lipid panel)</li>
             </ul>
+            <p>Each variant is trained and evaluated separately; the best-performing model type is selected per variant and deployed for that tab.</p>
 
             <h3>Clinical Features</h3>
             <p>The calculator uses <strong>modifiable clinical features</strong> that can be influenced by clinical intervention:</p>
@@ -219,170 +219,51 @@
             <h2>Models and Results</h2>
 
             <h3>Model Types</h3>
-            <p>The calculator uses three types of survival models:</p>
+            <p>For each model variant (Baseline and Extended), three survival model types are trained:</p>
             <ol>
                 <li><strong>CatBoost-Cox</strong>: Gradient boosting with native categorical support</li>
                 <li><strong>XGBoost-Cox</strong>: Extreme gradient boosting for survival analysis</li>
                 <li><strong>XGBoost-Cox RF</strong>: XGBoost with random forest base learners</li>
             </ol>
+            <p>The <strong>best-performing model</strong> per variant is selected and deployed (see selection criteria below).</p>
 
             <h3>Best Model Selection</h3>
-            <p>Each cohort uses the <strong>best-performing model</strong> based on evaluation metrics. The best model is automatically selected for each cohort.</p>
+            <p>Selection is done <strong>per variant</strong> (Baseline and Extended) using Monte Carlo cross-validation (MC-CV):</p>
+            <ul>
+                <li><strong>Primary metric</strong>: Mean C-index (Concordance Index) across MC-CV splits</li>
+                <li><strong>Tiebreaker</strong>: Mean AU-PRC (Average Precision) when two or more models tie on C-index</li>
+            </ul>
+            <p>The chosen model is written to <code>best_model.txt</code> in that variant’s output directory (<code>Combined_base/</code> or <code>Combined_enhanced/</code>). The dashboard loads and uses only this best model for each tab (no ensemble).</p>
 
+            <h3>Model Performance Metrics (MC-CV)</h3>
+            <p>During training, each model is evaluated with the following metrics (reported per split and aggregated):</p>
             <table>
                 <thead>
                     <tr>
-                        <th>Cohort</th>
-                        <th>Best Model (Deployed)</th>
-                        <th>C-Index (Single Eval)</th>
-                        <th>C-Index (MC-CV Mean)</th>
-                        <th>95% CI (MC-CV)</th>
+                        <th>Metric</th>
+                        <th>Description</th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr>
-                        <td><strong>CHD</strong></td>
-                        <td>XGBoost</td>
-                        <td>0.645</td>
-                        <td>0.472</td>
-                        <td>0.429 - 0.538</td>
+                        <td><strong>C-index</strong></td>
+                        <td>Concordance index for survival (primary selection metric). Mean ± SD and 95% CI across splits.</td>
                     </tr>
                     <tr>
-                        <td><strong>Combined</strong></td>
-                        <td>XGBoost</td>
-                        <td>0.677</td>
-                        <td>0.434</td>
-                        <td>0.404 - 0.469</td>
+                        <td><strong>AU-PRC</strong></td>
+                        <td>Area under the precision-recall curve (tiebreaker for selection).</td>
                     </tr>
                     <tr>
-                        <td><strong>Myocardio</strong></td>
-                        <td>CatBoost</td>
-                        <td>0.599</td>
-                        <td>0.567</td>
-                        <td>0.483 - 0.639</td>
+                        <td><strong>AUC</strong></td>
+                        <td>Area under the ROC curve at the evaluation time horizon (e.g. 1 year).</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Recall</strong></td>
+                        <td>Recall at the evaluation time horizon.</td>
                     </tr>
                 </tbody>
             </table>
-
-            <div class="info-box">
-                <strong>Note:</strong> The deployed models are selected based on single evaluation performance. MC-CV results show CatBoost performs best on average across all cohorts, but the deployed models may differ based on specific evaluation criteria.
-            </div>
-
-            <h3>Model Performance by Cohort</h3>
-
-            <h4>CHD Cohort</h4>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Model</th>
-                        <th>C-Index Mean</th>
-                        <th>C-Index SD</th>
-                        <th>95% CI Lower</th>
-                        <th>95% CI Upper</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td><strong>CatBoost</strong> ⭐</td>
-                        <td><strong>0.577</strong></td>
-                        <td>0.024</td>
-                        <td>0.534</td>
-                        <td>0.621</td>
-                    </tr>
-                    <tr>
-                        <td>XGBoost</td>
-                        <td>0.472</td>
-                        <td>0.032</td>
-                        <td>0.429</td>
-                        <td>0.538</td>
-                    </tr>
-                    <tr>
-                        <td>Simple Calculator</td>
-                        <td>0.417</td>
-                        <td>0.027</td>
-                        <td>0.375</td>
-                        <td>0.461</td>
-                    </tr>
-                </tbody>
-            </table>
-            <p><strong>Deployed Model:</strong> XGBoost (C-index: 0.645 from single evaluation)<br>
-            <strong>MC-CV Performance:</strong> CatBoost has highest average C-index (0.577) across 25 splits</p>
-
-            <h4>Combined Cohort</h4>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Model</th>
-                        <th>C-Index Mean</th>
-                        <th>C-Index SD</th>
-                        <th>95% CI Lower</th>
-                        <th>95% CI Upper</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td><strong>CatBoost</strong> ⭐</td>
-                        <td><strong>0.567</strong></td>
-                        <td>0.064</td>
-                        <td>0.430</td>
-                        <td>0.647</td>
-                    </tr>
-                    <tr>
-                        <td>XGBoost</td>
-                        <td>0.434</td>
-                        <td>0.020</td>
-                        <td>0.404</td>
-                        <td>0.469</td>
-                    </tr>
-                    <tr>
-                        <td>Simple Calculator</td>
-                        <td>0.349</td>
-                        <td>0.025</td>
-                        <td>0.311</td>
-                        <td>0.393</td>
-                    </tr>
-                </tbody>
-            </table>
-            <p><strong>Deployed Model:</strong> XGBoost (C-index: 0.677 from single evaluation)<br>
-            <strong>MC-CV Performance:</strong> CatBoost has highest average C-index (0.567) across 25 splits</p>
-
-            <h4>Myocardio Cohort</h4>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Model</th>
-                        <th>C-Index Mean</th>
-                        <th>C-Index SD</th>
-                        <th>95% CI Lower</th>
-                        <th>95% CI Upper</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td><strong>CatBoost</strong> ⭐</td>
-                        <td><strong>0.567</strong></td>
-                        <td>0.042</td>
-                        <td>0.483</td>
-                        <td>0.639</td>
-                    </tr>
-                    <tr>
-                        <td>XGBoost</td>
-                        <td>0.478</td>
-                        <td>0.040</td>
-                        <td>0.402</td>
-                        <td>0.535</td>
-                    </tr>
-                    <tr>
-                        <td>Simple Calculator</td>
-                        <td>0.438</td>
-                        <td>0.033</td>
-                        <td>0.374</td>
-                        <td>0.494</td>
-                    </tr>
-                </tbody>
-            </table>
-            <p><strong>Deployed Model:</strong> CatBoost (C-index: 0.599 from single evaluation)<br>
-            <strong>MC-CV Performance:</strong> CatBoost has highest average C-index (0.567) across 25 splits</p>
+            <p>Exact values for the deployed run are stored in <code>best_model.txt</code> and in the training logs (e.g. MC-CV mean C-index and AU-PRC per model).</p>
 
             <h3>C-Index Interpretation</h3>
             <p>The <strong>C-index (Concordance Index)</strong> measures the model's ability to correctly rank patients by risk:</p>
@@ -393,15 +274,15 @@
                 <li><strong>C-index > 0.6</strong>: Moderate discrimination</li>
                 <li><strong>C-index < 0.6</strong>: Poor discrimination</li>
             </ul>
-            <p><strong>Our Models:</strong> All cohorts achieve C-index > 0.56, indicating <strong>moderate to good discrimination</strong> for graft loss risk prediction.</p>
+            <p><strong>Our Models:</strong> Selection targets the highest C-index (and AU-PRC when tied); typical deployed models achieve <strong>moderate to good discrimination</strong> (C-index often in the 0.56–0.67 range depending on variant and run).</p>
 
             <h3>Risk Score Calculation</h3>
-            <p>By default, the calculator uses <strong>only the best model</strong> for each cohort:</p>
+            <p>The calculator uses <strong>only the best model</strong> for the selected variant (Baseline or Extended):</p>
             <ol>
-                <li><strong>Load Best Model</strong>: The best-performing model is loaded</li>
-                <li><strong>Prepare Features</strong>: User-provided clinical features are converted to a feature vector</li>
-                <li><strong>Predict</strong>: The model generates a raw prediction score</li>
-                <li><strong>Normalize</strong>: Raw score is converted to percentile (0-100) based on training data distribution</li>
+                <li><strong>Load Best Model</strong>: The best-performing model for that variant is loaded (from <code>best_model.txt</code>)</li>
+                <li><strong>Prepare Features</strong>: User-provided clinical features are converted to the model’s feature vector</li>
+                <li><strong>Predict</strong>: The model outputs a raw risk score</li>
+                <li><strong>Normalize</strong>: Raw score is converted to percentile (0–100) using the training distribution for that variant</li>
             </ol>
 
             <h3>Risk Score Normalization</h3>
@@ -422,12 +303,12 @@
             </ul>
 
             <h3>Model Training</h3>
-            <p>Models are trained using:</p>
+            <p>Models are trained per variant (Baseline and Extended) using:</p>
             <ul>
-                <li><strong>Data Split</strong>: 25 Monte Carlo Cross-Validation splits</li>
-                <li><strong>Feature Engineering</strong>: Clinical features are prepared and standardized</li>
-                <li><strong>Evaluation Metric</strong>: C-index (Concordance Index) for survival analysis</li>
-                <li><strong>Selection</strong>: Best model (highest C-index) is selected for each cohort</li>
+                <li><strong>Data split</strong>: Monte Carlo cross-validation (MC-CV) over multiple splits</li>
+                <li><strong>Feature engineering</strong>: Clinical features prepared and standardized per variant</li>
+                <li><strong>Evaluation metrics</strong>: C-index (primary), AU-PRC, AUC, and Recall at a fixed time horizon</li>
+                <li><strong>Selection</strong>: Best model per variant by mean C-index; AU-PRC used as tiebreaker</li>
             </ul>
         </section>
 
@@ -548,7 +429,7 @@
         </section>
 
         <footer>
-            <p><strong>PHTS Risk Calculator</strong> - Last Updated: 2026-01-13</p>
+            <p><strong>PHTS Risk Calculator</strong> - Last Updated: 2026-01-26</p>
             <p>Pediatric Heart Transplant Survival Risk Prediction System</p>
         </footer>
     </div>

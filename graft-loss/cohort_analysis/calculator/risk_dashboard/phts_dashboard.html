@@ -667,6 +667,9 @@
       <!-- Causal Factors Comparison -->
       <div class="causal-charts" style="margin-bottom: 2rem;">
         <h3>Top Causal Factors Comparison</h3>
+        <div id="causal-comparison-no-data" class="info-box" style="display: none; margin: 1rem 0;">
+          <p>No causal factors available for comparison. Ensure SHAP/FFA has been run for both Baseline and Extended models and dashboard data is deployed (<code>dashboard_data.json</code> with <code>top_causal_factors</code> in <code>dashboard_data/Combined_base/</code> and/or <code>dashboard_data/Combined_enhanced/</code>, or <code>dashboard_data/Combined/</code>).</p>
+        </div>
         <div class="chart-container" style="height: 500px;">
           <canvas id="causal-comparison-chart"></canvas>
         </div>
@@ -675,6 +678,9 @@
       <!-- Feature Importance Comparison -->
       <div class="causal-charts" style="margin-bottom: 2rem;">
         <h3>Feature Importance Comparison</h3>
+        <div id="importance-comparison-no-data" class="info-box" style="display: none; margin: 1rem 0;">
+          <p>No causal factors available for comparison. Deploy <code>dashboard_data.json</code> with <code>top_causal_factors</code> for both models.</p>
+        </div>
         <div class="chart-container" style="height: 500px;">
           <canvas id="importance-comparison-chart"></canvas>
         </div>
@@ -1909,6 +1915,20 @@
       
       const baselineFactors = comparisonData.baseline.causal.top_causal_factors || [];
       const enhancedFactors = comparisonData.enhanced.causal.top_causal_factors || [];
+      const noDataEl = document.getElementById('causal-comparison-no-data');
+      const chartContainer = document.getElementById('causal-comparison-chart').parentElement;
+      
+      if (baselineFactors.length === 0 && enhancedFactors.length === 0) {
+        if (noDataEl) noDataEl.style.display = 'block';
+        if (chartContainer) chartContainer.style.display = 'none';
+        if (causalComparisonChart) {
+          causalComparisonChart.destroy();
+          causalComparisonChart = null;
+        }
+        return;
+      }
+      if (noDataEl) noDataEl.style.display = 'none';
+      if (chartContainer) chartContainer.style.display = 'block';
       
       // Get top 10 features from both models
       const allFeatures = new Set();
@@ -1916,13 +1936,14 @@
       enhancedFactors.slice(0, 10).forEach(f => allFeatures.add(f.feature));
       
       const features = Array.from(allFeatures).slice(0, 10);
+      // Use same metric as Feature Importance chart (causal_responsibility 0-1) so both charts show visible bars
       const baselineImportance = features.map(f => {
         const factor = baselineFactors.find(x => x.feature === f);
-        return factor ? (factor.importance || factor.combined_importance || 0) : 0;
+        return factor ? (factor.causal_responsibility ?? factor.combined_importance ?? factor.importance ?? 0) : 0;
       });
       const enhancedImportance = features.map(f => {
         const factor = enhancedFactors.find(x => x.feature === f);
-        return factor ? (factor.importance || factor.combined_importance || 0) : 0;
+        return factor ? (factor.causal_responsibility ?? factor.combined_importance ?? factor.importance ?? 0) : 0;
       });
       
       const ctx = document.getElementById('causal-comparison-chart').getContext('2d');
@@ -1958,7 +1979,8 @@
           scales: {
             x: {
               beginAtZero: true,
-              title: { display: true, text: 'Importance Score' }
+              max: 1,
+              title: { display: true, text: 'Causal Responsibility' }
             },
             y: {
               title: { display: true, text: 'Feature' }
@@ -1977,6 +1999,19 @@
       
       const baselineFactors = comparisonData.baseline.causal.top_causal_factors || [];
       const enhancedFactors = comparisonData.enhanced.causal.top_causal_factors || [];
+      const noDataEl = document.getElementById('importance-comparison-no-data');
+      const chartContainer = document.getElementById('importance-comparison-chart').parentElement;
+      if (baselineFactors.length === 0 && enhancedFactors.length === 0) {
+        if (noDataEl) noDataEl.style.display = 'block';
+        if (chartContainer) chartContainer.style.display = 'none';
+        if (importanceComparisonChart) {
+          importanceComparisonChart.destroy();
+          importanceComparisonChart = null;
+        }
+        return;
+      }
+      if (noDataEl) noDataEl.style.display = 'none';
+      if (chartContainer) chartContainer.style.display = 'block';
       
       // Get top 15 features from both models
       const allFeatures = new Set();
@@ -2097,14 +2132,15 @@
       // Render baseline factors
       const baselineList = document.getElementById('baseline-causal-list');
       baselineList.innerHTML = '';
+      const importanceVal = (f) => (f.importance ?? f.combined_importance ?? f.importance_mean ?? f.shap_importance ?? f.causal_responsibility ?? 0);
       baselineFactors.slice(0, 10).forEach((factor, index) => {
         const factorDiv = document.createElement('div');
         factorDiv.className = 'factor-item';
         factorDiv.innerHTML = `
           <div class="factor-name">${index + 1}. ${factor.feature}</div>
           <div class="factor-importance">
-            Importance: ${(factor.importance || factor.combined_importance || 0).toFixed(4)} | 
-            Responsibility: ${(factor.causal_responsibility || 0).toFixed(4)}
+            Importance: ${importanceVal(factor).toFixed(4)} |
+            Responsibility: ${(factor.causal_responsibility ?? 0).toFixed(4)}
           </div>
         `;
         baselineList.appendChild(factorDiv);
@@ -2119,8 +2155,8 @@
         factorDiv.innerHTML = `
           <div class="factor-name">${index + 1}. ${factor.feature}</div>
           <div class="factor-importance">
-            Importance: ${(factor.importance || factor.combined_importance || 0).toFixed(4)} | 
-            Responsibility: ${(factor.causal_responsibility || 0).toFixed(4)}
+            Importance: ${importanceVal(factor).toFixed(4)} |
+            Responsibility: ${(factor.causal_responsibility ?? 0).toFixed(4)}
           </div>
         `;
         enhancedList.appendChild(factorDiv);

@@ -2023,6 +2023,12 @@ def generate_dashboard_outputs(
         # Filter out cohort-defining variables from causal factors
         causal_df_filtered = causal_df[~causal_df['feature'].isin(cohort_defining_vars)].copy()
         top_causal = causal_df_filtered.head(top_k).copy()
+        # Ensure dashboard has importance/combined_importance (FFA causal_df has causal_responsibility, shap_importance only)
+        if 'feature' in combined_importance.columns and 'combined_importance' in combined_importance.columns:
+            imp_merge = combined_importance[['feature', 'combined_importance']].drop_duplicates('feature')
+            top_causal = top_causal.merge(imp_merge, on='feature', how='left')
+            top_causal['importance'] = top_causal['combined_importance'].fillna(0)
+            top_causal['combined_importance'] = top_causal['combined_importance'].fillna(0)
 
     # Also filter from combined_importance for feature importance
     combined_importance_filtered = combined_importance[~combined_importance['feature'].isin(cohort_defining_vars)].copy()
