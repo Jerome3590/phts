@@ -95,6 +95,33 @@ def _read_table_parquet_or_csv(path: Path, prefer_parquet: bool = True) -> Optio
         return pd.read_csv(csv_path)
     return None
 
+
+def _safe_str_for_hash(x: Any) -> str:
+    """Convert a value to a hashable string; handles bytearray/bytes from Parquet/DuckDB."""
+    if x is None or (isinstance(x, float) and pd.isna(x)):
+        return ""
+    if isinstance(x, (bytes, bytearray)):
+        return x.decode("utf-8", errors="replace")
+    return str(x)
+
+
+def _ensure_string_columns_and_index(df: pd.DataFrame) -> pd.DataFrame:
+    """Ensure column names and object columns are str (no bytearray/bytes). Avoids unhashable type errors."""
+    df = df.copy()
+    # Column names as str (DuckDB/Parquet can yield bytes)
+    df.columns = [_safe_str_for_hash(c) for c in df.columns]
+    for col in df.columns:
+        if df[col].dtype == object:
+            # Convert bytearray/bytes to str so set(), nunique(), Categorical work
+            try:
+                sample = df[col].dropna()
+                if len(sample) and isinstance(sample.iloc[0], (bytes, bytearray)):
+                    df[col] = df[col].apply(lambda v: v.decode("utf-8", errors="replace") if isinstance(v, (bytes, bytearray)) else (str(v) if pd.notna(v) else v))
+            except Exception:
+                pass
+    return df
+
+
 # Import FFA analysis components
 FFA_AVAILABLE = False
 try:
@@ -388,6 +415,10 @@ def load_calculator_importance(cohort: str, model_variant: Optional[str] = None)
             if 'importance_mean' in df.columns and 'importance' not in df.columns:
                 df = df.copy()
                 df['importance'] = df['importance_mean']
+            # Ensure 'feature' column is str (Parquet/DuckDB can return bytes/bytearray -> unhashable)
+            if 'feature' in df.columns and df['feature'].dtype == object:
+                df = df.copy()
+                df['feature'] = df['feature'].apply(_safe_str_for_hash)
             importance_data[model_name] = df
             logger.info(f"Loaded {model_name} importance: {len(df)} features from {file_path}")
         else:
@@ -2756,7 +2787,7 @@ def main():
         
         logger.info("Step 4: Running full rule-based FFA analysis on TEST SET...")
         logger.info("Rules will be applied to test data instances to count actual rule firings")
-        causal_df = run_ffa_with_shap(
+        causal_df, feature_level_rules = run_ffa_with_shap(
             args.cohort,
             xgboost_json,
             shap_map,
@@ -2824,8 +2855,11 @@ def main():
             feature_cols = [col for col in df_clean.columns if col not in ['time', 'status', 'txpl_year']]
             feature_data_for_metadata = df_clean[feature_cols].copy()
 
+            # Normalize so no bytearray/bytes (Parquet/DuckDB can yield these); avoids "unhashable type: 'bytearray'"
+            feature_data_for_metadata = _ensure_string_columns_and_index(feature_data_for_metadata)
+
             # Keep top features (e.g. sec_dx) even if constant in this slice, so we can capture their levels
-            top_feature_names = set(combined_importance['feature'].tolist())
+            top_feature_names = {_safe_str_for_hash(x) for x in combined_importance['feature'].tolist()}
             constant_cols = [
                 col for col in feature_data_for_metadata.columns
                 if feature_data_for_metadata[col].nunique() < 2 and col not in top_feature_names
