@@ -778,7 +778,8 @@ def load_calculator_data_for_shap(cohort: str, use_parquet_cache: bool = True) -
         if data_path is None or cache_path.stat().st_mtime >= data_path.stat().st_mtime:
             logger.info(f"Loading calculator data from Parquet cache: {cache_path}")
             try:
-                return _read_parquet(cache_path)
+                df = _read_parquet(cache_path)
+                return _ensure_string_columns_and_index(df)
             except Exception as e:
                 logger.warning(f"Parquet cache read failed, falling back to SAS: {e}")
 
@@ -825,6 +826,9 @@ def load_calculator_data_for_shap(cohort: str, use_parquet_cache: bool = True) -
     logger.info("Preparing calculator features (eGFR, BMI, dichotomous variables, etc.)...")
     df = prepare_calculator_features(df)
     logger.info("Feature preparation complete")
+
+    # Normalize so no bytearray/bytes (avoids unhashable type in nunique/set/Categorical downstream)
+    df = _ensure_string_columns_and_index(df)
 
     if use_parquet_cache:
         try:
