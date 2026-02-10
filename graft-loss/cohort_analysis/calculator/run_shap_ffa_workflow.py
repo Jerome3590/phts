@@ -554,6 +554,25 @@ def find_xgboost_model_json(cohort: str, model_variant: Optional[str] = None) ->
     return None
 
 
+# Canonical secondary diagnosis levels (PHTS); used for one-hot encoding and dashboard dropdown
+# Empty, Other, None dropped (no/minimal predictive value)
+SEC_DX_LEVELS = [
+    "ARVD/C", "Dilated", "Hypertrophic", "MIXED", "Restrictive", "Unknown"
+]
+
+# Other categoricals (from PHTS / eda/converted_vars_log.csv) – reference only; boolean-like use 0/1 numeric
+# ter_dx: Chemotherapy-Induced, Conduction Defect, Empty, Familial, Ischemic, Isolated/Idiopathic, LVNC,
+#         Metabolic/Syndromic/Mitochondrial, Neuromuscular, Other, S/P Myocarditis, S/P Radiation, Unknown
+# primary_etiology: Cardiac Tumor, Cardiomyopathy, Congenital HD, Myocarditis, Other, Specify
+# hxsurg, chd_sv, hxaf_fl: typically 0/1 in data → treated as numeric 0/1 in metadata and UI
+
+
+def _sec_dx_safe_col(label: str) -> str:
+    """Column name for one-hot: sec_dx_<label>, with / and spaces replaced for safety."""
+    safe = label.replace("/", "_").replace(" ", "_").strip()
+    return f"sec_dx_{safe}"
+
+
 def prepare_calculator_features(df: pd.DataFrame) -> pd.DataFrame:
     """
     Prepare calculator features to match R's prepare_calculator_features() function.
@@ -745,6 +764,18 @@ def prepare_calculator_features(df: pd.DataFrame) -> pd.DataFrame:
     if "egfr_tx" in df.columns and "egfr_listing" in df.columns:
         df["egfr_change"] = df["egfr_tx"] - df["egfr_listing"]
         logger.info("Calculated egfr_change")
+
+    # ============================================================================
+    # ONE-HOT ENCODE sec_dx (Secondary diagnosis) for dropdown and importance
+    # ============================================================================
+    if "sec_dx" in df.columns:
+        raw = df["sec_dx"].astype(str).str.strip()
+        for level in SEC_DX_LEVELS:
+            col_name = _sec_dx_safe_col(level)
+            # Case-insensitive match (raw may be "Dilated" or "dilated")
+            df[col_name] = (raw.str.lower() == level.lower()).astype(int)
+        df = df.drop(columns=["sec_dx"])
+        logger.info(f"One-hot encoded sec_dx into {len(SEC_DX_LEVELS)} columns: {[_sec_dx_safe_col(lev) for lev in SEC_DX_LEVELS]}")
 
     return df
 
@@ -2101,7 +2132,8 @@ def generate_feature_metadata(
     known_numeric = ['bmi', 'egfr', 'age', 'weight', 'height', 'creat', 'bun',
                      'albumin', 'ast', 'alt', 'bili', 'chol', 'hdl', 'ldl', 'tg',
                      'tp', 'brp', 'bram', 'donisch', 'durcarst', 'bnp', 'sa', 'palb']
-    known_binary_or_categorical = ['sec_dx', 'ter_dx', 'hxsurg', 'chd_sv', 'hxaf_fl', 'prim_dx']
+    # sec_dx is one-hot encoded as sec_dx_*; ter_dx/prim_dx multi-level; hxsurg, chd_sv, hxaf_fl binary → dropdown (selected=1, not selected=0)
+    known_binary_or_categorical = ['ter_dx', 'hxsurg', 'chd_sv', 'hxaf_fl', 'prim_dx']
     col_lower = {c.lower(): c for c in df.columns}
 
     for feature_name in feature_names:
@@ -2122,8 +2154,8 @@ def generate_feature_metadata(
                 if is_known_numeric:
                     feature_metadata[feature_name] = 'numeric'
                 elif is_known_binary_cat or is_binary_vals:
+                    # Binary: one dropdown (No=0, Yes=1); selected option → value, others → 0
                     feature_metadata[feature_name] = 'binary'
-                    # Actual levels from data: 0 and any value > 0 (sorted)
                     levels = sorted(set(int(round(x)) for x in unique_vals))
                     feature_levels[feature_name] = levels
                 else:
@@ -2133,7 +2165,6 @@ def generate_feature_metadata(
         else:
             feature_metadata[feature_name] = 'numeric'
 
-    # Ensure every binary/categorical feature has at least [0, 1] for dropdowns (e.g. if column was missing or constant)
     for feature_name in feature_names:
         if feature_metadata.get(feature_name) == 'binary' and feature_name not in feature_levels:
             feature_levels[feature_name] = [0, 1]
@@ -2308,14 +2339,33 @@ def generate_dashboard_outputs(
         feature_metadata, feature_levels = generate_feature_metadata(feature_data, feature_names)
         logger.info(f"Generated feature metadata for {len(feature_metadata)} features")
         logger.info(f"Generated feature_levels for {len(feature_levels)} features (dropdown options)")
-    # Ensure known categoricals always have levels (e.g. if feature_data missing or column dropped)
-    known_cat = ['sec_dx', 'ter_dx', 'hxsurg', 'chd_sv', 'hxaf_fl', 'prim_dx']
+    # Ensure known categoricals always have levels (sec_dx is one-hot so no single sec_dx level list)
+    known_cat = ['ter_dx', 'hxsurg', 'chd_sv', 'hxaf_fl', 'prim_dx']
     for f in feature_names:
         if any(c in f.lower() for c in known_cat):
             if f not in feature_levels:
                 feature_levels[f] = [0, 1]
             if f not in feature_metadata:
                 feature_metadata[f] = 'binary'
+
+    # sec_dx dropdown: options = canonical levels; keep only those with non-trivial importance
+    imp_series = combined_importance_filtered.set_index('feature')['combined_importance_norm']
+    max_imp = imp_series.max() if len(imp_series) else 0
+    min_importance_threshold = max(1e-6, 0.01 * max_imp) if max_imp > 0 else 0
+    sec_dx_dropdown_options: List[str] = []
+    sec_dx_one_hot_map: Dict[str, str] = {}
+    for level in SEC_DX_LEVELS:
+        col = _sec_dx_safe_col(level)
+        imp = imp_series.get(col, 0) if hasattr(imp_series, 'get') else 0
+        try:
+            imp = float(imp)
+        except (TypeError, ValueError):
+            imp = 0
+        sec_dx_one_hot_map[level] = col
+        if imp >= min_importance_threshold:
+            sec_dx_dropdown_options.append(level)
+    if not sec_dx_dropdown_options:
+        sec_dx_dropdown_options = list(SEC_DX_LEVELS)
 
     # Create comprehensive dashboard data
     dashboard_data = {
@@ -2334,7 +2384,9 @@ def generate_dashboard_outputs(
         'feature_importance': combined_importance_filtered.head(50).to_dict('records'),
         'feature_metadata': feature_metadata,
         'feature_levels': feature_levels,
-        'feature_level_labels': feature_level_labels or {},  # labels[i] = display label for level i (e.g. sec_dx)
+        'feature_level_labels': feature_level_labels or {},
+        'sec_dx_dropdown_options': sec_dx_dropdown_options,
+        'sec_dx_one_hot_map': sec_dx_one_hot_map,
         'notes': {
             'model_json_used': 'XGBoost (CatBoost JSON not used due to categorical hashing)',
             'shap_filtering': 'XGBoost SHAP only (simplified pipeline)' if use_xgboost_only else 'Combined SHAP from both XGBoost and CatBoost',

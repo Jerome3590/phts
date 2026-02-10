@@ -527,20 +527,17 @@ curl -X POST 'https://API_ID.execute-api.REGION.amazonaws.com/prod/risk' \
 
 ### Documentation tab: "Failed to load metrics"
 
-The Documentation tab fetches metrics from **GET /model-metrics**. If that route is missing in API Gateway, the browser shows "Failed to fetch".
+The Documentation tab fetches metrics from **GET /model-metrics**. If that route is missing in API Gateway, you may see 403 "Missing Authentication Token" or "Failed to fetch".
 
 **Fix:** Add the `/model-metrics` route and redeploy:
 
-1. Re-run the API Gateway setup (it now creates `/model-metrics`):
+1. Re-run the API Gateway setup. The script is idempotent: it gets-or-creates each resource, so you can safely run it even if `/metadata`, `/risk`, `/causal` already exist. It will add `/model-metrics` if missing:
    ```bash
    ./setup_api_gateway.sh
    ```
-   If your API already has `/metadata`, `/risk`, `/causal`, the script may fail when creating those again. In that case, add only the new resource manually (see `setup_api_gateway.sh` Step 4b for the exact `aws apigateway create-resource` and `put-method` / `put-integration` commands for `model-metrics`), then deploy:
-   ```bash
-   aws apigateway create-deployment --rest-api-id YOUR_API_ID --stage-name prod --region us-east-1
-   ```
+   The script creates the `model-metrics` resource, GET method, Lambda integration, and deploys the API.
 
-2. Verify: `curl -s 'https://YOUR_API_ID.execute-api.us-east-1.amazonaws.com/prod/model-metrics'` should return JSON with `best_model`, `c_index`, etc.
+2. Verify: `curl -s 'https://YOUR_API_ID.execute-api.us-east-1.amazonaws.com/prod/model-metrics'` should return JSON with `best_model`, `c_index`, etc. (or nulls if `best_model.txt` is not in the container).
 
 **If the route works but returns 404 from Lambda:** The Lambda container image may not have been updated. Rebuild and push the image, then update the function code so Lambda uses the new image: `./docker_build_phts.sh` (it now runs `update-function-code` by default), or manually: `aws lambda update-function-code --function-name phts-risk-calculator --image-uri YOUR_ECR_URI --region us-east-1`.
 

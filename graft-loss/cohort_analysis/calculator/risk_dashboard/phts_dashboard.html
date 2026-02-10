@@ -723,7 +723,15 @@
             if (input.type === 'number') {
               features[featureName] = parseFloat(value);
             } else if (input.type === 'select-one') {
-              features[featureName] = parseInt(value);
+              if (featureName === 'sec_dx') {
+                features[featureName] = value;
+              } else {
+                const n = parseInt(value, 10);
+                features[featureName] = (Number.isNaN(n) ? value : n);
+              }
+            } else if (input.type === 'number') {
+              const n = parseFloat(value);
+              features[featureName] = Number.isNaN(n) ? 0 : n;
             } else {
               features[featureName] = value;
             }
@@ -920,8 +928,10 @@
     });
     
     let riskFeatureLevels = {};
-    let riskFeatureLevelLabels = {};  // e.g. { sec_dx: ["None", "Type A", "Type B"] } – index = level
-    const KNOWN_CATEGORICAL = ['sec_dx', 'ter_dx', 'hxsurg', 'chd_sv', 'hxaf_fl', 'prim_dx'];
+    let riskFeatureLevelLabels = {};
+    let riskSecDxDropdownOptions = [];  // One dropdown: "Secondary diagnosis" with these labels (from API)
+    let riskSecDxOneHotMap = {};
+    const KNOWN_CATEGORICAL = ['ter_dx', 'hxsurg', 'chd_sv', 'hxaf_fl', 'prim_dx'];
 
     function levelLabel(v, labelsByIndex) {
       const n = Number(v);
@@ -953,6 +963,7 @@
       }
       let added = 0;
       for (const [featureName, levels] of Object.entries(levelsToShow)) {
+        if (featureName.startsWith('sec_dx_')) continue;
         if (existingIds.has(featureName) || !Array.isArray(levels) || levels.length === 0) continue;
         const labels = riskFeatureLevelLabels[featureName];
         const optionsHtml = levels.map(v => `<option value="${v}">${escapeHtml(levelLabel(v, labels))}</option>`).join('');
@@ -969,6 +980,20 @@
         if (sel) sel.value = String(levels[0]);
         added++;
       }
+      if (riskSecDxDropdownOptions && riskSecDxDropdownOptions.length > 0) {
+        const optionsHtml = riskSecDxDropdownOptions.map(l => `<option value="${escapeHtml(l)}">${escapeHtml(l)}</option>`).join('');
+        const div = document.createElement('div');
+        div.className = 'form-group';
+        div.innerHTML = `
+          <label for="sec_dx">Secondary diagnosis</label>
+          <select id="sec_dx">
+            <option value="">— Select —</option>
+            ${optionsHtml}
+          </select>
+        `;
+        container.appendChild(div);
+        added++;
+      }
       wrapper.style.display = added ? 'block' : 'none';
     }
 
@@ -981,8 +1006,10 @@
           const data = await response.json();
           riskFeatureLevels = data.feature_levels || {};
           riskFeatureLevelLabels = data.feature_level_labels || {};
-          if (Object.keys(riskFeatureLevels).length === 0) {
-            console.warn('Metadata has no feature_levels; using default [0,1] for sec_dx etc. Re-run SHAP/FFA and redeploy for actual levels.');
+          riskSecDxDropdownOptions = data.sec_dx_dropdown_options || [];
+          riskSecDxOneHotMap = data.sec_dx_one_hot_map || {};
+          if (Object.keys(riskFeatureLevels).length === 0 && riskSecDxDropdownOptions.length === 0) {
+            console.warn('Metadata has no feature_levels; using default [0,1] for ter_dx etc. Re-run SHAP/FFA and redeploy for actual levels.');
           }
           populateRiskExtraFeatures();
         }
@@ -1001,6 +1028,8 @@
           console.log('Causal factors loaded:', data.causal_factors);
           riskFeatureLevels = data.feature_levels || {};
           riskFeatureLevelLabels = data.feature_level_labels || {};
+          riskSecDxDropdownOptions = data.sec_dx_dropdown_options || [];
+          riskSecDxOneHotMap = data.sec_dx_one_hot_map || {};
           populateRiskExtraFeatures();
         }
       } catch (error) {
@@ -1041,6 +1070,29 @@
       }
     }
 
+    function renderDocModelMetrics(data, el, s3El) {
+      const best = data.best_model != null ? data.best_model : '—';
+      const cIdx = data.c_index != null ? data.c_index.toFixed(4) : '—';
+      const cIdxCi = data.c_index_ci || '';
+      const auc = data.auc != null ? data.auc.toFixed(4) : '—';
+      const auPrc = data.au_prc != null ? data.au_prc.toFixed(4) : '—';
+      const recall = data.recall != null ? data.recall.toFixed(4) : '—';
+      let html = '<table style="width: auto; border-collapse: collapse; font-size: 0.9rem;">';
+      html += '<tr><td style="padding: 0.25rem 1rem 0.25rem 0;"><strong>Best model</strong></td><td>' + escapeHtml(best) + '</td></tr>';
+      html += '<tr><td style="padding: 0.25rem 1rem 0.25rem 0;"><strong>C-index</strong></td><td>' + cIdx + (cIdxCi ? ' (' + escapeHtml(cIdxCi) + ')' : '') + '</td></tr>';
+      html += '<tr><td style="padding: 0.25rem 1rem 0.25rem 0;"><strong>AUC</strong></td><td>' + auc + '</td></tr>';
+      html += '<tr><td style="padding: 0.25rem 1rem 0.25rem 0;"><strong>AU-PRC</strong></td><td>' + auPrc + '</td></tr>';
+      html += '<tr><td style="padding: 0.25rem 1rem 0.25rem 0;"><strong>Recall</strong></td><td>' + recall + '</td></tr>';
+      html += '</table>';
+      el.innerHTML = html;
+      if (data.s3_url) {
+        s3El.innerHTML = 'Metrics file in S3: <a href="' + escapeHtml(data.s3_url) + '" target="_blank" rel="noopener">View in S3</a>';
+        s3El.style.display = 'block';
+      } else {
+        s3El.style.display = 'none';
+      }
+    }
+
     async function loadDocModelMetrics() {
       const el = document.getElementById('doc-model-metrics');
       const s3El = document.getElementById('doc-metrics-s3-link');
@@ -1049,34 +1101,57 @@
         el.innerHTML = '<span style="color: #94a3b8;">API URL not set.</span>';
         return;
       }
+      el.innerHTML = '<span style="color: #64748b;">Loading metrics…</span>';
+      s3El.style.display = 'none';
+
+      let metricsS3Url = null;
+      try {
+        const metaRes = await fetch(`${LAMBDA_API_URL}/metadata?cohort=Combined`, { method: 'GET', mode: 'cors' });
+        if (metaRes.ok) {
+          const meta = await metaRes.json();
+          metricsS3Url = meta.metrics_s3_url || null;
+        }
+      } catch (e) {
+        console.log('Could not get metrics_s3_url from metadata:', e.message);
+      }
+
+      if (metricsS3Url) {
+        try {
+          const s3Res = await fetch(metricsS3Url, { method: 'GET', mode: 'cors' });
+          const s3Text = await s3Res.text();
+          if (s3Res.ok) {
+            const data = JSON.parse(s3Text);
+            if (data != null && (data.best_model != null || data.c_index != null || data.auc != null)) {
+              renderDocModelMetrics(data, el, s3El);
+              return;
+            }
+          }
+        } catch (e) {
+          console.log('S3 metrics fetch failed, falling back to API:', e.message);
+        }
+      }
+
       try {
         const res = await fetch(`${LAMBDA_API_URL}/model-metrics`, { method: 'GET', mode: 'cors' });
+        const text = await res.text();
         if (!res.ok) {
-          el.innerHTML = '<span style="color: #b91c1c;">Could not load metrics (' + res.status + ').</span>';
+          let msg = 'Could not load metrics (' + res.status + ').';
+          if (res.status === 403 || (text && text.includes('Missing Authentication Token'))) {
+            msg = 'The /model-metrics route is not configured on API Gateway. Run setup_api_gateway.sh (then redeploy the API stage) to add it.';
+          }
+          el.innerHTML = '<span style="color: #b91c1c;">' + escapeHtml(msg) + '</span>';
           s3El.style.display = 'none';
           return;
         }
-        const data = await res.json();
-        const best = data.best_model != null ? data.best_model : '—';
-        const cIdx = data.c_index != null ? data.c_index.toFixed(4) : '—';
-        const cIdxCi = data.c_index_ci || '';
-        const auc = data.auc != null ? data.auc.toFixed(4) : '—';
-        const auPrc = data.au_prc != null ? data.au_prc.toFixed(4) : '—';
-        const recall = data.recall != null ? data.recall.toFixed(4) : '—';
-        let html = '<table style="width: auto; border-collapse: collapse; font-size: 0.9rem;">';
-        html += '<tr><td style="padding: 0.25rem 1rem 0.25rem 0;"><strong>Best model</strong></td><td>' + escapeHtml(best) + '</td></tr>';
-        html += '<tr><td style="padding: 0.25rem 1rem 0.25rem 0;"><strong>C-index</strong></td><td>' + cIdx + (cIdxCi ? ' (' + escapeHtml(cIdxCi) + ')' : '') + '</td></tr>';
-        html += '<tr><td style="padding: 0.25rem 1rem 0.25rem 0;"><strong>AUC</strong></td><td>' + auc + '</td></tr>';
-        html += '<tr><td style="padding: 0.25rem 1rem 0.25rem 0;"><strong>AU-PRC</strong></td><td>' + auPrc + '</td></tr>';
-        html += '<tr><td style="padding: 0.25rem 1rem 0.25rem 0;"><strong>Recall</strong></td><td>' + recall + '</td></tr>';
-        html += '</table>';
-        el.innerHTML = html;
-        if (data.s3_url) {
-          s3El.innerHTML = 'Metrics file in S3: <a href="' + escapeHtml(data.s3_url) + '" target="_blank" rel="noopener">View in S3</a>';
-          s3El.style.display = 'block';
-        } else {
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch (e) {
+          el.innerHTML = '<span style="color: #b91c1c;">Invalid JSON from model-metrics API.</span>';
           s3El.style.display = 'none';
+          return;
         }
+        renderDocModelMetrics(data, el, s3El);
       } catch (err) {
         el.innerHTML = '<span style="color: #b91c1c;">Failed to load metrics: ' + escapeHtml(String(err.message)) + '</span>';
         s3El.style.display = 'none';
@@ -1298,11 +1373,25 @@
             </select>
           `;
         } else if (isNumeric) {
+          const levels = (causalAnalysisData.feature_levels && causalAnalysisData.feature_levels[featureName]) || [];
+          const is01Only = levels.length === 2 && Number(levels[0]) === 0 && Number(levels[1]) === 1;
+          if (is01Only) {
+            const labels = (causalAnalysisData.feature_level_labels && causalAnalysisData.feature_level_labels[featureName]) || null;
+            const optionsHtml = levels.map(v => {
+              const val = Number(v);
+              const label = levelLabel(v, labels);
+              const sel = (Number(currentValue) === val) ? ' selected' : '';
+              return `<option value="${v}"${sel}>${escapeHtml(label)}</option>`;
+            }).join('');
+            inputHTML = `
+              <select id="causal-${featureName}" onchange="updateCausalFactor('${featureName}', this.value)">
+                ${optionsHtml}
+              </select>
+            `;
+          } else {
           // Create range slider with number input
-          // Handle case where currentValue is 0 or very small
           const numValue = parseFloat(currentValue) || 0;
           let min, max, step;
-          
           if (numValue === 0 || numValue < 0.1) {
             // Default ranges for common clinical features when value is 0
             if (featureName.includes('age') || featureName.includes('donor')) {
@@ -1338,6 +1427,7 @@
                    value="${numValue}" 
                    onchange="updateCausalFactor('${featureName}', this.value); document.getElementById('causal-${featureName}-range').value = this.value">
           `;
+          }
         } else {
           inputHTML = `
             <input type="number" id="causal-${featureName}" 

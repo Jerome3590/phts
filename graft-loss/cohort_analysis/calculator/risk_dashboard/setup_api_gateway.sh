@@ -67,36 +67,48 @@ else
 fi
 echo ""
 
-# Step 3: Get root resource ID
-echo -e "${YELLOW}Getting root resource...${NC}"
+# Step 3: Get root resource ID and existing resources
+echo -e "${YELLOW}Getting root resource and existing resources...${NC}"
 ROOT_RESOURCE_ID=$(aws apigateway get-resources \
     --rest-api-id ${API_ID} \
     --region ${AWS_REGION} \
     --query 'items[?path==`/`].id' \
     --output text)
 echo -e "${GREEN}✓ Root resource: ${ROOT_RESOURCE_ID}${NC}"
-echo ""
 
-# Step 4: Create /metadata resource
-echo -e "${YELLOW}Creating /metadata resource...${NC}"
-METADATA_RESOURCE_ID=$(aws apigateway create-resource \
-    --rest-api-id ${API_ID} \
-    --parent-id ${ROOT_RESOURCE_ID} \
-    --path-part metadata \
-    --region ${AWS_REGION} \
-    --query 'id' \
-    --output text)
-echo -e "${GREEN}✓ Created /metadata resource${NC}"
+# Get-or-create resource by path (idempotent; uses AWS CLI query only, no jq)
+get_or_create_resource() {
+    local PATH_PART="$1"
+    local PATH_FULL="/${PATH_PART}"
+    local EXISTING_ID
+    EXISTING_ID=$(aws apigateway get-resources \
+        --rest-api-id ${API_ID} \
+        --region ${AWS_REGION} \
+        --query "items[?path=='${PATH_FULL}'].id" \
+        --output text 2>/dev/null)
+    if [ -n "$EXISTING_ID" ]; then
+        echo "$EXISTING_ID"
+        return
+    fi
+    aws apigateway create-resource \
+        --rest-api-id ${API_ID} \
+        --parent-id ${ROOT_RESOURCE_ID} \
+        --path-part "${PATH_PART}" \
+        --region ${AWS_REGION} \
+        --query 'id' \
+        --output text
+}
 
-# Create GET method for /metadata
+# Step 4: Ensure /metadata resource and GET method
+echo -e "${YELLOW}Ensuring /metadata resource...${NC}"
+METADATA_RESOURCE_ID=$(get_or_create_resource "metadata")
+echo -e "${GREEN}✓ /metadata resource ID: ${METADATA_RESOURCE_ID}${NC}"
 aws apigateway put-method \
     --rest-api-id ${API_ID} \
     --resource-id ${METADATA_RESOURCE_ID} \
     --http-method GET \
     --authorization-type NONE \
     --region ${AWS_REGION} > /dev/null
-
-# Set up Lambda integration
 aws apigateway put-integration \
     --rest-api-id ${API_ID} \
     --resource-id ${METADATA_RESOURCE_ID} \
@@ -105,30 +117,19 @@ aws apigateway put-integration \
     --integration-http-method POST \
     --uri "arn:aws:apigateway:${AWS_REGION}:lambda:path/2015-03-31/functions/${LAMBDA_ARN}/invocations" \
     --region ${AWS_REGION} > /dev/null
-
 echo -e "${GREEN}✓ Configured GET /metadata${NC}"
 echo ""
 
-# Step 4b: Create /model-metrics resource
-echo -e "${YELLOW}Creating /model-metrics resource...${NC}"
-MODEL_METRICS_RESOURCE_ID=$(aws apigateway create-resource \
-    --rest-api-id ${API_ID} \
-    --parent-id ${ROOT_RESOURCE_ID} \
-    --path-part model-metrics \
-    --region ${AWS_REGION} \
-    --query 'id' \
-    --output text)
-echo -e "${GREEN}✓ Created /model-metrics resource${NC}"
-
-# Create GET method for /model-metrics
+# Step 4b: Ensure /model-metrics resource and GET method
+echo -e "${YELLOW}Ensuring /model-metrics resource...${NC}"
+MODEL_METRICS_RESOURCE_ID=$(get_or_create_resource "model-metrics")
+echo -e "${GREEN}✓ /model-metrics resource ID: ${MODEL_METRICS_RESOURCE_ID}${NC}"
 aws apigateway put-method \
     --rest-api-id ${API_ID} \
     --resource-id ${MODEL_METRICS_RESOURCE_ID} \
     --http-method GET \
     --authorization-type NONE \
     --region ${AWS_REGION} > /dev/null
-
-# Set up Lambda integration
 aws apigateway put-integration \
     --rest-api-id ${API_ID} \
     --resource-id ${MODEL_METRICS_RESOURCE_ID} \
@@ -137,30 +138,19 @@ aws apigateway put-integration \
     --integration-http-method POST \
     --uri "arn:aws:apigateway:${AWS_REGION}:lambda:path/2015-03-31/functions/${LAMBDA_ARN}/invocations" \
     --region ${AWS_REGION} > /dev/null
-
 echo -e "${GREEN}✓ Configured GET /model-metrics${NC}"
 echo ""
 
-# Step 5: Create /risk resource
-echo -e "${YELLOW}Creating /risk resource...${NC}"
-RISK_RESOURCE_ID=$(aws apigateway create-resource \
-    --rest-api-id ${API_ID} \
-    --parent-id ${ROOT_RESOURCE_ID} \
-    --path-part risk \
-    --region ${AWS_REGION} \
-    --query 'id' \
-    --output text)
-echo -e "${GREEN}✓ Created /risk resource${NC}"
-
-# Create POST method for /risk
+# Step 5: Ensure /risk resource and POST method
+echo -e "${YELLOW}Ensuring /risk resource...${NC}"
+RISK_RESOURCE_ID=$(get_or_create_resource "risk")
+echo -e "${GREEN}✓ /risk resource ID: ${RISK_RESOURCE_ID}${NC}"
 aws apigateway put-method \
     --rest-api-id ${API_ID} \
     --resource-id ${RISK_RESOURCE_ID} \
     --http-method POST \
     --authorization-type NONE \
     --region ${AWS_REGION} > /dev/null
-
-# Set up Lambda integration
 aws apigateway put-integration \
     --rest-api-id ${API_ID} \
     --resource-id ${RISK_RESOURCE_ID} \
@@ -169,30 +159,19 @@ aws apigateway put-integration \
     --integration-http-method POST \
     --uri "arn:aws:apigateway:${AWS_REGION}:lambda:path/2015-03-31/functions/${LAMBDA_ARN}/invocations" \
     --region ${AWS_REGION} > /dev/null
-
 echo -e "${GREEN}✓ Configured POST /risk${NC}"
 echo ""
 
-# Step 6: Create /causal resource
-echo -e "${YELLOW}Creating /causal resource...${NC}"
-CAUSAL_RESOURCE_ID=$(aws apigateway create-resource \
-    --rest-api-id ${API_ID} \
-    --parent-id ${ROOT_RESOURCE_ID} \
-    --path-part causal \
-    --region ${AWS_REGION} \
-    --query 'id' \
-    --output text)
-echo -e "${GREEN}✓ Created /causal resource${NC}"
-
-# Create POST method for /causal
+# Step 6: Ensure /causal resource and POST method
+echo -e "${YELLOW}Ensuring /causal resource...${NC}"
+CAUSAL_RESOURCE_ID=$(get_or_create_resource "causal")
+echo -e "${GREEN}✓ /causal resource ID: ${CAUSAL_RESOURCE_ID}${NC}"
 aws apigateway put-method \
     --rest-api-id ${API_ID} \
     --resource-id ${CAUSAL_RESOURCE_ID} \
     --http-method POST \
     --authorization-type NONE \
     --region ${AWS_REGION} > /dev/null
-
-# Set up Lambda integration
 aws apigateway put-integration \
     --rest-api-id ${API_ID} \
     --resource-id ${CAUSAL_RESOURCE_ID} \
@@ -201,7 +180,6 @@ aws apigateway put-integration \
     --integration-http-method POST \
     --uri "arn:aws:apigateway:${AWS_REGION}:lambda:path/2015-03-31/functions/${LAMBDA_ARN}/invocations" \
     --region ${AWS_REGION} > /dev/null
-
 echo -e "${GREEN}✓ Configured POST /causal${NC}"
 echo ""
 

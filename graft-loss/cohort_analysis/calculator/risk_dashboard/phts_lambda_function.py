@@ -640,9 +640,17 @@ def prepare_feature_vector(features: Dict[str, Any], feature_names: List[str]) -
 
 # Model assumptions (for defaults when user does not provide values)
 # Per requirements: donor ischemic time assumed < 240 min when not given; size ratio 70-200%
-DONISCH_DEFAULT_MINUTES = 180  # < 240 minutes when not provided
 DONOR_RECIPIENT_RATIO_MIN_PCT = 70.0
 DONOR_RECIPIENT_RATIO_MAX_PCT = 200.0
+
+# Secondary diagnosis one-hot (Empty, Other, None dropped)
+SEC_DX_LEVELS = [
+    "ARVD/C", "Dilated", "Hypertrophic", "MIXED", "Restrictive", "Unknown"
+]
+
+
+def _sec_dx_col(label: str) -> str:
+    return f"sec_dx_{label.replace('/', '_').replace(' ', '_').strip()}"
 
 
 def prepare_features_for_inference(features: Dict[str, Any]) -> Dict[str, Any]:
@@ -721,7 +729,20 @@ def prepare_features_for_inference(features: Dict[str, Any]) -> Dict[str, Any]:
         creat = prepared.get("txcreat_r")
         if height and creat and creat > 0:
             prepared["egfr_tx"] = 0.413 * height / creat
-    
+
+    # sec_dx: one-hot from single dropdown value (e.g. "sec_dx": "Dilated" -> sec_dx_Dilated=1, others=0)
+    if "sec_dx" in prepared:
+        selected = prepared.pop("sec_dx")
+        for level in SEC_DX_LEVELS:
+            col = _sec_dx_col(level)
+            if selected is not None and str(selected).strip():
+                prepared[col] = 1 if (str(selected).strip().lower() == level.lower()) else 0
+            else:
+                prepared[col] = 0
+    else:
+        for level in SEC_DX_LEVELS:
+            prepared[_sec_dx_col(level)] = 0
+
     return prepared
 
 
@@ -1037,6 +1058,7 @@ def handle_metadata(event: Dict[str, Any]) -> Dict[str, Any]:
                 stage = request_context.get("stage")
                 if domain and stage:
                     api_url = f"https://{domain}/{stage}"
+        metrics_s3_url = os.environ.get("METRICS_S3_URL")  # Optional: dashboard tries S3 first, then API
         
         if cohort and cohort in AVAILABLE_COHORTS:
             # Load dashboard data for specific cohort and model variant
@@ -1044,7 +1066,9 @@ def handle_metadata(event: Dict[str, Any]) -> Dict[str, Any]:
                 dashboard_data = load_dashboard_data(cohort, model_variant=model_variant)
                 feature_metadata = get_feature_metadata(cohort)
                 feature_levels = dashboard_data.get("feature_levels", {})
-                feature_level_labels = dashboard_data.get("feature_level_labels", {})  # e.g. {"sec_dx": ["None", "Type A", ...]}
+                feature_level_labels = dashboard_data.get("feature_level_labels", {})
+                sec_dx_dropdown_options = dashboard_data.get("sec_dx_dropdown_options", SEC_DX_LEVELS)
+                sec_dx_one_hot_map = dashboard_data.get("sec_dx_one_hot_map", {lev: _sec_dx_col(lev) for lev in SEC_DX_LEVELS})
                 return _response(200, {
                     "cohort": cohort,
                     "model_variant": model_variant,
@@ -1054,7 +1078,10 @@ def handle_metadata(event: Dict[str, Any]) -> Dict[str, Any]:
                     "feature_metadata": feature_metadata,
                     "feature_levels": feature_levels,
                     "feature_level_labels": feature_level_labels,
-                    "api_url": api_url
+                    "sec_dx_dropdown_options": sec_dx_dropdown_options,
+                    "sec_dx_one_hot_map": sec_dx_one_hot_map,
+                    "api_url": api_url,
+                    "metrics_s3_url": metrics_s3_url
                 })
             except Exception as e:
                 logger.warning(f"Could not load dashboard data for {cohort}: {e}")
@@ -1065,7 +1092,8 @@ def handle_metadata(event: Dict[str, Any]) -> Dict[str, Any]:
                     "causal_factors": [],
                     "summary": {},
                     "warning": f"Dashboard data not available: {str(e)}",
-                    "api_url": api_url
+                    "api_url": api_url,
+                    "metrics_s3_url": metrics_s3_url
                 })
         else:
             # Return all cohorts (gracefully handle missing data)
@@ -1109,7 +1137,8 @@ def handle_metadata(event: Dict[str, Any]) -> Dict[str, Any]:
                 "available_cohorts": AVAILABLE_COHORTS,
                 "cohorts_with_data": available_cohorts_with_data,
                 "causal_factors_by_cohort": all_causal_factors,
-                "api_url": api_url
+                "api_url": api_url,
+                "metrics_s3_url": metrics_s3_url
             })
     
     except Exception as e:
@@ -1233,6 +1262,8 @@ def handle_causal(event: Dict[str, Any]) -> Dict[str, Any]:
             feature_metadata = get_feature_metadata(cohort)
         feature_levels = dashboard_data.get("feature_levels", {})
         feature_level_labels = dashboard_data.get("feature_level_labels", {})
+        sec_dx_dropdown_options = dashboard_data.get("sec_dx_dropdown_options", SEC_DX_LEVELS)
+        sec_dx_one_hot_map = dashboard_data.get("sec_dx_one_hot_map", {lev: _sec_dx_col(lev) for lev in SEC_DX_LEVELS})
         return _response(200, {
             "cohort": cohort,
             "model_variant": model_variant,
@@ -1240,7 +1271,9 @@ def handle_causal(event: Dict[str, Any]) -> Dict[str, Any]:
             "summary": dashboard_data.get("summary", {}),
             "feature_metadata": feature_metadata,
             "feature_levels": feature_levels,
-            "feature_level_labels": feature_level_labels
+            "feature_level_labels": feature_level_labels,
+            "sec_dx_dropdown_options": sec_dx_dropdown_options,
+            "sec_dx_one_hot_map": sec_dx_one_hot_map
         })
     
     except Exception as e:

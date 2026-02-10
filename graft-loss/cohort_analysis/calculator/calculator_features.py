@@ -3,9 +3,23 @@ Calculator Feature Definitions
 
 This module defines the exact list of features that should be used for the risk calculator model.
 Only features that can be derived from calculator user inputs should be included.
+sec_dx is one-hot encoded in prepare_calculator_features into sec_dx_<level> columns.
 """
 
 from typing import List, Set
+
+# Canonical secondary diagnosis levels (one-hot columns); Empty, Other, None dropped
+SEC_DX_LEVELS = [
+    "ARVD/C", "Dilated", "Hypertrophic", "MIXED", "Restrictive", "Unknown"
+]
+
+
+def get_sec_dx_one_hot_columns() -> List[str]:
+    """Column names for one-hot encoded sec_dx (must match run_shap_ffa_workflow._sec_dx_safe_col)."""
+    return [
+        f"sec_dx_{label.replace('/', '_').replace(' ', '_').strip()}"
+        for label in SEC_DX_LEVELS
+    ]
 
 
 def get_calculator_base_features() -> List[str]:
@@ -188,8 +202,9 @@ def get_recommended_additional_features() -> List[str]:
         "txcrp_r",
         "lcrp_r",
         
-        # Secondary/Tertiary diagnoses - Comorbidity indicators
-        "sec_dx",
+        # Secondary diagnosis - One-hot encoded (sec_dx_Dilated, sec_dx_Empty, ...)
+        *get_sec_dx_one_hot_columns(),
+        # Tertiary diagnosis - Comorbidity indicator
         "ter_dx",
         
         # Pre-albumin at listing (completeness - we have txpalb_r)
@@ -257,10 +272,13 @@ def filter_to_calculator_features(df, feature_cols: List[str], include_recommend
     ]
     
     # Also include any CHD subtype features (chd_* pattern) as they may be calculator inputs
-    # This ensures we don't miss any CHD subtypes that users can select
     chd_features = [col for col in feature_cols if col.lower().startswith('chd_')]
     for chd_feat in chd_features:
         if chd_feat.lower() not in [f.lower() for f in filtered]:
             filtered.append(chd_feat)
-    
+    # Include sec_dx one-hot columns (sec_dx_* from prepare_calculator_features)
+    sec_dx_one_hot = [col for col in feature_cols if col.lower().startswith('sec_dx_')]
+    for col in sec_dx_one_hot:
+        if col not in filtered:
+            filtered.append(col)
     return filtered
