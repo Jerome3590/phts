@@ -1595,6 +1595,8 @@ def run_ffa_with_shap(
             model_cols_lower = {col.lower(): col for col in model_feature_names}
 
             # Reorder and align columns
+            # If model expects "sec_dx" but test has sec_dx_* one-hot, derive sec_dx as label index (legacy model)
+            sec_dx_one_hot_cols = [c for c in X_test_aligned.columns if c.startswith("sec_dx_")]
             aligned_cols = []
             for model_feat in model_feature_names:
                 model_feat_lower = model_feat.lower()
@@ -1602,6 +1604,18 @@ def run_ffa_with_shap(
                     aligned_cols.append(X_test_cols_lower[model_feat_lower])
                 elif model_feat in X_test_aligned.columns:
                     aligned_cols.append(model_feat)
+                elif model_feat == "sec_dx" and sec_dx_one_hot_cols:
+                    # Legacy model: single sec_dx column; test has one-hot sec_dx_* → derive label index
+                    order_cols = [_sec_dx_safe_col(lev) for lev in SEC_DX_LEVELS if _sec_dx_safe_col(lev) in X_test_aligned.columns]
+                    if order_cols:
+                        idx = np.argmax(X_test_aligned[order_cols].values, axis=1)
+                        X_test_aligned[model_feat] = idx
+                        aligned_cols.append(model_feat)
+                        logger.info("Derived 'sec_dx' from sec_dx_* one-hot columns for legacy model alignment")
+                    else:
+                        logger.warning(f"Model feature 'sec_dx' not in test data, using zeros")
+                        X_test_aligned[model_feat] = 0
+                        aligned_cols.append(model_feat)
                 else:
                     logger.warning(f"Model feature '{model_feat}' not in test data, using zeros")
                     X_test_aligned[model_feat] = 0
@@ -1642,17 +1656,16 @@ def run_ffa_with_shap(
                     xgb_model = xgb.XGBRegressor()
                     xgb_model.load_model(str(xgb_model_path))
                     
-                    # Prepare data for prediction (convert to DMatrix format)
+                    # Prepare data for prediction (sklearn API expects array-like, not DMatrix)
                     X_test_for_pred = X_test_aligned.copy()
                     # Convert categorical to numeric if needed
                     for col in X_test_for_pred.columns:
                         if X_test_for_pred[col].dtype == 'object':
                             X_test_for_pred[col] = pd.Categorical(X_test_for_pred[col]).codes
                     
-                    # Get risk scores
-                    dmatrix = xgb.DMatrix(X_test_for_pred.values.astype(np.float32))
-                    dmatrix.feature_names = model_feature_names
-                    risk_scores = xgb_model.predict(dmatrix)
+                    # Get risk scores (use array/DataFrame; XGBRegressor.predict does not accept DMatrix)
+                    X_pred = X_test_for_pred.values.astype(np.float32)
+                    risk_scores = xgb_model.predict(X_pred)
                     
                     # Calculate threshold using same method as Recall (median or optimal)
                     # For rule filtering, use median risk score as threshold
