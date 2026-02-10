@@ -110,22 +110,14 @@ aws apigateway put-integration --rest-api-id $API_ID --resource-id $CAUSAL_RESOU
 Write-Host "Configured POST /causal" -ForegroundColor Green
 Write-Host ""
 
-# Step 7: CORS (OPTIONS)
-Write-Host "Configuring CORS (OPTIONS methods)..." -ForegroundColor Yellow
+# Step 7: CORS (OPTIONS) - route OPTIONS to Lambda so it returns 200 with CORS headers (avoids MOCK 500)
+Write-Host "Configuring CORS (OPTIONS -> Lambda)..." -ForegroundColor Yellow
 $resourceIds = @($METADATA_RESOURCE_ID, $MODEL_METRICS_RESOURCE_ID, $RISK_RESOURCE_ID, $CAUSAL_RESOURCE_ID)
-$requestTemplates = '{"application/json":"{\"statusCode\":200}"}'
-$methodResponseParams = '{"method.response.header.Access-Control-Allow-Headers":true,"method.response.header.Access-Control-Allow-Methods":true,"method.response.header.Access-Control-Allow-Origin":true}'
-$corsHeadersVal = "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token"
-$corsMethodsVal = "GET,POST,OPTIONS"
-$corsOriginVal = "*"
-$integrationResponseParams = "{`"method.response.header.Access-Control-Allow-Headers`":`"$corsHeadersVal`",`"method.response.header.Access-Control-Allow-Methods`":`"$corsMethodsVal`",`"method.response.header.Access-Control-Allow-Origin`":`"$corsOriginVal`"}"
 foreach ($rid in $resourceIds) {
     try { aws apigateway put-method --rest-api-id $API_ID --resource-id $rid --http-method OPTIONS --authorization-type NONE --region $AWS_REGION 2>$null | Out-Null } catch {}
-    aws apigateway put-integration --rest-api-id $API_ID --resource-id $rid --http-method OPTIONS --type MOCK --integration-http-method OPTIONS --request-templates $requestTemplates --region $AWS_REGION 2>$null | Out-Null
-    aws apigateway put-method-response --rest-api-id $API_ID --resource-id $rid --http-method OPTIONS --status-code 200 --response-parameters $methodResponseParams --region $AWS_REGION 2>$null | Out-Null
-    aws apigateway put-integration-response --rest-api-id $API_ID --resource-id $rid --http-method OPTIONS --status-code 200 --response-parameters $integrationResponseParams --region $AWS_REGION 2>$null | Out-Null
+    aws apigateway put-integration --rest-api-id $API_ID --resource-id $rid --http-method OPTIONS --type AWS_PROXY --integration-http-method POST --uri $LAMBDA_INVOKE_URI --region $AWS_REGION 2>$null | Out-Null
 }
-Write-Host "Configured CORS" -ForegroundColor Green
+Write-Host "Configured CORS (OPTIONS to Lambda)" -ForegroundColor Green
 Write-Host ""
 
 # Step 8: Lambda permission

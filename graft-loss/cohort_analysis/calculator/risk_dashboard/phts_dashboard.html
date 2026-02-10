@@ -408,6 +408,9 @@
       <strong>Donor ischemic time:</strong> If donor ischemic time is not provided, the model will assume it is less than 240 minutes (4 hours). 
       Please enter the most recent donor ischemic time when available.
     </div>
+    <div id="file-origin-warning" style="display: none; background: #fef3c7; border: 1px solid #f59e0b; color: #92400e; padding: 0.5rem 1rem; border-radius: 0.5rem; margin-bottom: 1rem;">
+      <strong>Note:</strong> This page was opened from a local file. API calls may be blocked. Open the dashboard from its deployed URL (e.g. your S3/website URL) to use Calculate Risk.
+    </div>
     <div class="info-box">
       <strong>Note:</strong> This calculator uses clinical features to predict graft loss risk. 
       Enter the most recent patient values below (at transplant is preferred over at listing). Calculate risk score and view top causal factors.
@@ -673,7 +676,12 @@
     // IMMEDIATELY set to hardcoded URL - no dynamic loading, no window variable checks
     LAMBDA_API_URL = 'https://359vxflbzj.execute-api.us-east-1.amazonaws.com/prod';
     console.log('API URL set to:', LAMBDA_API_URL);
-    
+    if (typeof window !== 'undefined' && window.location && window.location.protocol === 'file:') {
+      console.warn('Dashboard opened from file:// – API calls may be blocked by CORS. Open from the deployed URL (e.g. https://...) instead.');
+      var banner = document.getElementById('file-origin-warning');
+      if (banner) banner.style.display = 'block';
+    }
+
     // Test connection immediately
     testApiConnection();
     
@@ -796,10 +804,11 @@
         
       } catch (error) {
         console.error('Fetch error:', error);
-        if (error.name === 'TypeError' && error.message.includes('fetch')) {
-          showError(`Network error: Unable to connect to API. Please check your connection and try again.`);
+        const msg = error && error.message ? error.message : String(error);
+        if (error.name === 'TypeError' && (msg.includes('fetch') || msg.includes('Failed to fetch'))) {
+          showError('Network error: Could not reach the API. (Browser reported: ' + msg + '.) Check: 1) DevTools → Network tab – is the request to /risk blocked or red? 2) Try in a private window or disable extensions. 3) API may need CORS/OPTIONS for your domain.');
         } else {
-          showError(`Error: ${error.message}`);
+          showError(`Error: ${msg}`);
         }
       } finally {
         document.getElementById('loading').classList.remove('show');

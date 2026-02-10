@@ -445,6 +445,8 @@ Access-Control-Allow-Headers: Content-Type,Authorization
 Access-Control-Max-Age: 3600
 ```
 
+**If "Calculate Risk" shows "Unable to connect" from the live website:** The browser sends an OPTIONS preflight before POST /risk. If OPTIONS returns 500 or no CORS headers, the browser blocks the request. Re-run the API Gateway setup so OPTIONS is routed to Lambda (Lambda returns 200 with CORS): `.\setup_api_gateway.ps1` or `./setup_api_gateway.sh`, then redeploy the API.
+
 ---
 
 ### 6. Browser Caching

@@ -885,17 +885,19 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     Main Lambda handler for API Gateway proxy integration.
     """
+    if not event:
+        return _response(400, {"error": "Empty event"})
+    method = (event.get("httpMethod") or "GET").upper()
+    # CORS preflight: return 200 with CORS headers immediately (before any path parsing)
+    if method == "OPTIONS":
+        return _response(200, {"message": "OK"})
     # Ensure logger is available and log that handler was called
     try:
         logger.info("Lambda handler invoked")
         logger.info(f"Event: {json.dumps(event)}")
     except Exception as e:
-        # If logging fails, at least try to print
         print(f"Lambda handler invoked, but logging failed: {e}")
-    
     try:
-        method = event.get("httpMethod", "GET")
-        
         # API Gateway proxy integration can provide path in multiple places
         # Try to get path from various locations
         path = event.get("path", "")
@@ -925,9 +927,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         logger.info(f"Processing request: method={method}, path='{path}', resource='{resource}', actual_path='{actual_path}', path_clean='{path_clean}'")
         logger.info(f"Full event keys: {list(event.keys())}")
         logger.info(f"RequestContext keys: {list(request_context.keys()) if request_context else 'None'}")
-        
-        if method == "OPTIONS":
-            return _response(200, {"message": "OK"})
         
         # Match routes - check if path contains metadata, model-metrics, risk, or causal
         # Handle various formats: "/metadata", "/prod/metadata", "metadata", etc.

@@ -183,8 +183,8 @@ aws apigateway put-integration \
 echo -e "${GREEN}✓ Configured POST /causal${NC}"
 echo ""
 
-# Step 7: Add OPTIONS methods for CORS
-echo -e "${YELLOW}Configuring CORS (OPTIONS methods)...${NC}"
+# Step 7: CORS (OPTIONS) - route OPTIONS to Lambda so it returns 200 with CORS headers (avoids MOCK 500)
+echo -e "${YELLOW}Configuring CORS (OPTIONS -> Lambda)...${NC}"
 
 for RESOURCE_ID in ${METADATA_RESOURCE_ID} ${MODEL_METRICS_RESOURCE_ID} ${RISK_RESOURCE_ID} ${CAUSAL_RESOURCE_ID}; do
     aws apigateway put-method \
@@ -193,34 +193,18 @@ for RESOURCE_ID in ${METADATA_RESOURCE_ID} ${MODEL_METRICS_RESOURCE_ID} ${RISK_R
         --http-method OPTIONS \
         --authorization-type NONE \
         --region ${AWS_REGION} > /dev/null
-    
+
     aws apigateway put-integration \
         --rest-api-id ${API_ID} \
         --resource-id ${RESOURCE_ID} \
         --http-method OPTIONS \
-        --type MOCK \
-        --integration-http-method OPTIONS \
-        --request-templates '{"application/json":"{\"statusCode\":200}"}' \
-        --region ${AWS_REGION} > /dev/null
-    
-    aws apigateway put-method-response \
-        --rest-api-id ${API_ID} \
-        --resource-id ${RESOURCE_ID} \
-        --http-method OPTIONS \
-        --status-code 200 \
-        --response-parameters '{"method.response.header.Access-Control-Allow-Headers":true,"method.response.header.Access-Control-Allow-Methods":true,"method.response.header.Access-Control-Allow-Origin":true}' \
-        --region ${AWS_REGION} > /dev/null
-    
-    aws apigateway put-integration-response \
-        --rest-api-id ${API_ID} \
-        --resource-id ${RESOURCE_ID} \
-        --http-method OPTIONS \
-        --status-code 200 \
-        --response-parameters '{"method.response.header.Access-Control-Allow-Headers":"'"'"'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"'"'","method.response.header.Access-Control-Allow-Methods":"'"'"'GET,POST,OPTIONS'"'"'","method.response.header.Access-Control-Allow-Origin":"'"'"'*'"'"'"}' \
+        --type AWS_PROXY \
+        --integration-http-method POST \
+        --uri "arn:aws:apigateway:${AWS_REGION}:lambda:path/2015-03-31/functions/${LAMBDA_ARN}/invocations" \
         --region ${AWS_REGION} > /dev/null
 done
 
-echo -e "${GREEN}✓ Configured CORS${NC}"
+echo -e "${GREEN}✓ Configured CORS (OPTIONS to Lambda)${NC}"
 echo ""
 
 # Step 8: Grant API Gateway permission to invoke Lambda
