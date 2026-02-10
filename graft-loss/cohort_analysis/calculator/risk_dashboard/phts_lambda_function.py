@@ -643,9 +643,10 @@ def prepare_feature_vector(features: Dict[str, Any], feature_names: List[str]) -
 DONOR_RECIPIENT_RATIO_MIN_PCT = 70.0
 DONOR_RECIPIENT_RATIO_MAX_PCT = 200.0
 
-# Secondary diagnosis one-hot (Empty, Other, None dropped)
+# Secondary diagnosis one-hot (Empty, None dropped; Other kept).
+# Must match calculator_features.SEC_DX_LEVELS so train/test/dashboard features align.
 SEC_DX_LEVELS = [
-    "ARVD/C", "Dilated", "Hypertrophic", "MIXED", "Restrictive", "Unknown"
+    "ARVD/C", "Dilated", "Hypertrophic", "MIXED", "Other", "Restrictive", "Unknown"
 ]
 
 

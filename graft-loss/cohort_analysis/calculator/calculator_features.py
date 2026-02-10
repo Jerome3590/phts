@@ -8,9 +8,10 @@ sec_dx is one-hot encoded in prepare_calculator_features into sec_dx_<level> col
 
 from typing import List, Set
 
-# Canonical secondary diagnosis levels (one-hot columns); Empty, Other, None dropped
+# Single source of truth for sec_dx one-hot levels (train, test, SHAP/FFA, Lambda must match).
+# Empty, None dropped; Other kept.
 SEC_DX_LEVELS = [
-    "ARVD/C", "Dilated", "Hypertrophic", "MIXED", "Restrictive", "Unknown"
+    "ARVD/C", "Dilated", "Hypertrophic", "MIXED", "Other", "Restrictive", "Unknown"
 ]
 
 

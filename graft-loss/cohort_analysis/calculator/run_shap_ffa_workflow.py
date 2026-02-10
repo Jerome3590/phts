@@ -554,11 +554,8 @@ def find_xgboost_model_json(cohort: str, model_variant: Optional[str] = None) ->
     return None
 
 
-# Canonical secondary diagnosis levels (PHTS); used for one-hot encoding and dashboard dropdown
-# Empty, Other, None dropped (no/minimal predictive value)
-SEC_DX_LEVELS = [
-    "ARVD/C", "Dilated", "Hypertrophic", "MIXED", "Restrictive", "Unknown"
-]
+# Single source of truth for sec_dx levels (train, test, SHAP/FFA, dashboard all use this)
+from calculator_features import SEC_DX_LEVELS  # noqa: E402
 
 # Other categoricals (from PHTS / eda/converted_vars_log.csv) – reference only; boolean-like use 0/1 numeric
 # ter_dx: Chemotherapy-Induced, Conduction Defect, Empty, Familial, Ischemic, Isolated/Idiopathic, LVNC,
