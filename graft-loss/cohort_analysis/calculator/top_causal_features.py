@@ -7,11 +7,14 @@ Limited to features with demonstrated high importance or high causality:
   egfr_change, chd_sv, donor_size_ratio, hxsurg, lsbaosat
 - Next five: bmi_txpl, lstp_r, egfr_tx, donor_weight_ratio, txsa_r
 Expand only when new SHAP/FFA runs provide a clear ranked list for additional features.
+
+Note: "sec_dx" is expanded at train time to one-hot columns (sec_dx_ARVD/C, sec_dx_Dilated, ...)
+via get_sec_dx_one_hot_columns() so the model matches prepare_calculator_features and the dashboard.
 """
 
 from typing import List
 
-# Top 15: high importance/causality only (from combined + per-model top-10)
+# Top 15 (logical); sec_dx is expanded to sec_dx_* one-hot at train time → 20 actual features
 TOP_CAUSAL_FEATURES: List[str] = [
     "sec_dx",
     "donor_age",

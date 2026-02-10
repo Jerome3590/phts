@@ -1130,8 +1130,18 @@ def train_models_for_cohort(
     feature_cols = filter_to_calculator_features(df_clean, all_feature_cols, include_recommended=use_recommended_for_filter)
 
     if top_feature_names is not None:
-        feature_cols = [f for f in top_feature_names if f in feature_cols]
-        missing = set(top_feature_names) - set(feature_cols)
+        # Expand "sec_dx" to one-hot columns (sec_dx_*) so training matches prepare_calculator_features
+        from calculator_features import get_sec_dx_one_hot_columns
+        expanded_top = []
+        for f in top_feature_names:
+            if f == "sec_dx":
+                expanded_top.extend(get_sec_dx_one_hot_columns())
+            else:
+                expanded_top.append(f)
+        if "sec_dx" in top_feature_names:
+            logger.info(f"Expanded sec_dx to one-hot columns: {get_sec_dx_one_hot_columns()}")
+        feature_cols = [f for f in expanded_top if f in feature_cols]
+        missing = set(expanded_top) - set(feature_cols)
         if missing:
             logger.warning(f"Top features not in data (dropped): {missing}")
         logger.info(f"Restricted to top causal/importance features: {len(feature_cols)} features")
