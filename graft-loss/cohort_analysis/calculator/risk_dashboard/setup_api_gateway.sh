@@ -109,6 +109,38 @@ aws apigateway put-integration \
 echo -e "${GREEN}✓ Configured GET /metadata${NC}"
 echo ""
 
+# Step 4b: Create /model-metrics resource
+echo -e "${YELLOW}Creating /model-metrics resource...${NC}"
+MODEL_METRICS_RESOURCE_ID=$(aws apigateway create-resource \
+    --rest-api-id ${API_ID} \
+    --parent-id ${ROOT_RESOURCE_ID} \
+    --path-part model-metrics \
+    --region ${AWS_REGION} \
+    --query 'id' \
+    --output text)
+echo -e "${GREEN}✓ Created /model-metrics resource${NC}"
+
+# Create GET method for /model-metrics
+aws apigateway put-method \
+    --rest-api-id ${API_ID} \
+    --resource-id ${MODEL_METRICS_RESOURCE_ID} \
+    --http-method GET \
+    --authorization-type NONE \
+    --region ${AWS_REGION} > /dev/null
+
+# Set up Lambda integration
+aws apigateway put-integration \
+    --rest-api-id ${API_ID} \
+    --resource-id ${MODEL_METRICS_RESOURCE_ID} \
+    --http-method GET \
+    --type AWS_PROXY \
+    --integration-http-method POST \
+    --uri "arn:aws:apigateway:${AWS_REGION}:lambda:path/2015-03-31/functions/${LAMBDA_ARN}/invocations" \
+    --region ${AWS_REGION} > /dev/null
+
+echo -e "${GREEN}✓ Configured GET /model-metrics${NC}"
+echo ""
+
 # Step 5: Create /risk resource
 echo -e "${YELLOW}Creating /risk resource...${NC}"
 RISK_RESOURCE_ID=$(aws apigateway create-resource \
@@ -176,7 +208,7 @@ echo ""
 # Step 7: Add OPTIONS methods for CORS
 echo -e "${YELLOW}Configuring CORS (OPTIONS methods)...${NC}"
 
-for RESOURCE_ID in ${METADATA_RESOURCE_ID} ${RISK_RESOURCE_ID} ${CAUSAL_RESOURCE_ID}; do
+for RESOURCE_ID in ${METADATA_RESOURCE_ID} ${MODEL_METRICS_RESOURCE_ID} ${RISK_RESOURCE_ID} ${CAUSAL_RESOURCE_ID}; do
     aws apigateway put-method \
         --rest-api-id ${API_ID} \
         --resource-id ${RESOURCE_ID} \
@@ -277,6 +309,7 @@ echo "API URL: ${API_URL}"
 echo ""
 echo "Endpoints:"
 echo "  GET  ${API_URL}/metadata"
+echo "  GET  ${API_URL}/model-metrics"
 echo "  POST ${API_URL}/risk"
 echo "  POST ${API_URL}/causal"
 echo ""

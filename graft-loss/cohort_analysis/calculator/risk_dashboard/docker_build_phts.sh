@@ -137,8 +137,29 @@ fi
 echo -e "${GREEN}✓ Image pushed successfully${NC}"
 echo ""
 
-# Step 9: Get image size
-IMAGE_SIZE=$(docker images ${ECR_REPOSITORY}:${IMAGE_TAG} --format "{{.Size}}")
+# Step 9: Update Lambda to use new image (so new code/endpoints take effect)
+# Set UPDATE_LAMBDA=false to skip (e.g. if only pushing for another account)
+UPDATE_LAMBDA=${UPDATE_LAMBDA:-true}
+if [ "$UPDATE_LAMBDA" = "true" ]; then
+    echo -e "${YELLOW}Updating Lambda function to use new image...${NC}"
+    if aws lambda update-function-code \
+        --function-name ${LAMBDA_FUNCTION_NAME:-phts-risk-calculator} \
+        --image-uri ${ECR_URI} \
+        --region ${AWS_REGION} 2>/dev/null; then
+        echo -e "${GREEN}✓ Lambda function code updated (new image active after a few seconds)${NC}"
+    else
+        echo -e "${YELLOW}⚠ Could not update Lambda (function may not exist or no permission). Run manually:${NC}"
+        echo "   aws lambda update-function-code --function-name phts-risk-calculator --image-uri ${ECR_URI} --region ${AWS_REGION}"
+    fi
+    echo ""
+else
+    echo -e "${YELLOW}Skipping Lambda update (UPDATE_LAMBDA=false). Run when ready:${NC}"
+    echo "   aws lambda update-function-code --function-name phts-risk-calculator --image-uri ${ECR_URI} --region ${AWS_REGION}"
+    echo ""
+fi
+
+# Step 10: Get image size
+IMAGE_SIZE=$(docker images ${ECR_REPOSITORY}:${IMAGE_TAG} --format "{{.Size}}" 2>/dev/null || echo "N/A")
 echo -e "${BLUE}========================================${NC}"
 echo -e "${GREEN}Deployment Complete!${NC}"
 echo -e "${BLUE}========================================${NC}"
@@ -146,14 +167,11 @@ echo ""
 echo "ECR Image URI: ${ECR_URI}"
 echo "Image Size: ${IMAGE_SIZE}"
 echo ""
-echo -e "${YELLOW}Next steps:${NC}"
-echo "1. Update Lambda function to use container image:"
-echo "   aws lambda update-function-code \\"
-echo "     --function-name phts-risk-calculator \\"
-echo "     --image-uri ${ECR_URI} \\"
-echo "     --region ${AWS_REGION}"
+echo -e "${YELLOW}Optional next steps:${NC}"
+echo "  # If Lambda was not updated above, run:"
+echo "  aws lambda update-function-code --function-name phts-risk-calculator --image-uri ${ECR_URI} --region ${AWS_REGION}"
 echo ""
-echo "2. Or create new Lambda function:"
+echo "  # Or create new Lambda function:"
 echo "   aws lambda create-function \\"
 echo "     --function-name phts-risk-calculator \\"
 echo "     --package-type Image \\"

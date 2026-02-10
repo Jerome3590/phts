@@ -123,7 +123,7 @@ lambda_dir_phts/
 
 ### Step 2: Build and Push Docker Image
 
-Build Docker image and push to ECR:
+Build Docker image, push to ECR, and **update the Lambda function** so it uses the new image:
 
 ```bash
 ./docker_build_phts.sh
@@ -131,10 +131,12 @@ Build Docker image and push to ECR:
 
 **What it does:**
 1. Validates lambda directory structure
-2. Builds Docker image (using `DOCKER_BUILDKIT=0` for Lambda compatibility)
-3. Logs into ECR
-4. Creates ECR repository if needed
-5. Tags and pushes image to ECR
+2. Builds Docker image (includes current `phts_lambda_function.py`)
+3. Logs into ECR, creates repository if needed
+4. Tags and pushes image to ECR
+5. **Updates the Lambda function to use the new image** (so new code/endpoints take effect)
+
+**Important:** After any change to Lambda code (e.g. new `/model-metrics` endpoint), you must rebuild and push; the script now runs `aws lambda update-function-code` by default so the deployed function picks up the new image. To skip the Lambda update (e.g. push only): `UPDATE_LAMBDA=false ./docker_build_phts.sh`.
 
 **Output:** ECR image URI (e.g., `ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/phts-risk-calculator:latest`)
 
@@ -194,8 +196,8 @@ Create REST API and integrate with Lambda:
 
 **What it does:**
 1. Creates REST API (or uses existing)
-2. Creates resources: `/metadata`, `/risk`, `/causal`
-3. Creates methods: GET for `/metadata`, POST for `/risk` and `/causal`
+2. Creates resources: `/metadata`, `/model-metrics`, `/risk`, `/causal`
+3. Creates methods: GET for `/metadata` and `/model-metrics`, POST for `/risk` and `/causal`
 4. Configures Lambda proxy integration
 5. Sets up CORS (OPTIONS methods)
 6. Grants API Gateway permission to invoke Lambda
@@ -522,6 +524,25 @@ curl -X POST 'https://API_ID.execute-api.REGION.amazonaws.com/prod/risk' \
   -H 'Content-Type: application/json' \
   -d '{"cohort":"Combined","features":{"egfr_tx":60.0}}'
 ```
+
+### Documentation tab: "Failed to load metrics"
+
+The Documentation tab fetches metrics from **GET /model-metrics**. If that route is missing in API Gateway, the browser shows "Failed to fetch".
+
+**Fix:** Add the `/model-metrics` route and redeploy:
+
+1. Re-run the API Gateway setup (it now creates `/model-metrics`):
+   ```bash
+   ./setup_api_gateway.sh
+   ```
+   If your API already has `/metadata`, `/risk`, `/causal`, the script may fail when creating those again. In that case, add only the new resource manually (see `setup_api_gateway.sh` Step 4b for the exact `aws apigateway create-resource` and `put-method` / `put-integration` commands for `model-metrics`), then deploy:
+   ```bash
+   aws apigateway create-deployment --rest-api-id YOUR_API_ID --stage-name prod --region us-east-1
+   ```
+
+2. Verify: `curl -s 'https://YOUR_API_ID.execute-api.us-east-1.amazonaws.com/prod/model-metrics'` should return JSON with `best_model`, `c_index`, etc.
+
+**If the route works but returns 404 from Lambda:** The Lambda container image may not have been updated. Rebuild and push the image, then update the function code so Lambda uses the new image: `./docker_build_phts.sh` (it now runs `update-function-code` by default), or manually: `aws lambda update-function-code --function-name phts-risk-calculator --image-uri YOUR_ECR_URI --region us-east-1`.
 
 ### HTML Not Loading
 
