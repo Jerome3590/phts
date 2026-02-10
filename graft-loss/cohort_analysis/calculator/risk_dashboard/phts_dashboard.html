@@ -504,6 +504,10 @@
           <input type="number" id="txast" step="0.1" placeholder="e.g., 30.0" value="25.0">
         </div>
       </div>
+      <div class="control-group" id="risk-extra-features-container" style="display: none;">
+        <h3>Other model features</h3>
+        <div id="risk-extra-features"></div>
+      </div>
     </div>
     
     <div class="button-group">
@@ -896,7 +900,10 @@
         }
       });
       
-      // Clear results when loading baseline
+      document.querySelectorAll('#risk-extra-features select').forEach(sel => {
+        const opt0 = sel.querySelector('option[value="0"]');
+        if (opt0) sel.value = '0'; else if (sel.options.length) sel.value = sel.options[0].value;
+      });
       document.getElementById('results').classList.remove('show');
       document.getElementById('error').classList.remove('show');
     }
@@ -904,15 +911,66 @@
     // Load baseline values on page load (after API URL is ready)
     window.addEventListener('DOMContentLoaded', function() {
       loadBaseline();
-      // Test API connection after a short delay to ensure API URL is loaded
       setTimeout(() => {
         if (LAMBDA_API_URL) {
           testApiConnection();
+          loadMetadataForRiskTab();
         }
       }, 1000);
     });
     
-    // Load causal factors on cohort change
+    // Feature levels for Risk tab dropdowns (sec_dx, etc.) – from metadata
+    let riskFeatureLevels = {};
+
+    function populateRiskExtraFeatures() {
+      const container = document.getElementById('risk-extra-features');
+      const wrapper = document.getElementById('risk-extra-features-container');
+      if (!container || !wrapper) return;
+      const existingIds = new Set(
+        [...document.querySelectorAll('#risk-calculator-tab input[id], #risk-calculator-tab select[id]')]
+          .map(el => el.id).filter(Boolean)
+      );
+      container.innerHTML = '';
+      if (Object.keys(riskFeatureLevels).length === 0) {
+        wrapper.style.display = 'none';
+        return;
+      }
+      let added = 0;
+      for (const [featureName, levels] of Object.entries(riskFeatureLevels)) {
+        if (existingIds.has(featureName) || !Array.isArray(levels) || levels.length === 0) continue;
+        const optionsHtml = levels.map(v => `<option value="${v}">${v}</option>`).join('');
+        const div = document.createElement('div');
+        div.className = 'form-group';
+        div.innerHTML = `
+          <label for="${escapeHtml(featureName)}">${escapeHtml(featureName)}</label>
+          <select id="${escapeHtml(featureName)}">
+            ${optionsHtml}
+          </select>
+        `;
+        container.appendChild(div);
+        const sel = div.querySelector('select');
+        if (sel) sel.value = String(levels[0]);
+        added++;
+      }
+      wrapper.style.display = added ? 'block' : 'none';
+    }
+
+    async function loadMetadataForRiskTab() {
+      if (!LAMBDA_API_URL) return;
+      const cohort = document.getElementById('cohort').value;
+      try {
+        const response = await fetch(`${LAMBDA_API_URL}/metadata?cohort=${cohort}`);
+        if (response.ok) {
+          const data = await response.json();
+          riskFeatureLevels = data.feature_levels || {};
+          populateRiskExtraFeatures();
+        }
+      } catch (e) {
+        console.warn('Could not load metadata for risk tab:', e);
+      }
+    }
+
+    // Load causal factors and feature levels on cohort change
     document.getElementById('cohort').addEventListener('change', async function() {
       const cohort = this.value;
       try {
@@ -920,6 +978,8 @@
         if (response.ok) {
           const data = await response.json();
           console.log('Causal factors loaded:', data.causal_factors);
+          riskFeatureLevels = data.feature_levels || {};
+          populateRiskExtraFeatures();
         }
       } catch (error) {
         console.error('Error loading causal factors:', error);
@@ -1043,7 +1103,8 @@
         const causalData = await causalResponse.json();
         causalAnalysisData = {
           factors: causalData.top_causal_factors || [],
-          feature_metadata: causalData.feature_metadata || {}  // Store feature metadata
+          feature_metadata: causalData.feature_metadata || {},
+          feature_levels: causalData.feature_levels || {}  // Actual level values for dropdowns (e.g. sec_dx: [0,1,2,...])
         };
         
         // Debug: Log feature metadata
@@ -1207,10 +1268,16 @@
         
         let inputHTML = '';
         if (isBinary) {
+          const levels = (causalAnalysisData.feature_levels && causalAnalysisData.feature_levels[featureName]) || [0, 1];
+          const optionsHtml = levels.map(v => {
+            const val = Number(v);
+            const label = (val === 0 ? 'No (0)' : (val === 1 ? 'Yes (1)' : String(v)));
+            const sel = (Number(currentValue) === val) ? ' selected' : '';
+            return `<option value="${v}"${sel}>${escapeHtml(label)}</option>`;
+          }).join('');
           inputHTML = `
             <select id="causal-${featureName}" onchange="updateCausalFactor('${featureName}', this.value)">
-              <option value="0" ${currentValue === 0 ? 'selected' : ''}>No (0)</option>
-              <option value="1" ${currentValue === 1 ? 'selected' : ''}>Yes (1)</option>
+              ${optionsHtml}
             </select>
           `;
         } else if (isNumeric) {

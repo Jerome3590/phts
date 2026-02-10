@@ -1934,52 +1934,59 @@ def combine_importance_to_shap(
     return combined, shap_map
 
 
-def generate_feature_metadata(df: pd.DataFrame, feature_names: List[str]) -> Dict[str, str]:
+def generate_feature_metadata(
+    df: pd.DataFrame, feature_names: List[str]
+) -> Tuple[Dict[str, str], Dict[str, List[int]]]:
     """
-    Generate feature metadata (binary vs numeric) from prepared data.
+    Generate feature metadata (binary vs numeric) and level values from prepared data.
+
+    Level values are the distinct values seen in the data (0, 1, 2, ...) for
+    categorical/binary features, so the dashboard can show dropdowns with actual levels.
 
     Args:
         df: Prepared dataframe with features
         feature_names: List of feature names to check
 
     Returns:
-        Dictionary mapping feature names to 'binary' or 'numeric'
+        (feature_metadata, feature_levels)
+        - feature_metadata: dict mapping feature names to 'binary' or 'numeric'
+        - feature_levels: dict mapping feature name to sorted list of int levels (for dropdowns)
     """
     feature_metadata = {}
+    feature_levels: Dict[str, List[int]] = {}
 
-    # Known numeric feature patterns (always numeric, even if data looks binary)
     known_numeric = ['bmi', 'egfr', 'age', 'weight', 'height', 'creat', 'bun',
                      'albumin', 'ast', 'alt', 'bili', 'chol', 'hdl', 'ldl', 'tg',
                      'tp', 'brp', 'bram', 'donisch', 'durcarst', 'bnp', 'sa', 'palb']
+    known_binary_or_categorical = ['sec_dx', 'ter_dx', 'hxsurg', 'chd_sv', 'hxaf_fl', 'prim_dx']
 
     for feature_name in feature_names:
         if feature_name in df.columns:
             col_data = df[feature_name].dropna()
 
             if len(col_data) > 0:
-                # Check if feature name suggests it's numeric
                 is_known_numeric = any(pattern in feature_name.lower() for pattern in known_numeric)
-
-                # Check if binary: only contains 0 and/or 1
+                is_known_binary_cat = any(
+                    pattern in feature_name.lower() for pattern in known_binary_or_categorical
+                )
                 unique_vals = set(col_data.unique())
                 is_binary_vals = unique_vals.issubset({0, 1, 0.0, 1.0})
 
-                # If known numeric feature, always treat as numeric
-                # Otherwise, use value-based detection
                 if is_known_numeric:
                     feature_metadata[feature_name] = 'numeric'
-                elif is_binary_vals:
+                elif is_known_binary_cat or is_binary_vals:
                     feature_metadata[feature_name] = 'binary'
+                    # Actual levels from data: 0 and any value > 0 (sorted)
+                    levels = sorted(set(int(round(x)) for x in unique_vals))
+                    feature_levels[feature_name] = levels
                 else:
                     feature_metadata[feature_name] = 'numeric'
             else:
-                # Default to numeric if no data
                 feature_metadata[feature_name] = 'numeric'
         else:
-            # Default to numeric if feature not in data
             feature_metadata[feature_name] = 'numeric'
 
-    return feature_metadata
+    return feature_metadata, feature_levels
 
 
 def generate_dashboard_outputs(
@@ -2036,12 +2043,14 @@ def generate_dashboard_outputs(
         top_causal['rule_frequency'] = 0
         top_causal['total_rules'] = 0
 
-    # Generate feature metadata if data is available
+    # Generate feature metadata and level values if data is available
     feature_metadata = {}
+    feature_levels: Dict[str, List[int]] = {}
     if feature_data is not None:
         feature_names = combined_importance['feature'].tolist()
-        feature_metadata = generate_feature_metadata(feature_data, feature_names)
+        feature_metadata, feature_levels = generate_feature_metadata(feature_data, feature_names)
         logger.info(f"Generated feature metadata for {len(feature_metadata)} features")
+        logger.info(f"Generated feature_levels for {len(feature_levels)} features (dropdown options)")
 
     # Create comprehensive dashboard data
     dashboard_data = {
@@ -2058,7 +2067,8 @@ def generate_dashboard_outputs(
             'top_feature_importance': top_causal.iloc[0]['causal_responsibility'] if len(top_causal) > 0 else None
         },
         'feature_importance': combined_importance_filtered.head(50).to_dict('records'),
-        'feature_metadata': feature_metadata,  # Add feature metadata
+        'feature_metadata': feature_metadata,
+        'feature_levels': feature_levels,  # Actual level values for categorical/binary dropdowns
         'notes': {
             'model_json_used': 'XGBoost (CatBoost JSON not used due to categorical hashing)',
             'shap_filtering': 'XGBoost SHAP only (simplified pipeline)' if use_xgboost_only else 'Combined SHAP from both XGBoost and CatBoost',
