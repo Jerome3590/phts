@@ -173,12 +173,13 @@ def get_best_model(cohort: str, model_variant: Optional[str] = None) -> Optional
 
     try:
         with open(best_model_path, 'r') as f:
-            lines = f.readlines()
-            for line in lines:
-                if line.startswith("Best Model:"):
-                    best_model = line.split("Best Model:")[1].strip()
-                    logger.info(f"Best model from file: {best_model}")
-                    return best_model
+            for line in f:
+                # Training writes "Best Model (MC-CV): CatBoost" or "Best Model: ..."
+                if "Best Model" in line and ":" in line:
+                    best_model = line.split(":", 1)[1].strip()
+                    if best_model:
+                        logger.info(f"Best model from file: {best_model}")
+                        return best_model
     except Exception as e:
         logger.warning(f"Error reading best model file: {e}")
 
