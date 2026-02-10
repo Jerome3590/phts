@@ -26,7 +26,8 @@ DASHBOARD_DIR = CALCULATOR_DIR / "outputs" / "shap_ffa"
 RISK_DIST_DIR = CALCULATOR_DIR / "outputs" / "risk_distributions"
 LAMBDA_DIR = Path(__file__).parent / "lambda_dir_phts"
 
-COHORTS = ["CHD", "Combined", "Myocardio"]
+# One-model workflow: only Combined (Combined_top) is deployed.
+COHORTS = ["Combined"]
 
 
 def prepare_lambda_directory():
@@ -54,15 +55,10 @@ def prepare_lambda_directory():
     print("Copying models...")
     models_copied = 0
     for cohort in COHORTS:
-        variant_dirs = []
-        if cohort == "Combined":
-            variant_dirs = [
-                (MODELS_DIR / f"{cohort}_top", lambda_models_dir / f"{cohort}_top"),
-            ]
-        else:
-            variant_dirs = [
-                (MODELS_DIR / cohort, lambda_models_dir / cohort),
-            ]
+        # Combined only: Combined_top
+        variant_dirs = [
+            (MODELS_DIR / f"{cohort}_top", lambda_models_dir / f"{cohort}_top"),
+        ]
         
         for cohort_models_dir, cohort_lambda_dir in variant_dirs:
             if not cohort_models_dir.exists():
@@ -106,17 +102,9 @@ def prepare_lambda_directory():
     print("Copying feature metadata...")
     features_copied = 0
     for cohort in COHORTS:
-        # Try variant directories first (for Combined cohort)
-        variant_dirs = []
-        if cohort == "Combined":
-            variant_dirs = [
-                (DASHBOARD_DIR / f"{cohort}_top", lambda_model_features_dir / f"{cohort}_top"),
-            ]
-        else:
-            variant_dirs = [
-                (DASHBOARD_DIR / cohort, lambda_model_features_dir / cohort),
-            ]
-        
+        variant_dirs = [
+            (DASHBOARD_DIR / f"{cohort}_top", lambda_model_features_dir / f"{cohort}_top"),
+        ]
         for cohort_dashboard_dir, cohort_features_dir in variant_dirs:
             if not cohort_dashboard_dir.exists():
                 continue
@@ -154,20 +142,9 @@ def prepare_lambda_directory():
     print("Copying dashboard data...")
     data_copied = 0
     for cohort in COHORTS:
-        # Try variant directories first (for Combined cohort)
-        variant_dirs = []
-        if cohort == "Combined":
-            variant_dirs = [
-                (DASHBOARD_DIR / f"{cohort}_top", lambda_dashboard_dir / f"{cohort}_top"),
-            ]
-        else:
-            # CHD and Myocardio may not have variants, try both
-            variant_dirs = [
-                (DASHBOARD_DIR / cohort, lambda_dashboard_dir / cohort),
-                (DASHBOARD_DIR / f"{cohort}_base", lambda_dashboard_dir / f"{cohort}_base"),
-                (DASHBOARD_DIR / f"{cohort}_enhanced", lambda_dashboard_dir / f"{cohort}_enhanced")
-            ]
-        
+        variant_dirs = [
+            (DASHBOARD_DIR / f"{cohort}_top", lambda_dashboard_dir / f"{cohort}_top"),
+        ]
         for cohort_dashboard_dir, cohort_lambda_dir in variant_dirs:
             if not cohort_dashboard_dir.exists():
                 continue
@@ -210,35 +187,17 @@ def prepare_lambda_directory():
     validation_errors = []
     
     for cohort in COHORTS:
-        # Check models - handle variants for Combined
-        if cohort == "Combined":
-            for variant in ["_top"]:
-                variant_name = f"{cohort}{variant}"
-                cohort_models = lambda_models_dir / variant_name
-                if not cohort_models.exists():
-                    validation_errors.append(f"Models directory missing for {variant_name}")
-                else:
-                    # Check for at least one model file
-                    model_files = list(cohort_models.glob("*.cbm")) + list(cohort_models.glob("*.ubj"))
-                    if not model_files:
-                        validation_errors.append(f"No model files found for {variant_name}")
-                
-                # Check dashboard data
-                cohort_data = lambda_dashboard_dir / variant_name / "dashboard_data.json"
-                if not cohort_data.exists():
-                    validation_errors.append(f"Dashboard data missing for {variant_name}")
+        variant_name = f"{cohort}_top"
+        cohort_models = lambda_models_dir / variant_name
+        if not cohort_models.exists():
+            validation_errors.append(f"Models directory missing for {variant_name}")
         else:
-            # CHD and Myocardio - check plain cohort dir only
-            cohort_models = lambda_models_dir / cohort
-            if not cohort_models.exists():
-                validation_errors.append(f"Models directory missing for {cohort}")
-            else:
-                model_files = list(cohort_models.glob("*.cbm")) + list(cohort_models.glob("*.ubj"))
-                if not model_files:
-                    validation_errors.append(f"No model files found for {cohort}")
-            cohort_data = lambda_dashboard_dir / cohort / "dashboard_data.json"
-            if not cohort_data.exists():
-                validation_errors.append(f"Dashboard data missing for {cohort}")
+            model_files = list(cohort_models.glob("*.cbm")) + list(cohort_models.glob("*.ubj"))
+            if not model_files:
+                validation_errors.append(f"No model files found for {variant_name}")
+        cohort_data = lambda_dashboard_dir / variant_name / "dashboard_data.json"
+        if not cohort_data.exists():
+            validation_errors.append(f"Dashboard data missing for {variant_name}")
     
     if validation_errors:
         print("  [WARNING] Validation warnings:")
@@ -261,20 +220,23 @@ def prepare_lambda_directory():
     print(f"  {LAMBDA_DIR}/")
     print(f"    models/")
     for cohort in COHORTS:
-        cohort_dir = lambda_models_dir / cohort
+        variant_name = f"{cohort}_top"
+        cohort_dir = lambda_models_dir / variant_name
         if cohort_dir.exists():
             file_count = len(list(cohort_dir.rglob('*'))) - len(list(cohort_dir.rglob('*/')))
-            print(f"      {cohort}/ ({file_count} files)")
+            print(f"      {variant_name}/ ({file_count} files)")
     print(f"    model_features/")
     for cohort in COHORTS:
-        cohort_dir = lambda_model_features_dir / cohort
+        variant_name = f"{cohort}_top"
+        cohort_dir = lambda_model_features_dir / variant_name
         if cohort_dir.exists():
-            print(f"      {cohort}/")
+            print(f"      {variant_name}/")
     print(f"    dashboard_data/")
     for cohort in COHORTS:
-        cohort_dir = lambda_dashboard_dir / cohort
+        variant_name = f"{cohort}_top"
+        cohort_dir = lambda_dashboard_dir / variant_name
         if cohort_dir.exists():
-            print(f"      {cohort}/")
+            print(f"      {variant_name}/")
     print(f"    risk_distributions/")
     if lambda_risk_dist_dir.exists():
         print(f"      risk_distributions.json")
