@@ -20,8 +20,13 @@ Requirements:
 
 Usage:
     python run_shap_ffa_workflow.py --cohort Combined --top-k 10
+    python run_shap_ffa_workflow.py --cohort Combined --top-k 10 --force   # ignore checkpoints, re-run all steps
+
+Idempotent runs: The workflow saves checkpoints (SHAP, FFA, dashboard) in the output directory.
+Re-runs with the same cohort, variant, top_k, and model JSON skip completed steps. Use --force to ignore checkpoints.
 """
 
+import os
 import sys
 import argparse
 import json
@@ -94,6 +99,78 @@ def _read_table_parquet_or_csv(path: Path, prefer_parquet: bool = True) -> Optio
     if csv_path.exists():
         return pd.read_csv(csv_path)
     return None
+
+
+# Checkpoint manifest key (for idempotent re-runs)
+CHECKPOINT_MANIFEST_FILENAME = "checkpoint_manifest.json"
+SHAP_VALUES_PARQUET = "shap_values.parquet"
+SHAP_MAP_JSON = "shap_map.json"
+FEATURE_LEVEL_RULES_JSON = "feature_level_rules.json"
+
+
+def _get_checkpoint_signature(
+    cohort: str,
+    model_variant: str,
+    model_cohort: str,
+    top_k: int,
+    xgboost_json: Path,
+    weight_catboost: float,
+    weight_xgboost: float,
+    use_xgboost_only: bool,
+) -> Dict[str, Any]:
+    """Build a signature dict for checkpoint validation (inputs that affect SHAP/FFA/dashboard)."""
+    path = Path(xgboost_json)
+    mtime = path.stat().st_mtime if path.exists() else 0
+    return {
+        "cohort": cohort,
+        "model_variant": model_variant,
+        "model_cohort": model_cohort,
+        "top_k": top_k,
+        "xgboost_json": str(path.resolve()),
+        "xgboost_json_mtime": mtime,
+        "weight_catboost": weight_catboost,
+        "weight_xgboost": weight_xgboost,
+        "use_xgboost_only": use_xgboost_only,
+    }
+
+
+def _load_checkpoint_manifest(output_dir: Path) -> Optional[Dict[str, Any]]:
+    """Load checkpoint manifest from output_dir if present and valid."""
+    path = output_dir / CHECKPOINT_MANIFEST_FILENAME
+    if not path.exists():
+        return None
+    try:
+        with open(path, "r") as f:
+            data = json.load(f)
+        if not isinstance(data.get("signature"), dict) or not isinstance(data.get("steps"), dict):
+            return None
+        return data
+    except Exception:
+        return None
+
+
+def _save_checkpoint_manifest(
+    output_dir: Path,
+    signature: Dict[str, Any],
+    steps: Dict[str, bool],
+) -> None:
+    """Write checkpoint manifest with current signature and completed steps."""
+    path = output_dir / CHECKPOINT_MANIFEST_FILENAME
+    with open(path, "w") as f:
+        json.dump({"signature": signature, "steps": steps, "version": 1}, f, indent=2)
+    logger.debug(f"Saved checkpoint manifest: {path}")
+
+
+def _checkpoint_signature_matches(manifest: Dict[str, Any], signature: Dict[str, Any]) -> bool:
+    """Return True if manifest signature matches current run (so cache is valid)."""
+    old = manifest.get("signature") or {}
+    for key in ("cohort", "model_variant", "model_cohort", "top_k",
+                "xgboost_json", "xgboost_json_mtime", "weight_catboost", "weight_xgboost", "use_xgboost_only"):
+        if key not in old or key not in signature:
+            return False
+        if old[key] != signature[key]:
+            return False
+    return True
 
 
 def _safe_str_for_hash(x: Any) -> str:
@@ -1884,11 +1961,11 @@ def run_ffa_with_shap(
         except Exception as e:
             logger.warning(f"Could not write Parquet: {e}; saved CSV to {causal_path_csv}")
 
-        # Per-level FFA: which rule indices each (feature, level) satisfies
+        # Per-level FFA: which rule indices each (feature, level) satisfies.
+        # One-hot encoded features (sec_dx_*) are treated as true features (binary 0/1); low importance dropped elsewhere.
         feature_level_rules: Dict[str, Dict[int, List[int]]] = {}
         if X_for_levels is not None and hasattr(explainer, 'rule_clauses') and hasattr(explainer, 'id_condition_map'):
             try:
-                # Build feature_levels from aligned test set
                 feature_levels_ffa: Dict[str, List[int]] = {}
                 for col in X_for_levels.columns:
                     s = X_for_levels[col].dropna()
@@ -2357,6 +2434,12 @@ def generate_dashboard_outputs(
                 feature_levels[f] = [0, 1]
             if f not in feature_metadata:
                 feature_metadata[f] = 'binary'
+        # sec_dx_* columns are one-hot binary; ensure they have levels and metadata
+        if f.startswith('sec_dx_'):
+            if f not in feature_levels:
+                feature_levels[f] = [0, 1]
+            if f not in feature_metadata:
+                feature_metadata[f] = 'binary'
 
     # sec_dx dropdown: options = canonical levels; keep only those with non-trivial importance
     imp_series = combined_importance_filtered.set_index('feature')['combined_importance_norm']
@@ -2377,12 +2460,25 @@ def generate_dashboard_outputs(
     if not sec_dx_dropdown_options:
         sec_dx_dropdown_options = list(SEC_DX_LEVELS)
 
+    # Human-readable display names for visualization/API (sec_dx_* -> "Secondary diagnosis: <level>")
+    feature_display_names: Dict[str, str] = {}
+    for level, col in sec_dx_one_hot_map.items():
+        feature_display_names[col] = f"Secondary diagnosis: {level}"
+    # Pass through any existing display names from feature_level_labels for other features if needed
+    for f in feature_names:
+        if f not in feature_display_names and f.startswith('sec_dx_'):
+            # Fallback: derive level from column name (sec_dx_Dilated -> Dilated)
+            suffix = f[7:]  # after "sec_dx_"
+            if suffix:
+                feature_display_names[f] = f"Secondary diagnosis: {suffix.replace('_', ' ')}"
+
     # Create comprehensive dashboard data
     dashboard_data = {
         'cohort': cohort,
         'timestamp': datetime.now().isoformat(),
         'ffa_method': 'xgboost_json_with_xgboost_shap_filtering' if use_xgboost_only else 'xgboost_json_with_combined_shap_filtering',
         'top_causal_factors': top_causal.to_dict('records'),
+        'feature_display_names': feature_display_names,
         'summary': {
             'total_features': len(combined_importance_filtered),
             'top_k': top_k,
@@ -2522,8 +2618,18 @@ def main():
         choices=["base", "enhanced", "top", "auto"],
         help="Model variant: 'base', 'enhanced', 'top' (top 15 features only), or 'auto' to auto-detect (default: auto)"
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Ignore checkpoints and re-run all steps (SHAP, FFA, dashboard)"
+    )
 
     args = parser.parse_args()
+
+    # Allow force via environment (e.g. SHAP_FFA_FORCE=1 for notebooks/scripts)
+    if os.environ.get("SHAP_FFA_FORCE", "").strip().lower() in ("1", "true", "yes"):
+        args.force = True
+        logger.info("Force re-run enabled via SHAP_FFA_FORCE")
 
     # Set default weights if not provided (will be auto-determined later)
     if args.weight_catboost is None:
@@ -2594,11 +2700,85 @@ def main():
 
         logger.info(f"Found XGBoost model JSON: {xgboost_json}")
 
-        # Step 2: Compute SHAP values
-        logger.info("Step 2: Computing SHAP values from calculator models...")
-        logger.info("This will compute actual SHAP values (not proxies) for full rule-based analysis")
+        # Checkpoint signature for idempotent re-runs
+        signature = _get_checkpoint_signature(
+            args.cohort,
+            args.model_variant,
+            model_cohort,
+            args.top_k,
+            xgboost_json,
+            args.weight_catboost,
+            args.weight_xgboost,
+            use_xgboost_only,
+        )
+        manifest = _load_checkpoint_manifest(output_dir) if not args.force else None
+        shap_loaded_from_checkpoint = False
+        if not args.force and manifest and _checkpoint_signature_matches(manifest, signature):
+            pq_path = output_dir / SHAP_VALUES_PARQUET
+            map_path = output_dir / SHAP_MAP_JSON
+            if manifest.get("steps", {}).get("shap") and pq_path.exists() and map_path.exists():
+                shap_values_df = _read_parquet(pq_path)
+                with open(map_path, "r") as f:
+                    shap_map = json.load(f)
+                shap_loaded_from_checkpoint = True
+                logger.info("Loaded SHAP values and map from checkpoint (skipping Step 2)")
 
-        if use_xgboost_only:
+        if shap_loaded_from_checkpoint:
+            # Load test data for FFA (required for Step 4)
+            logger.info("Loading test data for FFA analysis...")
+            try:
+                df = load_calculator_data_for_shap(args.cohort)
+                df = prepare_calculator_features(df)
+                if 'txpl_year' in df.columns:
+                    year_counts = df['txpl_year'].value_counts().sort_index()
+                    cumsum = year_counts.cumsum()
+                    target = int(len(df) * 0.8)
+                    cutoff_year = None
+                    for year, count in cumsum.items():
+                        if count >= target:
+                            cutoff_year = int(year)
+                            break
+                    if cutoff_year is None:
+                        cutoff_year = 2021
+                        logger.warning(f"Could not calculate cutoff year, using {cutoff_year}")
+                    test_mask = df['txpl_year'] > cutoff_year
+                    df_test = df[test_mask].copy()
+                    logger.info(f"Using test set (txpl_year > {cutoff_year}): {len(df_test)} samples for FFA")
+                else:
+                    logger.warning("txpl_year not found, using full dataset for FFA")
+                    df_test = df.copy()
+                if remove_leakage_predictors is not None:
+                    df_clean = remove_leakage_predictors(df_test, time_col='time', status_col='status')
+                else:
+                    leakage_cols = ['ev_time', 'ev_type', 'time', 'status', 'int_dead', 'age_death',
+                                   'graft_loss', 'int_graft_loss', 'outcome', 'outcome_int_graft_loss',
+                                   'outcome_graft_loss']
+                    df_clean = df_test.drop(columns=[c for c in leakage_cols if c in df_test.columns], errors='ignore')
+                all_feature_cols = [col for col in df_clean.columns if col not in ['time', 'status', 'txpl_year']]
+                include_recommended = model_cohort.endswith("_enhanced") or model_cohort.endswith("_top")
+                try:
+                    from calculator_features import filter_to_calculator_features
+                    feature_cols = filter_to_calculator_features(df_clean, all_feature_cols, include_recommended=include_recommended)
+                except ImportError:
+                    feature_cols = all_feature_cols
+                X_test_for_ffa = df_clean[feature_cols].copy()
+                constant_cols = [col for col in X_test_for_ffa.columns if X_test_for_ffa[col].nunique() < 2]
+                if constant_cols:
+                    X_test_for_ffa = X_test_for_ffa.drop(columns=constant_cols)
+                X_test_for_ffa = X_test_for_ffa.fillna(0)
+                for col in X_test_for_ffa.columns:
+                    if X_test_for_ffa[col].dtype == 'object':
+                        X_test_for_ffa[col] = pd.Categorical(X_test_for_ffa[col]).codes
+                logger.info(f"Prepared test set for FFA: {len(X_test_for_ffa)} instances, {len(X_test_for_ffa.columns)} features")
+            except Exception as e:
+                logger.warning(f"Could not load test data for FFA: {e}. FFA will use rule definition counts instead.")
+                X_test_for_ffa = None
+        else:
+            # Step 2: Compute SHAP values
+            logger.info("Step 2: Computing SHAP values from calculator models...")
+            logger.info("This will compute actual SHAP values (not proxies) for full rule-based analysis")
+
+        if not shap_loaded_from_checkpoint and use_xgboost_only:
             # Simplified: Only compute XGBoost SHAP
             logger.info("Using simplified pipeline: Computing XGBoost SHAP only...")
             try:
@@ -2729,7 +2909,7 @@ def main():
                     f"Failed to compute XGBoost SHAP values: {e}. "
                     "SHAP values are required for full rule-based FFA analysis."
                 ) from e
-        else:
+        elif not shap_loaded_from_checkpoint:
             # Full pipeline: Compute both and combine
             try:
                 cb_shap_map, xgb_shap_map, cb_shap_df, xgb_shap_df = run_calculator_shap_analysis(args.cohort, args.model_variant)
@@ -2844,6 +3024,16 @@ def main():
                 logger.warning(f"Could not load test data for FFA: {e}. FFA will use rule definition counts instead.")
                 X_test_for_ffa = None
 
+            # Save SHAP checkpoint for idempotent re-runs
+            _to_parquet(shap_values_df, output_dir / SHAP_VALUES_PARQUET)
+            with open(output_dir / SHAP_MAP_JSON, "w") as f:
+                json.dump(shap_map, f, indent=2)
+            steps = (manifest or {}).get("steps") if manifest else {}
+            steps = dict(steps) if isinstance(steps, dict) else {}
+            steps["shap"] = True
+            _save_checkpoint_manifest(output_dir, signature, steps)
+            logger.info("Saved SHAP checkpoint")
+
         # Step 4: Run FFA with XGBoost JSON and SHAP values
         if not FFA_AVAILABLE:
             raise RuntimeError(
@@ -2853,16 +3043,44 @@ def main():
         
         logger.info("Step 4: Running full rule-based FFA analysis on TEST SET...")
         logger.info("Rules will be applied to test data instances to count actual rule firings")
-        causal_df, feature_level_rules = run_ffa_with_shap(
-            args.cohort,
-            xgboost_json,
-            shap_map,
-            output_dir,
-            top_k=args.top_k,
-            shap_values_df=shap_values_df,
-            X_test=X_test_for_ffa,
-            use_xgboost_only=use_xgboost_only
-        )
+        causal_path_pq = output_dir / 'ffa_causal_factors.parquet'
+        flr_path = output_dir / FEATURE_LEVEL_RULES_JSON
+        ffa_loaded_from_checkpoint = False
+        if not args.force and manifest and _checkpoint_signature_matches(manifest, signature):
+            if manifest.get("steps", {}).get("ffa") and causal_path_pq.exists() and flr_path.exists():
+                causal_df = _read_parquet(causal_path_pq)
+                with open(flr_path, "r") as f:
+                    flr_raw = json.load(f)
+                feature_level_rules = {
+                    feat: {int(k): v for k, v in levels.items()}
+                    for feat, levels in flr_raw.items()
+                }
+                ffa_loaded_from_checkpoint = True
+                logger.info("Loaded FFA causal factors and feature-level rules from checkpoint (skipping Step 4)")
+
+        if not ffa_loaded_from_checkpoint:
+            causal_df, feature_level_rules = run_ffa_with_shap(
+                args.cohort,
+                xgboost_json,
+                shap_map,
+                output_dir,
+                top_k=args.top_k,
+                shap_values_df=shap_values_df,
+                X_test=X_test_for_ffa,
+                use_xgboost_only=use_xgboost_only
+            )
+            # Save feature-level rules and FFA checkpoint
+            with open(flr_path, "w") as f:
+                json.dump(
+                    {feat: {str(k): v for k, v in levels.items()} for feat, levels in feature_level_rules.items()},
+                    f,
+                    indent=2,
+                )
+            steps = (manifest or {}).get("steps") if manifest else {}
+            steps = dict(steps) if isinstance(steps, dict) else {}
+            steps["ffa"] = True
+            _save_checkpoint_manifest(output_dir, signature, steps)
+            logger.info("Saved FFA checkpoint")
 
         # Get importance for dashboard
         if use_xgboost_only:
@@ -2898,75 +3116,89 @@ def main():
         # Step 5: Generate dashboard outputs
         logger.info("")
         logger.info("Step 5: Generating dashboard outputs...")
+        dashboard_data_path = output_dir / 'dashboard_data.json'
+        dashboard_loaded_from_checkpoint = False
+        if not args.force and manifest and _checkpoint_signature_matches(manifest, signature):
+            if manifest.get("steps", {}).get("dashboard") and dashboard_data_path.exists():
+                with open(dashboard_data_path, "r") as f:
+                    dashboard_data = json.load(f)
+                dashboard_loaded_from_checkpoint = True
+                logger.info("Loaded dashboard data from checkpoint (skipping Step 5)")
 
-        # Get feature data for metadata generation
-        feature_data_for_metadata = None
-        feature_level_labels: Dict[str, List[str]] = {}
-        try:
-            df_test = load_calculator_data_for_shap(args.cohort)
-            df_test = prepare_calculator_features(df_test)
-            if 'txpl_year' in df_test.columns:
-                cutoff_year = 2021
-                test_mask = df_test['txpl_year'] > cutoff_year
-                df_test = df_test[test_mask].copy()
+        if not dashboard_loaded_from_checkpoint:
+            # Get feature data for metadata generation
+            feature_data_for_metadata = None
+            feature_level_labels_dash: Dict[str, List[str]] = {}
+            try:
+                df_test = load_calculator_data_for_shap(args.cohort)
+                df_test = prepare_calculator_features(df_test)
+                if 'txpl_year' in df_test.columns:
+                    cutoff_year = 2021
+                    test_mask = df_test['txpl_year'] > cutoff_year
+                    df_test = df_test[test_mask].copy()
 
-            # Remove leakage and prepare features (same as SHAP computation)
-            if remove_leakage_predictors is not None:
-                df_clean = remove_leakage_predictors(df_test, time_col='time', status_col='status')
-            else:
-                leakage_cols = ['ev_time', 'ev_type', 'time', 'status', 'int_dead', 'age_death',
-                               'graft_loss', 'int_graft_loss', 'outcome', 'outcome_int_graft_loss',
-                               'outcome_graft_loss']
-                df_clean = df_test.drop(columns=[c for c in leakage_cols if c in df_test.columns], errors='ignore')
-            feature_cols = [col for col in df_clean.columns if col not in ['time', 'status', 'txpl_year']]
-            feature_data_for_metadata = df_clean[feature_cols].copy()
+                # Remove leakage and prepare features (same as SHAP computation)
+                if remove_leakage_predictors is not None:
+                    df_clean = remove_leakage_predictors(df_test, time_col='time', status_col='status')
+                else:
+                    leakage_cols = ['ev_time', 'ev_type', 'time', 'status', 'int_dead', 'age_death',
+                                   'graft_loss', 'int_graft_loss', 'outcome', 'outcome_int_graft_loss',
+                                   'outcome_graft_loss']
+                    df_clean = df_test.drop(columns=[c for c in leakage_cols if c in df_test.columns], errors='ignore')
+                feature_cols = [col for col in df_clean.columns if col not in ['time', 'status', 'txpl_year']]
+                feature_data_for_metadata = df_clean[feature_cols].copy()
 
-            # Normalize so no bytearray/bytes (Parquet/DuckDB can yield these); avoids "unhashable type: 'bytearray'"
-            feature_data_for_metadata = _ensure_string_columns_and_index(feature_data_for_metadata)
+                # Normalize so no bytearray/bytes (Parquet/DuckDB can yield these); avoids "unhashable type: 'bytearray'"
+                feature_data_for_metadata = _ensure_string_columns_and_index(feature_data_for_metadata)
 
-            # Keep top features (e.g. sec_dx) even if constant in this slice, so we can capture their levels
-            top_feature_names = {_safe_str_for_hash(x) for x in combined_importance['feature'].tolist()}
-            constant_cols = [
-                col for col in feature_data_for_metadata.columns
-                if feature_data_for_metadata[col].nunique() < 2 and col not in top_feature_names
-            ]
-            if constant_cols:
-                feature_data_for_metadata = feature_data_for_metadata.drop(columns=constant_cols)
-            feature_data_for_metadata = feature_data_for_metadata.fillna(0)
+                # Keep top features (e.g. sec_dx) even if constant in this slice, so we can capture their levels
+                top_feature_names = {_safe_str_for_hash(x) for x in combined_importance['feature'].tolist()}
+                constant_cols = [
+                    col for col in feature_data_for_metadata.columns
+                    if feature_data_for_metadata[col].nunique() < 2 and col not in top_feature_names
+                ]
+                if constant_cols:
+                    feature_data_for_metadata = feature_data_for_metadata.drop(columns=constant_cols)
+                feature_data_for_metadata = feature_data_for_metadata.fillna(0)
 
-            # Capture category labels (for sec_dx etc.) before converting to numeric codes
-            for col in list(feature_data_for_metadata.columns):
-                if feature_data_for_metadata[col].dtype == 'object' and col in top_feature_names:
-                    try:
-                        cat = pd.Categorical(feature_data_for_metadata[col])
-                        # categories[i] is the label for code i
-                        feature_level_labels[col] = cat.categories.astype(str).tolist()
-                    except Exception:
-                        pass
+                # Capture category labels (for sec_dx etc.) before converting to numeric codes
+                for col in list(feature_data_for_metadata.columns):
+                    if feature_data_for_metadata[col].dtype == 'object' and col in top_feature_names:
+                        try:
+                            cat = pd.Categorical(feature_data_for_metadata[col])
+                            # categories[i] is the label for code i
+                            feature_level_labels_dash[col] = cat.categories.astype(str).tolist()
+                        except Exception:
+                            pass
 
-            # Convert categorical to numeric
-            for col in feature_data_for_metadata.columns:
-                if feature_data_for_metadata[col].dtype == 'object':
-                    feature_data_for_metadata[col] = pd.Categorical(feature_data_for_metadata[col]).codes
+                # Convert categorical to numeric
+                for col in feature_data_for_metadata.columns:
+                    if feature_data_for_metadata[col].dtype == 'object':
+                        feature_data_for_metadata[col] = pd.Categorical(feature_data_for_metadata[col]).codes
 
-            logger.info(f"Loaded feature data for metadata: {len(feature_data_for_metadata)} rows, {len(feature_data_for_metadata.columns)} features")
-            if feature_level_labels:
-                logger.info(f"Captured level labels for {len(feature_level_labels)} features: {list(feature_level_labels.keys())}")
-        except Exception as e:
-            logger.warning(f"Could not load feature data for metadata generation: {e}")
-            feature_level_labels = {}
+                logger.info(f"Loaded feature data for metadata: {len(feature_data_for_metadata)} rows, {len(feature_data_for_metadata.columns)} features")
+                if feature_level_labels_dash:
+                    logger.info(f"Captured level labels for {len(feature_level_labels_dash)} features: {list(feature_level_labels_dash.keys())}")
+            except Exception as e:
+                logger.warning(f"Could not load feature data for metadata generation: {e}")
+                feature_level_labels_dash = {}
 
-        dashboard_data = generate_dashboard_outputs(
-            combined_importance,
-            causal_df,
-            output_dir,
-            args.cohort,
-            top_k=args.top_k,
-            xgboost_json_used=xgboost_json is not None,
-            use_xgboost_only=use_xgboost_only,
-            feature_data=feature_data_for_metadata,
-            feature_level_labels=feature_level_labels
-        )
+            dashboard_data = generate_dashboard_outputs(
+                combined_importance,
+                causal_df,
+                output_dir,
+                args.cohort,
+                top_k=args.top_k,
+                xgboost_json_used=xgboost_json is not None,
+                use_xgboost_only=use_xgboost_only,
+                feature_data=feature_data_for_metadata,
+                feature_level_labels=feature_level_labels_dash
+            )
+            steps = (manifest or {}).get("steps") if manifest else {}
+            steps = dict(steps) if isinstance(steps, dict) else {}
+            steps["dashboard"] = True
+            _save_checkpoint_manifest(output_dir, signature, steps)
+            logger.info("Saved dashboard checkpoint")
 
         # Get filtered causal factors from dashboard data for logging
         top_causal_from_dashboard = dashboard_data.get('top_causal_factors', [])

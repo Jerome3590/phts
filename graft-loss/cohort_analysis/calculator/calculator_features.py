@@ -4,6 +4,12 @@ Calculator Feature Definitions
 This module defines the exact list of features that should be used for the risk calculator model.
 Only features that can be derived from calculator user inputs should be included.
 sec_dx is one-hot encoded in prepare_calculator_features into sec_dx_<level> columns.
+
+End-to-end sec_dx mapping (all use same SEC_DX_LEVELS and column naming: sec_dx_{label with / and space -> _}):
+  - Dashboard: user selects label (e.g. "Dilated") -> sends sec_dx: "Dilated" to API.
+  - Lambda: prepare_features_for_inference converts sec_dx -> sec_dx_Dilated=1, others=0.
+  - Training: top_causal_features "sec_dx" expanded via get_sec_dx_one_hot_columns(); data from prepare_calculator_features.
+  - SHAP/FFA/results: feature importance, SHAP values, and FFA rules use same sec_dx_* column names.
 """
 
 from typing import List, Set
