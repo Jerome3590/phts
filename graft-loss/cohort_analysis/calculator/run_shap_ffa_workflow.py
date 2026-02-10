@@ -55,6 +55,46 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# DuckDB + Parquet helpers (use when available for faster I/O)
+def _read_parquet(path: Path) -> pd.DataFrame:
+    """Read a Parquet file, using DuckDB if available else pandas."""
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(str(path))
+    try:
+        import duckdb
+        conn = duckdb.connect()
+        # Parameterized path (path is Path, not raw user input)
+        conn.execute("SELECT * FROM read_parquet($1)", [path.resolve().as_posix()])
+        return conn.fetchdf()
+    except ImportError:
+        return pd.read_parquet(path)
+    except Exception:
+        return pd.read_parquet(path)
+
+def _to_parquet(df: pd.DataFrame, path: Path) -> None:
+    """Write DataFrame to Parquet (DuckDB not needed for write; use snappy when available)."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        df.to_parquet(path, index=False, compression="snappy")
+    except TypeError:
+        df.to_parquet(path, index=False)
+
+def _read_table_parquet_or_csv(path: Path, prefer_parquet: bool = True) -> Optional[pd.DataFrame]:
+    """Load a table from Parquet if it exists, else CSV. Uses DuckDB for Parquet when available."""
+    path = Path(path)
+    parquet_path = path.with_suffix(".parquet") if path.suffix.lower() == ".csv" else path
+    csv_path = path.with_suffix(".csv") if path.suffix.lower() == ".parquet" else path
+    if prefer_parquet and parquet_path.exists():
+        try:
+            return _read_parquet(parquet_path)
+        except Exception as e:
+            logger.debug(f"Fallback to CSV after Parquet read failed: {e}")
+    if csv_path.exists():
+        return pd.read_csv(csv_path)
+    return None
+
 # Import FFA analysis components
 FFA_AVAILABLE = False
 try:
@@ -324,14 +364,26 @@ def load_calculator_importance(cohort: str, model_variant: Optional[str] = None)
 
     importance_data = {}
     for model_name, file_paths in importance_files.items():
+        df = None
         file_path = None
         for path in file_paths:
+            pq = path.with_suffix(".parquet")
+            if pq.exists():
+                try:
+                    df = _read_parquet(pq)
+                    file_path = pq
+                    break
+                except Exception:
+                    pass
             if path.exists():
-                file_path = path
-                break
+                try:
+                    df = _read_parquet(path) if path.suffix.lower() == ".parquet" else pd.read_csv(path)
+                    file_path = path
+                    break
+                except Exception:
+                    pass
 
-        if file_path:
-            df = pd.read_csv(file_path)
+        if df is not None and file_path:
             # MC-CV outputs use importance_mean; normalize to 'importance' for downstream use
             if 'importance_mean' in df.columns and 'importance' not in df.columns:
                 df = df.copy()
@@ -666,9 +718,11 @@ def prepare_calculator_features(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def load_calculator_data_for_shap(cohort: str) -> pd.DataFrame:
+def load_calculator_data_for_shap(cohort: str, use_parquet_cache: bool = True) -> pd.DataFrame:
     """
     Load calculator data for SHAP computation.
+    When use_parquet_cache is True, reads from a Parquet cache (via DuckDB if available)
+    if it exists and is newer than the SAS source; otherwise loads from SAS and writes cache.
 
     Returns:
         DataFrame with features prepared for calculator models
@@ -684,6 +738,18 @@ def load_calculator_data_for_shap(cohort: str) -> pd.DataFrame:
         if path.exists():
             data_path = path
             break
+
+    # Parquet cache: same directory as script outputs, keyed by cohort
+    cache_dir = CALCULATOR_DIR / "outputs" / "cache"
+    cache_path = cache_dir / f"phts_calculator_{cohort}.parquet"
+
+    if use_parquet_cache and cache_path.exists():
+        if data_path is None or cache_path.stat().st_mtime >= data_path.stat().st_mtime:
+            logger.info(f"Loading calculator data from Parquet cache: {cache_path}")
+            try:
+                return _read_parquet(cache_path)
+            except Exception as e:
+                logger.warning(f"Parquet cache read failed, falling back to SAS: {e}")
 
     if data_path is None:
         raise FileNotFoundError(
@@ -705,7 +771,7 @@ def load_calculator_data_for_shap(cohort: str) -> pd.DataFrame:
         except ImportError:
             try:
                 df = pd.read_sas(str(data_path))
-            except:
+            except Exception:
                 raise ImportError(
                     "Need pyreadstat, sas7bdat, or pandas with SAS support to load data. "
                     "Install with: pip install pyreadstat"
@@ -729,6 +795,13 @@ def load_calculator_data_for_shap(cohort: str) -> pd.DataFrame:
     df = prepare_calculator_features(df)
     logger.info("Feature preparation complete")
 
+    if use_parquet_cache:
+        try:
+            _to_parquet(df, cache_path)
+            logger.info(f"Wrote Parquet cache: {cache_path}")
+        except Exception as e:
+            logger.warning(f"Could not write Parquet cache: {e}")
+
     return df
 
 
@@ -737,7 +810,7 @@ def compute_calculator_shap_values(
     X: pd.DataFrame,
     model_type: str,
     n_samples: int = 2000
-) -> Tuple[np.ndarray, pd.DataFrame]:
+) -> Tuple[np.ndarray, pd.DataFrame, pd.DataFrame]:
     """
     Compute SHAP values for calculator survival models.
 
@@ -750,7 +823,8 @@ def compute_calculator_shap_values(
         n_samples: Number of samples to use (for memory efficiency)
 
     Returns:
-        Tuple of (shap_values_array, shap_values_dataframe)
+        Tuple of (shap_values_array, shap_values_dataframe, X_used).
+        X_used is the dataframe actually passed to SHAP (same rows/order as shap_values_dataframe).
     """
     import shap
 
@@ -1059,8 +1133,8 @@ def compute_calculator_shap_values(
         )
 
         logger.info(f"Computed SHAP values: shape {shap_df.shape}")
-
-        return shap_values, shap_df
+        # X_sample_clean has same index as shap_df and same column order (feature_names_for_df)
+        return shap_values, shap_df, X_sample_clean
 
     except Exception as e:
         logger.error(f"Error computing SHAP values for {model_type}: {e}", exc_info=True)
@@ -1219,7 +1293,7 @@ def run_calculator_shap_analysis(cohort: str, model_variant: Optional[str] = Non
     # Compute SHAP values for CatBoost
     logger.info("Computing CatBoost SHAP values...")
     try:
-        cb_shap_values, cb_shap_df = compute_calculator_shap_values(
+        cb_shap_values, cb_shap_df, _ = compute_calculator_shap_values(
             cb_model, X, 'catboost', n_samples=2000
         )
 
@@ -1252,7 +1326,7 @@ def run_calculator_shap_analysis(cohort: str, model_variant: Optional[str] = Non
         logger.info(f"Converted {len(categorical_cols_for_shap)} categorical features to numeric codes for XGBoost SHAP")
     
     try:
-        xgb_shap_values, xgb_shap_df = compute_calculator_shap_values(
+        xgb_shap_values, xgb_shap_df, _ = compute_calculator_shap_values(
             xgb_model, X_for_xgb_shap, 'xgboost', n_samples=2000
         )
 
@@ -1285,7 +1359,7 @@ def run_ffa_with_shap(
     shap_values_df: Optional[pd.DataFrame] = None,
     X_test: Optional[pd.DataFrame] = None,
     use_xgboost_only: bool = False
-) -> pd.DataFrame:
+) -> Tuple[pd.DataFrame, Dict[str, Dict[int, List[int]]]]:
     """
     Run FFA analysis using:
     - XGBoost model JSON for rule extraction
@@ -1431,6 +1505,7 @@ def run_ffa_with_shap(
 
         # Apply rules to test data to count actual rule firings
         # This ensures FFA analysis runs on the test set, not just counting features in rule definitions
+        X_for_levels = None  # Aligned test set for per-level FFA (set below when X_test is not None)
         if X_test is not None:
             logger.info(f"Applying rules to test set: {len(X_test)} instances")
             logger.info("Counting rule frequencies based on actual rule firings on test data")
@@ -1468,6 +1543,7 @@ def run_ffa_with_shap(
 
             X_test_aligned = X_test_aligned[aligned_cols].copy()
             X_test_aligned.columns = model_feature_names
+            X_for_levels = X_test_aligned
 
             # Convert to numpy array for rule checking
             X_test_array = X_test_aligned.values
@@ -1722,12 +1798,40 @@ def run_ffa_with_shap(
 
         causal_df = causal_df.sort_values('causal_responsibility', ascending=False)
 
-        # Save results
-        causal_path = output_dir / 'ffa_causal_factors.csv'
-        causal_df.to_csv(causal_path, index=False)
-        logger.info(f"Saved FFA causal factors to {causal_path}")
+        # Save results (Parquet for fast/DuckDB reads, CSV for compatibility)
+        causal_path_csv = output_dir / 'ffa_causal_factors.csv'
+        causal_path_pq = output_dir / 'ffa_causal_factors.parquet'
+        causal_df.to_csv(causal_path_csv, index=False)
+        try:
+            _to_parquet(causal_df, causal_path_pq)
+            logger.info(f"Saved FFA causal factors to {causal_path_pq} and {causal_path_csv}")
+        except Exception as e:
+            logger.warning(f"Could not write Parquet: {e}; saved CSV to {causal_path_csv}")
 
-        return causal_df
+        # Per-level FFA: which rule indices each (feature, level) satisfies
+        feature_level_rules: Dict[str, Dict[int, List[int]]] = {}
+        if X_for_levels is not None and hasattr(explainer, 'rule_clauses') and hasattr(explainer, 'id_condition_map'):
+            try:
+                # Build feature_levels from aligned test set
+                feature_levels_ffa: Dict[str, List[int]] = {}
+                for col in X_for_levels.columns:
+                    s = X_for_levels[col].dropna()
+                    if len(s) == 0:
+                        continue
+                    try:
+                        lev = sorted(pd.Series(s).astype(int).unique().tolist())
+                    except (TypeError, ValueError):
+                        lev = sorted(pd.Series(s).astype(float).unique().tolist())
+                    feature_levels_ffa[col] = lev
+                feature_level_rules = compute_feature_level_rules(
+                    explainer, feature_levels_ffa, getattr(explainer, 'feature_names', None)
+                )
+                if feature_level_rules:
+                    logger.info(f"Computed per-level FFA rules for {len(feature_level_rules)} features")
+            except Exception as e_level:
+                logger.warning(f"Could not compute feature-level FFA rules: {e_level}")
+
+        return causal_df, feature_level_rules
 
     except Exception as e:
         logger.error(f"Error running FFA analysis: {e}", exc_info=True)
@@ -1835,6 +1939,10 @@ def validate_rules_against_shap(
         comparison_df = pd.DataFrame(comparison_data)
         comparison_path = validation_dir / 'rule_shap_comparison.csv'
         comparison_df.to_csv(comparison_path, index=False)
+        try:
+            _to_parquet(comparison_df, validation_dir / 'rule_shap_comparison.parquet')
+        except Exception:
+            pass
         logger.info(f"Saved rule-SHAP comparison: {comparison_path}")
 
         # Save statistics
@@ -1959,10 +2067,14 @@ def generate_feature_metadata(
                      'albumin', 'ast', 'alt', 'bili', 'chol', 'hdl', 'ldl', 'tg',
                      'tp', 'brp', 'bram', 'donisch', 'durcarst', 'bnp', 'sa', 'palb']
     known_binary_or_categorical = ['sec_dx', 'ter_dx', 'hxsurg', 'chd_sv', 'hxaf_fl', 'prim_dx']
+    col_lower = {c.lower(): c for c in df.columns}
 
     for feature_name in feature_names:
-        if feature_name in df.columns:
-            col_data = df[feature_name].dropna()
+        col_name = df.columns[df.columns == feature_name].tolist()
+        if not col_name:
+            col_name = [col_lower[feature_name.lower()]] if feature_name.lower() in col_lower else []
+        if col_name:
+            col_data = df[col_name[0]].dropna()
 
             if len(col_data) > 0:
                 is_known_numeric = any(pattern in feature_name.lower() for pattern in known_numeric)
@@ -1986,7 +2098,116 @@ def generate_feature_metadata(
         else:
             feature_metadata[feature_name] = 'numeric'
 
+    # Ensure every binary/categorical feature has at least [0, 1] for dropdowns (e.g. if column was missing or constant)
+    for feature_name in feature_names:
+        if feature_metadata.get(feature_name) == 'binary' and feature_name not in feature_levels:
+            feature_levels[feature_name] = [0, 1]
+
     return feature_metadata, feature_levels
+
+
+def compute_feature_level_shap(
+    shap_values_df: pd.DataFrame,
+    X_align: pd.DataFrame,
+    feature_levels: Optional[Dict[str, List[int]]] = None,
+) -> Dict[str, Dict[int, Dict[str, Any]]]:
+    """
+    Compute per-level SHAP stats: mean SHAP, count, count with SHAP > 0, and whether level has any positive SHAP.
+
+    X_align must have the same index and row order as shap_values_df (the X actually used for SHAP).
+    Only features present in both shap_values_df and X_align are considered.
+
+    Returns:
+        feature -> level (int) -> {mean_shap, count, count_positive, shap_positive}
+        where shap_positive is True if any sample at this level had SHAP > 0.
+    """
+    out: Dict[str, Dict[int, Dict[str, Any]]] = {}
+    common = [c for c in shap_values_df.columns if c in X_align.columns]
+    if not common:
+        return out
+    # Align by index so row i of shap_values_df corresponds to row i of X_align
+    idx = shap_values_df.index
+    if not idx.equals(X_align.index):
+        X_align = X_align.reindex(idx).dropna(how="all")
+        shap_values_df = shap_values_df.reindex(X_align.index).dropna(how="all")
+    for feature in common:
+        if feature not in shap_values_df.columns or feature not in X_align.columns:
+            continue
+        levels = feature_levels.get(feature) if feature_levels else None
+        if levels is None:
+            try:
+                levels = sorted(pd.Series(X_align[feature].dropna()).astype(int).unique().tolist())
+            except (TypeError, ValueError):
+                levels = sorted(pd.Series(X_align[feature].dropna().astype(float)).unique().tolist())
+        out[feature] = {}
+        for level in levels:
+            try:
+                lval = int(level) if not isinstance(level, (int, float)) else level
+            except (TypeError, ValueError):
+                lval = level
+            mask = (X_align[feature].astype(float) == float(lval)) | (X_align[feature] == lval)
+            if mask.sum() == 0:
+                out[feature][lval] = {
+                    "mean_shap": 0.0,
+                    "count": 0,
+                    "count_positive": 0,
+                    "shap_positive": False,
+                }
+                continue
+            sh = shap_values_df.loc[mask, feature]
+            mean_shap = float(sh.mean())
+            count = int(mask.sum())
+            count_positive = int((sh > 0).sum())
+            out[feature][lval] = {
+                "mean_shap": mean_shap,
+                "count": count,
+                "count_positive": count_positive,
+                "shap_positive": count_positive > 0,
+            }
+    return out
+
+
+def compute_feature_level_rules(
+    explainer: Any,
+    feature_levels: Dict[str, List[int]],
+    feature_names: Optional[Dict[int, str]] = None,
+) -> Dict[str, Dict[int, List[int]]]:
+    """
+    For each (feature, level), list which FFA rule indices have a condition on that feature
+    satisfied by this level. Explainer uses id_condition_map[lit] = (feat_idx, threshold, direction)
+    with direction 0 => value <= threshold, direction 1 => value > threshold.
+    """
+    out: Dict[str, Dict[int, List[int]]] = {}
+    if not getattr(explainer, "rule_clauses", None) or not getattr(explainer, "id_condition_map", None):
+        return out
+    fnames = feature_names if feature_names is not None else getattr(explainer, "feature_names", None) or {}
+    if isinstance(fnames, list):
+        fnames = {i: n for i, n in enumerate(fnames)}
+
+    for rule_idx, clause in enumerate(explainer.rule_clauses):
+        for lit in clause:
+            try:
+                feat_idx, threshold, direction = explainer.id_condition_map[lit]
+            except (KeyError, TypeError, ValueError):
+                continue
+            feat_name = fnames.get(feat_idx, f"feature_{feat_idx}")
+            levels = feature_levels.get(feat_name)
+            if levels is None:
+                continue
+            for level in levels:
+                try:
+                    lval = int(level) if not isinstance(level, (int, float)) else level
+                except (TypeError, ValueError):
+                    continue
+                satisfies = (lval <= threshold) if direction == 0 else (lval > threshold)
+                if satisfies:
+                    if feat_name not in out:
+                        out[feat_name] = {}
+                    if lval not in out[feat_name]:
+                        out[feat_name][lval] = []
+                    if rule_idx not in out[feat_name][lval]:
+                        out[feat_name][lval].append(rule_idx)
+    return out
 
 
 def generate_dashboard_outputs(
@@ -1997,7 +2218,8 @@ def generate_dashboard_outputs(
     top_k: int = 10,
     xgboost_json_used: bool = False,
     use_xgboost_only: bool = False,
-    feature_data: Optional[pd.DataFrame] = None
+    feature_data: Optional[pd.DataFrame] = None,
+    feature_level_labels: Optional[Dict[str, List[str]]] = None,
 ):
     """Generate dashboard-ready outputs for risk dashboard."""
     logger.info("Generating dashboard outputs...")
@@ -2046,11 +2268,19 @@ def generate_dashboard_outputs(
     # Generate feature metadata and level values if data is available
     feature_metadata = {}
     feature_levels: Dict[str, List[int]] = {}
+    feature_names = combined_importance['feature'].tolist()
     if feature_data is not None:
-        feature_names = combined_importance['feature'].tolist()
         feature_metadata, feature_levels = generate_feature_metadata(feature_data, feature_names)
         logger.info(f"Generated feature metadata for {len(feature_metadata)} features")
         logger.info(f"Generated feature_levels for {len(feature_levels)} features (dropdown options)")
+    # Ensure known categoricals always have levels (e.g. if feature_data missing or column dropped)
+    known_cat = ['sec_dx', 'ter_dx', 'hxsurg', 'chd_sv', 'hxaf_fl', 'prim_dx']
+    for f in feature_names:
+        if any(c in f.lower() for c in known_cat):
+            if f not in feature_levels:
+                feature_levels[f] = [0, 1]
+            if f not in feature_metadata:
+                feature_metadata[f] = 'binary'
 
     # Create comprehensive dashboard data
     dashboard_data = {
@@ -2068,7 +2298,8 @@ def generate_dashboard_outputs(
         },
         'feature_importance': combined_importance_filtered.head(50).to_dict('records'),
         'feature_metadata': feature_metadata,
-        'feature_levels': feature_levels,  # Actual level values for categorical/binary dropdowns
+        'feature_levels': feature_levels,
+        'feature_level_labels': feature_level_labels or {},  # labels[i] = display label for level i (e.g. sec_dx)
         'notes': {
             'model_json_used': 'XGBoost (CatBoost JSON not used due to categorical hashing)',
             'shap_filtering': 'XGBoost SHAP only (simplified pipeline)' if use_xgboost_only else 'Combined SHAP from both XGBoost and CatBoost',
@@ -2084,14 +2315,24 @@ def generate_dashboard_outputs(
         json.dump(dashboard_data, f, indent=2)
     logger.info(f"Saved dashboard data to {json_path}")
 
-    # Save CSV files
+    # Save tables as Parquet (DuckDB-friendly) and CSV (compatibility)
     csv_path = output_dir / 'top_causal_factors.csv'
+    pq_path = output_dir / 'top_causal_factors.parquet'
     top_causal.to_csv(csv_path, index=False)
-    logger.info(f"Saved top {top_k} causal factors to {csv_path}")
+    try:
+        _to_parquet(top_causal, pq_path)
+        logger.info(f"Saved top {top_k} causal factors to {pq_path} and {csv_path}")
+    except Exception as e:
+        logger.info(f"Saved top {top_k} causal factors to {csv_path}")
 
     importance_path = output_dir / 'combined_shap_importance.csv'
+    importance_pq = output_dir / 'combined_shap_importance.parquet'
     combined_importance.to_csv(importance_path, index=False)
-    logger.info(f"Saved combined SHAP importance to {importance_path}")
+    try:
+        _to_parquet(combined_importance, importance_pq)
+        logger.info(f"Saved combined SHAP importance to {importance_pq} and {importance_path}")
+    except Exception as e:
+        logger.info(f"Saved combined SHAP importance to {importance_path}")
 
     # Create summary report
     report_lines = [
@@ -2361,7 +2602,7 @@ def main():
                 # Compute XGBoost SHAP on TEST SET (all rows, or sample if too large)
                 # Use n_samples=None to compute for all test rows, or set a limit
                 logger.info(f"Computing SHAP values on test set: {len(X_test)} samples")
-                xgb_shap_values, xgb_shap_df = compute_calculator_shap_values(
+                xgb_shap_values, xgb_shap_df, X_shap_used = compute_calculator_shap_values(
                     xgb_model, X_test, 'xgboost', n_samples=len(X_test) if len(X_test) <= 2000 else 2000
                 )
 
@@ -2562,8 +2803,8 @@ def main():
         logger.info("Step 5: Generating dashboard outputs...")
 
         # Get feature data for metadata generation
-        # Try to load test data that was used for SHAP computation
         feature_data_for_metadata = None
+        feature_level_labels: Dict[str, List[str]] = {}
         try:
             df_test = load_calculator_data_for_shap(args.cohort)
             df_test = prepare_calculator_features(df_test)
@@ -2583,11 +2824,25 @@ def main():
             feature_cols = [col for col in df_clean.columns if col not in ['time', 'status', 'txpl_year']]
             feature_data_for_metadata = df_clean[feature_cols].copy()
 
-            # Remove constant columns and fill NaN (same as model training)
-            constant_cols = [col for col in feature_data_for_metadata.columns if feature_data_for_metadata[col].nunique() < 2]
+            # Keep top features (e.g. sec_dx) even if constant in this slice, so we can capture their levels
+            top_feature_names = set(combined_importance['feature'].tolist())
+            constant_cols = [
+                col for col in feature_data_for_metadata.columns
+                if feature_data_for_metadata[col].nunique() < 2 and col not in top_feature_names
+            ]
             if constant_cols:
                 feature_data_for_metadata = feature_data_for_metadata.drop(columns=constant_cols)
             feature_data_for_metadata = feature_data_for_metadata.fillna(0)
+
+            # Capture category labels (for sec_dx etc.) before converting to numeric codes
+            for col in list(feature_data_for_metadata.columns):
+                if feature_data_for_metadata[col].dtype == 'object' and col in top_feature_names:
+                    try:
+                        cat = pd.Categorical(feature_data_for_metadata[col])
+                        # categories[i] is the label for code i
+                        feature_level_labels[col] = cat.categories.astype(str).tolist()
+                    except Exception:
+                        pass
 
             # Convert categorical to numeric
             for col in feature_data_for_metadata.columns:
@@ -2595,8 +2850,11 @@ def main():
                     feature_data_for_metadata[col] = pd.Categorical(feature_data_for_metadata[col]).codes
 
             logger.info(f"Loaded feature data for metadata: {len(feature_data_for_metadata)} rows, {len(feature_data_for_metadata.columns)} features")
+            if feature_level_labels:
+                logger.info(f"Captured level labels for {len(feature_level_labels)} features: {list(feature_level_labels.keys())}")
         except Exception as e:
             logger.warning(f"Could not load feature data for metadata generation: {e}")
+            feature_level_labels = {}
 
         dashboard_data = generate_dashboard_outputs(
             combined_importance,
@@ -2606,7 +2864,8 @@ def main():
             top_k=args.top_k,
             xgboost_json_used=xgboost_json is not None,
             use_xgboost_only=use_xgboost_only,
-            feature_data=feature_data_for_metadata
+            feature_data=feature_data_for_metadata,
+            feature_level_labels=feature_level_labels
         )
 
         # Get filtered causal factors from dashboard data for logging

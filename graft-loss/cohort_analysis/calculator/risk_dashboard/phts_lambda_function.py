@@ -1043,7 +1043,8 @@ def handle_metadata(event: Dict[str, Any]) -> Dict[str, Any]:
             try:
                 dashboard_data = load_dashboard_data(cohort, model_variant=model_variant)
                 feature_metadata = get_feature_metadata(cohort)
-                feature_levels = dashboard_data.get("feature_levels", {})  # Level values for dropdowns
+                feature_levels = dashboard_data.get("feature_levels", {})
+                feature_level_labels = dashboard_data.get("feature_level_labels", {})  # e.g. {"sec_dx": ["None", "Type A", ...]}
                 return _response(200, {
                     "cohort": cohort,
                     "model_variant": model_variant,
@@ -1051,7 +1052,8 @@ def handle_metadata(event: Dict[str, Any]) -> Dict[str, Any]:
                     "causal_factors": dashboard_data.get("top_causal_factors", []),
                     "summary": dashboard_data.get("summary", {}),
                     "feature_metadata": feature_metadata,
-                    "feature_levels": feature_levels,  # e.g. {"sec_dx": [0, 1, 2, ...]} for dropdowns
+                    "feature_levels": feature_levels,
+                    "feature_level_labels": feature_level_labels,
                     "api_url": api_url
                 })
             except Exception as e:
@@ -1076,11 +1078,13 @@ def handle_metadata(event: Dict[str, Any]) -> Dict[str, Any]:
                     dashboard_data = load_dashboard_data(c)
                     feature_metadata = get_feature_metadata(c)
                     feature_levels = dashboard_data.get("feature_levels", {})
+                    feature_level_labels = dashboard_data.get("feature_level_labels", {})
                     all_causal_factors[c] = {
                         "top_causal_factors": dashboard_data.get("top_causal_factors", []),
                         "summary": dashboard_data.get("summary", {}),
                         "feature_metadata": feature_metadata,
-                        "feature_levels": feature_levels
+                        "feature_levels": feature_levels,
+                        "feature_level_labels": feature_level_labels
                     }
                     available_cohorts_with_data.append(c)
                     logger.info(f"Successfully loaded dashboard data for {c}")
@@ -1228,14 +1232,15 @@ def handle_causal(event: Dict[str, Any]) -> Dict[str, Any]:
         if not feature_metadata:
             feature_metadata = get_feature_metadata(cohort)
         feature_levels = dashboard_data.get("feature_levels", {})
-        
+        feature_level_labels = dashboard_data.get("feature_level_labels", {})
         return _response(200, {
             "cohort": cohort,
             "model_variant": model_variant,
             "top_causal_factors": top_causal,
             "summary": dashboard_data.get("summary", {}),
             "feature_metadata": feature_metadata,
-            "feature_levels": feature_levels
+            "feature_levels": feature_levels,
+            "feature_level_labels": feature_level_labels
         })
     
     except Exception as e:

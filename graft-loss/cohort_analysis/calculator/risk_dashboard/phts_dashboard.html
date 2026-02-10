@@ -919,8 +919,19 @@
       }, 1000);
     });
     
-    // Feature levels for Risk tab dropdowns (sec_dx, etc.) – from metadata
     let riskFeatureLevels = {};
+    let riskFeatureLevelLabels = {};  // e.g. { sec_dx: ["None", "Type A", "Type B"] } – index = level
+    const KNOWN_CATEGORICAL = ['sec_dx', 'ter_dx', 'hxsurg', 'chd_sv', 'hxaf_fl', 'prim_dx'];
+
+    function levelLabel(v, labelsByIndex) {
+      const n = Number(v);
+      if (labelsByIndex && Array.isArray(labelsByIndex) && n >= 0 && n < labelsByIndex.length && labelsByIndex[n] != null) {
+        return String(labelsByIndex[n]);
+      }
+      if (n === 0) return 'No (0)';
+      if (n === 1) return 'Yes (1)';
+      return 'Level ' + v;
+    }
 
     function populateRiskExtraFeatures() {
       const container = document.getElementById('risk-extra-features');
@@ -931,14 +942,20 @@
           .map(el => el.id).filter(Boolean)
       );
       container.innerHTML = '';
-      if (Object.keys(riskFeatureLevels).length === 0) {
+      let levelsToShow = riskFeatureLevels;
+      if (Object.keys(levelsToShow).length === 0) {
+        levelsToShow = {};
+        KNOWN_CATEGORICAL.forEach(f => { levelsToShow[f] = [0, 1]; });
+      }
+      if (Object.keys(levelsToShow).length === 0) {
         wrapper.style.display = 'none';
         return;
       }
       let added = 0;
-      for (const [featureName, levels] of Object.entries(riskFeatureLevels)) {
+      for (const [featureName, levels] of Object.entries(levelsToShow)) {
         if (existingIds.has(featureName) || !Array.isArray(levels) || levels.length === 0) continue;
-        const optionsHtml = levels.map(v => `<option value="${v}">${v}</option>`).join('');
+        const labels = riskFeatureLevelLabels[featureName];
+        const optionsHtml = levels.map(v => `<option value="${v}">${escapeHtml(levelLabel(v, labels))}</option>`).join('');
         const div = document.createElement('div');
         div.className = 'form-group';
         div.innerHTML = `
@@ -963,6 +980,10 @@
         if (response.ok) {
           const data = await response.json();
           riskFeatureLevels = data.feature_levels || {};
+          riskFeatureLevelLabels = data.feature_level_labels || {};
+          if (Object.keys(riskFeatureLevels).length === 0) {
+            console.warn('Metadata has no feature_levels; using default [0,1] for sec_dx etc. Re-run SHAP/FFA and redeploy for actual levels.');
+          }
           populateRiskExtraFeatures();
         }
       } catch (e) {
@@ -979,6 +1000,7 @@
           const data = await response.json();
           console.log('Causal factors loaded:', data.causal_factors);
           riskFeatureLevels = data.feature_levels || {};
+          riskFeatureLevelLabels = data.feature_level_labels || {};
           populateRiskExtraFeatures();
         }
       } catch (error) {
@@ -1104,7 +1126,8 @@
         causalAnalysisData = {
           factors: causalData.top_causal_factors || [],
           feature_metadata: causalData.feature_metadata || {},
-          feature_levels: causalData.feature_levels || {}  // Actual level values for dropdowns (e.g. sec_dx: [0,1,2,...])
+          feature_levels: causalData.feature_levels || {},
+          feature_level_labels: causalData.feature_level_labels || {}  // e.g. sec_dx: ["None", "Type A", ...]
         };
         
         // Debug: Log feature metadata
@@ -1238,40 +1261,34 @@
         const controlDiv = document.createElement('div');
         controlDiv.className = 'causal-factor-control';
         
-        // Determine if this is a binary or numeric feature
-        // Use feature metadata from API (always available - no fallback)
+        const knownCategoricalNames = ['sec_dx', 'ter_dx', 'hxsurg', 'chd_sv', 'hxaf_fl', 'prim_dx'];
         let isBinary = false;
         let isNumeric = false;
-        
-        // Feature metadata should always be available from model_features
+
         if (causalAnalysisData && causalAnalysisData.feature_metadata && causalAnalysisData.feature_metadata[featureName]) {
           const featureType = causalAnalysisData.feature_metadata[featureName];
           if (featureType === 'binary') {
             isBinary = true;
-            isNumeric = false;
           } else if (featureType === 'numeric') {
-            isBinary = false;
             isNumeric = true;
           } else {
-            // Unknown type - log error and default to numeric
-            console.error(`Unknown feature type '${featureType}' for ${featureName}, defaulting to numeric`);
-            isBinary = false;
             isNumeric = true;
           }
         } else {
-          // Metadata not found - this should not happen, log error
-          console.error(`Feature metadata not found for ${featureName}. Available features:`, Object.keys(causalAnalysisData?.feature_metadata || {}).slice(0, 20));
-          // Default to numeric (most features are numeric)
-          isBinary = false;
-          isNumeric = true;
+          if (knownCategoricalNames.some(c => featureName.toLowerCase().includes(c))) {
+            isBinary = true;
+          } else {
+            isNumeric = true;
+          }
         }
         
         let inputHTML = '';
         if (isBinary) {
           const levels = (causalAnalysisData.feature_levels && causalAnalysisData.feature_levels[featureName]) || [0, 1];
+          const labels = (causalAnalysisData.feature_level_labels && causalAnalysisData.feature_level_labels[featureName]) || null;
           const optionsHtml = levels.map(v => {
             const val = Number(v);
-            const label = (val === 0 ? 'No (0)' : (val === 1 ? 'Yes (1)' : String(v)));
+            const label = levelLabel(v, labels);
             const sel = (Number(currentValue) === val) ? ' selected' : '';
             return `<option value="${v}"${sel}>${escapeHtml(label)}</option>`;
           }).join('');
