@@ -1,12 +1,10 @@
 # Calculator Models
 
-> **🚀 Python Workflow Available**: For a fully Python-based workflow (training + SHAP/FFA), see:
-> - **Training**: `python train_python_models.py --cohort Combined`
-> - **SHAP/FFA**: `python run_shap_ffa_workflow.py --cohort Combined --top-k 10`
-> 
-> The R implementation (`calculator_models.R`) is still available for users who prefer R.
+> **🚀 Single model (top 15 features)**: The deployed calculator uses one model trained on the top 15 high causal/importance features only.
+> - **Training**: `python train_python_models.py --top_features_only` → outputs to `Combined_top/`
+> - **SHAP/FFA**: Run for `Combined_top`; then deploy. Dashboard and Lambda use `Combined_top` only (no Baseline/Extended).
 
-This directory contains three calculator models for pediatric heart transplant graft loss prediction:
+This directory contains calculator training and the risk dashboard. The **deployed** calculator uses a single model (Combined_top, top 15 features). Legacy cohort-specific models (CHD, Combined, Myocardio) remain available for training.
 
 > **📋 For detailed documentation, see [docs/calculator/](../../../docs/calculator/README.md)**
 
@@ -16,10 +14,10 @@ This directory contains three calculator models for pediatric heart transplant g
 
 ## Quick Reference
 
-- **Training Models**: `python train_python_models.py --cohort <Cohort>`
-- **SHAP/FFA Analysis**: `python run_shap_ffa_workflow.py --cohort <Cohort> --top-k 20`
-- **Dashboard Location**: `risk_dashboard/phts_dashboard.html`
-- **Lambda Function**: `risk_dashboard/phts_lambda_function.py`
+- **Train top-features model** (for dashboard): `python train_python_models.py --top_features_only`
+- **SHAP/FFA for Combined_top**: Run workflow for `Combined_top`; output to `outputs/shap_ffa/Combined_top/`
+- **Dashboard**: `risk_dashboard/phts_dashboard.html` (single model: top 15 features)
+- **Lambda**: `risk_dashboard/phts_lambda_function.py` (uses `Combined_top` only)
 
 ## Documentation
 
@@ -52,17 +50,13 @@ Each model compares five different **survival models**:
 
 ## Quick Start
 
-1. **Train Models**: 
+1. **Train top-features model** (for the deployed calculator):
    ```bash
-   python train_python_models.py --cohort Combined
-   python train_python_models.py --cohort CHD
-   python train_python_models.py --cohort Myocardio
+   python train_python_models.py --top_features_only
    ```
+   Output: `outputs/models/Combined_top/`
 
-2. **Run SHAP/FFA Analysis**:
-   ```bash
-   python run_shap_ffa_workflow.py --cohort Combined --top-k 20
-   ```
+2. **Run SHAP/FFA** for Combined_top, then **prepare Lambda** and deploy (see risk_dashboard READMEs).
 
 3. **Deploy Dashboard**: See [docs/calculator/README_deployment.md](../../../docs/calculator/README_deployment.md)
 

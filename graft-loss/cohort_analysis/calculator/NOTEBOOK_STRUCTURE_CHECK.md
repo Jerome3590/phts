@@ -1,111 +1,58 @@
 # Calculator Workflow Notebook Structure Check
 
 ## Overview
-This document verifies that both Baseline and Enhanced models have all required steps in the calculator workflow notebook.
+This document verifies that the single top-features model (Combined_top) has all required steps in the calculator workflow notebook.
 
-## Required Steps for Each Model Variant
+## Required Steps for Top Model (`Combined_top`)
 
-### ✅ Baseline Model (`Combined_base`)
-1. **Training** (Section 3a) - ✓ Present
-   - Trains models in `outputs/models/Combined_base/`
-   - Generates feature importance files
-   - Saves best_model.txt
+### ✅ Top Model (top 15 causal/importance features)
+1. **Training** (Section 3) - ✓
+   - Run: `python train_python_models.py --top_features_only`
+   - Trains in `outputs/models/Combined_top/`
+   - Generates feature importance files, saves best_model.txt
 
-2. **SHAP/FFA Analysis** (Section 4a) - ✓ Updated
-   - Uses `--model-variant base` explicitly
-   - Outputs to `outputs/shap_ffa/Combined_base/`
-   - Generates dashboard_data.json with causal factors
-   - Computes feature importance from SHAP values
+2. **SHAP/FFA Analysis** (Section 4) - ✓
+   - Run with `--model-variant top`
+   - Outputs to `outputs/shap_ffa/Combined_top/`
+   - Generates dashboard_data.json and top_causal_factors.csv
 
-3. **Feature Importance** (Section 5a) - ✓ Updated
-   - Checks `outputs/models/Combined_base/` for importance files
-   - Displays top features for baseline model
+3. **Feature Importance** (Section 5a) - ✓
+   - Checks `outputs/models/Combined_top/` (or `Combined/`) for importance files
+   - Displays top features
 
-4. **Results Inspection** (Section 5) - ✓ Updated
-   - Checks `outputs/shap_ffa/Combined_base/dashboard_data.json`
-   - Displays top causal factors for baseline model
-
-### ✅ Enhanced Model (`Combined_enhanced`)
-1. **Training** (Section 3b) - ✓ Present
-   - Trains models in `outputs/models/Combined_enhanced/`
-   - Generates feature importance files
-   - Saves best_model.txt
-
-2. **SHAP/FFA Analysis** (Section 4b) - ✓ Updated
-   - Uses `--model-variant enhanced` explicitly
-   - Outputs to `outputs/shap_ffa/Combined_enhanced/`
-   - Generates dashboard_data.json with causal factors
-   - Computes feature importance from SHAP values
-
-3. **Feature Importance** (Section 5a) - ✓ Updated
-   - Checks `outputs/models/Combined_enhanced/` for importance files
-   - Displays top features for enhanced model
-
-4. **Results Inspection** (Section 5) - ✓ Updated
-   - Checks `outputs/shap_ffa/Combined_enhanced/dashboard_data.json`
-   - Displays top causal factors for enhanced model
+4. **Results Inspection** (Section 5) - ✓
+   - Checks `outputs/shap_ffa/Combined_top/dashboard_data.json`
+   - Displays top causal factors
 
 ## Verification Checklist
 
 ### Training Steps
-- [x] Section 3a: Baseline model training (Combined_base)
-- [x] Section 3b: Enhanced model training (Combined_enhanced)
-- [x] Both generate feature importance CSV files
-- [x] Both save best_model.txt
+- [x] Section 3: Top model training (`--top_features_only` → Combined_top)
+- [x] Feature importance CSV and best_model.txt in Combined_top/
 
 ### SHAP/FFA Analysis Steps
-- [x] Section 4a: Baseline SHAP/FFA (uses --model-variant base)
-- [x] Section 4b: Enhanced SHAP/FFA (uses --model-variant enhanced)
-- [x] Both output to correct directories (Combined_base/ and Combined_enhanced/)
-- [x] Both generate dashboard_data.json
-- [x] Both compute SHAP values on test set
-- [x] Both extract rules from XGBoost JSON
-- [x] Both calculate causal responsibility
+- [x] Section 4: SHAP/FFA with `--model-variant top`
+- [x] Output to `outputs/shap_ffa/Combined_top/`
+- [x] dashboard_data.json and top_causal_factors.csv generated
+- [x] SHAP on test set, rules from XGBoost JSON, causal responsibility
 
-### Feature Importance
-- [x] Section 5a: Checks both Combined_base and Combined_enhanced
-- [x] Displays feature importance for both variants
-- [x] Shows top features for each model
-
-### Results Inspection
-- [x] Section 5: Checks both Combined_base and Combined_enhanced
-- [x] Displays causal factors for both variants
-- [x] Shows summary statistics for both models
-
-### Visualizations
-- [x] Section 6: Comparison visualizations for both models
-- [x] Side-by-side bar charts
-- [x] Difference plots
-- [x] Summary tables
-
-### Export Summary
-- [ ] Section 5c: Should check both variants (needs update)
-  - Currently only checks COHORT (Combined)
-  - Should check Combined_base and Combined_enhanced separately
+### Feature Importance & Results
+- [x] Section 5a: Checks Combined_top (or Combined/) for importance files
+- [x] Section 5: Loads dashboard_data.json from Combined_top, displays causal factors
 
 ## Output Directory Structure
 
-After running the complete workflow, you should have:
+After running the workflow:
 
 ```
 outputs/
 ├── models/
-│   ├── Combined_base/
-│   │   ├── best_model.txt
-│   │   ├── importance_*.csv (for each model type)
-│   │   ├── feature_names.json
-│   │   └── [model files]
-│   └── Combined_enhanced/
+│   └── Combined_top/
 │       ├── best_model.txt
-│       ├── importance_*.csv (for each model type)
-│       ├── feature_names.json
-│       └── [model files]
+│       ├── importance_*.csv or mc_cv_*_feature_importance.csv
+│       └── [model files .cbm, .ubj, final_model_json/]
 └── shap_ffa/
-    ├── Combined_base/
-    │   ├── dashboard_data.json
-    │   ├── top_causal_factors.csv
-    │   └── [other analysis files]
-    └── Combined_enhanced/
+    └── Combined_top/
         ├── dashboard_data.json
         ├── top_causal_factors.csv
         └── [other analysis files]
@@ -113,10 +60,7 @@ outputs/
 
 ## Dashboard Integration
 
-Both models' results are used in the risk dashboard:
-- **Baseline Model Tab**: Uses `Combined_base/` models and `Combined_base/` dashboard data
-- **Extended Model Tab**: Uses `Combined_enhanced/` models and `Combined_enhanced/` dashboard data
-- **Model Comparison Tab**: Compares both models side-by-side
+Single model: **Risk Calculator** and **Causal Analysis** tabs use `Combined_top/` only.
 
 ## Notes
 

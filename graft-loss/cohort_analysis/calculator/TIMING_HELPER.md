@@ -21,7 +21,7 @@ def step_timer(step_name, sub_steps=None):
     - SHAP/FFA: Extract Rules → Compute SHAP → Apply Rules → Calculate Frequencies → Causal Responsibility
     
     Args:
-        step_name: Main step name (e.g., "Step 1: Train Baseline Model")
+        step_name: Main step name (e.g., "Step 1: Train Top Model")
         sub_steps: Optional list of sub-steps that align with mermaid chart nodes
     """
     # ... (implementation in notebook)
@@ -32,7 +32,7 @@ def step_timer(step_name, sub_steps=None):
 ### Basic Usage
 
 ```python
-with step_timer("Step 1: Train Baseline Model"):
+with step_timer("Step 1: Train Top Model"):
     train_models_for_cohort(...)
 ```
 
@@ -41,7 +41,7 @@ with step_timer("Step 1: Train Baseline Model"):
 **Training Step:**
 ```python
 with step_timer(
-    "Step 1: Train Baseline Model",
+    "Step 1: Train Top Model",
     sub_steps=[
         "Temporal Split (80/20)",
         "Train Models (CatBoost, XGBoost, XGBoost RF)",
@@ -55,7 +55,7 @@ with step_timer(
 **SHAP/FFA Step:**
 ```python
 with step_timer(
-    "Step 3: SHAP/FFA Analysis (Baseline)",
+    "Step 3: SHAP/FFA Analysis (Top Model)",
     sub_steps=[
         "Extract Rules (from XGBoost JSON)",
         "Compute SHAP Values (on Test Set Only)",
@@ -75,21 +75,13 @@ with step_timer(
 
 ### Training Steps (Mermaid: Training Data → Temporal Split → Train Models → Select Best → Final Model)
 
-1. **Step 1: Train Baseline Model**
-   - Sub-steps: Temporal Split (80/20) → Train Models → Select Best Model → Final Model
-   - Already has timing, wrap with step_timer
-
-2. **Step 2: Train Extended Model**
+1. **Step 1: Train Top Model (Combined_top)**
    - Sub-steps: Temporal Split (80/20) → Train Models → Select Best Model → Final Model
    - Already has timing, wrap with step_timer
 
 ### SHAP/FFA Steps (Mermaid: Extract Rules → Compute SHAP → Apply Rules → Causal Responsibility)
 
-3. **Step 3: SHAP/FFA Analysis (Baseline)**
-   - Sub-steps: Extract Rules → Compute SHAP (Test Set) → Apply Rules (Test Set) → Calculate Frequencies → Causal Responsibility → Top K Factors
-   - Add timing with sub-steps
-
-4. **Step 4: SHAP/FFA Analysis (Extended)**
+2. **Step 2: SHAP/FFA Analysis (Top Model)**
    - Sub-steps: Extract Rules → Compute SHAP (Test Set) → Apply Rules (Test Set) → Calculate Frequencies → Causal Responsibility → Top K Factors
    - Add timing with sub-steps
 

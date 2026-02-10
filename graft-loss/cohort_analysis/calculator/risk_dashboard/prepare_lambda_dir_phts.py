@@ -50,25 +50,18 @@ def prepare_lambda_directory():
     print(f"Lambda directory: {LAMBDA_DIR}")
     print()
     
-    # Copy models for each cohort
-    # Handle both variant (Combined_base, Combined_enhanced) and non-variant (CHD, Myocardio) structures
+    # Copy models for each cohort (final workflow: Combined_top only for Combined; plain dir for others)
     print("Copying models...")
     models_copied = 0
     for cohort in COHORTS:
-        # Try variant directories first (for Combined cohort)
         variant_dirs = []
         if cohort == "Combined":
-            # Combined has base and enhanced variants
             variant_dirs = [
-                (MODELS_DIR / f"{cohort}_base", lambda_models_dir / f"{cohort}_base"),
-                (MODELS_DIR / f"{cohort}_enhanced", lambda_models_dir / f"{cohort}_enhanced")
+                (MODELS_DIR / f"{cohort}_top", lambda_models_dir / f"{cohort}_top"),
             ]
         else:
-            # CHD and Myocardio may not have variants, try both
             variant_dirs = [
                 (MODELS_DIR / cohort, lambda_models_dir / cohort),
-                (MODELS_DIR / f"{cohort}_base", lambda_models_dir / f"{cohort}_base"),
-                (MODELS_DIR / f"{cohort}_enhanced", lambda_models_dir / f"{cohort}_enhanced")
             ]
         
         for cohort_models_dir, cohort_lambda_dir in variant_dirs:
@@ -109,25 +102,19 @@ def prepare_lambda_directory():
     print(f"Total model files copied: {models_copied}")
     print()
     
-    # Copy feature metadata
-    # Handle both variant (Combined_base, Combined_enhanced) and non-variant structures
+    # Copy feature metadata (final workflow: Combined_top only for Combined)
     print("Copying feature metadata...")
     features_copied = 0
     for cohort in COHORTS:
         # Try variant directories first (for Combined cohort)
         variant_dirs = []
         if cohort == "Combined":
-            # Combined has base and enhanced variants
             variant_dirs = [
-                (DASHBOARD_DIR / f"{cohort}_base", lambda_model_features_dir / f"{cohort}_base"),
-                (DASHBOARD_DIR / f"{cohort}_enhanced", lambda_model_features_dir / f"{cohort}_enhanced")
+                (DASHBOARD_DIR / f"{cohort}_top", lambda_model_features_dir / f"{cohort}_top"),
             ]
         else:
-            # CHD and Myocardio may not have variants, try both
             variant_dirs = [
                 (DASHBOARD_DIR / cohort, lambda_model_features_dir / cohort),
-                (DASHBOARD_DIR / f"{cohort}_base", lambda_model_features_dir / f"{cohort}_base"),
-                (DASHBOARD_DIR / f"{cohort}_enhanced", lambda_model_features_dir / f"{cohort}_enhanced")
             ]
         
         for cohort_dashboard_dir, cohort_features_dir in variant_dirs:
@@ -170,10 +157,8 @@ def prepare_lambda_directory():
         # Try variant directories first (for Combined cohort)
         variant_dirs = []
         if cohort == "Combined":
-            # Combined has base and enhanced variants
             variant_dirs = [
-                (DASHBOARD_DIR / f"{cohort}_base", lambda_dashboard_dir / f"{cohort}_base"),
-                (DASHBOARD_DIR / f"{cohort}_enhanced", lambda_dashboard_dir / f"{cohort}_enhanced")
+                (DASHBOARD_DIR / f"{cohort}_top", lambda_dashboard_dir / f"{cohort}_top"),
             ]
         else:
             # CHD and Myocardio may not have variants, try both
@@ -227,8 +212,7 @@ def prepare_lambda_directory():
     for cohort in COHORTS:
         # Check models - handle variants for Combined
         if cohort == "Combined":
-            # Combined should have both base and enhanced
-            for variant in ["_base", "_enhanced"]:
+            for variant in ["_top"]:
                 variant_name = f"{cohort}{variant}"
                 cohort_models = lambda_models_dir / variant_name
                 if not cohort_models.exists():
@@ -244,43 +228,17 @@ def prepare_lambda_directory():
                 if not cohort_data.exists():
                     validation_errors.append(f"Dashboard data missing for {variant_name}")
         else:
-            # CHD and Myocardio - check for variant or non-variant
-            found_models = False
-            found_dashboard = False
-            
-            # Try non-variant first
+            # CHD and Myocardio - check plain cohort dir only
             cohort_models = lambda_models_dir / cohort
-            if cohort_models.exists():
+            if not cohort_models.exists():
+                validation_errors.append(f"Models directory missing for {cohort}")
+            else:
                 model_files = list(cohort_models.glob("*.cbm")) + list(cohort_models.glob("*.ubj"))
-                if model_files:
-                    found_models = True
-            
-            # Try variants
-            for variant in ["_base", "_enhanced"]:
-                variant_name = f"{cohort}{variant}"
-                variant_models = lambda_models_dir / variant_name
-                if variant_models.exists():
-                    model_files = list(variant_models.glob("*.cbm")) + list(variant_models.glob("*.ubj"))
-                    if model_files:
-                        found_models = True
-                        break
-            
-            if not found_models:
-                validation_errors.append(f"No model files found for {cohort} (checked {cohort}, {cohort}_base, {cohort}_enhanced)")
-            
-            # Check dashboard data
+                if not model_files:
+                    validation_errors.append(f"No model files found for {cohort}")
             cohort_data = lambda_dashboard_dir / cohort / "dashboard_data.json"
             if not cohort_data.exists():
-                # Try variants
-                found_dashboard = False
-                for variant in ["_base", "_enhanced"]:
-                    variant_name = f"{cohort}{variant}"
-                    variant_data = lambda_dashboard_dir / variant_name / "dashboard_data.json"
-                    if variant_data.exists():
-                        found_dashboard = True
-                        break
-                if not found_dashboard:
-                    validation_errors.append(f"Dashboard data missing for {cohort} (checked {cohort}, {cohort}_base, {cohort}_enhanced)")
+                validation_errors.append(f"Dashboard data missing for {cohort}")
     
     if validation_errors:
         print("  [WARNING] Validation warnings:")

@@ -39,7 +39,7 @@ except ImportError as e:
     sys.exit(1)
 
 
-def create_api_gateway_event(http_method, path, query_params=None, body=None, model_variant='base'):
+def create_api_gateway_event(http_method, path, query_params=None, body=None, model_variant='top'):
     """Create a mock API Gateway event."""
     event = {
         "httpMethod": http_method,
@@ -102,15 +102,14 @@ def test_metadata_endpoint():
 
 
 def test_risk_endpoint():
-    """Test POST /risk endpoint."""
+    """Test POST /risk endpoint (top-features model)."""
     print("\n" + "="*80)
-    print("Testing POST /risk endpoint (Baseline Model)")
+    print("Testing POST /risk endpoint (Top Model - Combined_top)")
     print("="*80)
     
-    # Test with baseline model
     body = {
         "cohort": "Combined",
-        "model_variant": "base",
+        "model_variant": "top",
         "features": {
             "egfr_tx": 60.0,
             "txbun_r": 20.0,
@@ -154,66 +153,15 @@ def test_risk_endpoint():
         return False
 
 
-def test_risk_endpoint_enhanced():
-    """Test POST /risk endpoint with enhanced model."""
-    print("\n" + "="*80)
-    print("Testing POST /risk endpoint (Enhanced Model)")
-    print("="*80)
-    
-    body = {
-        "cohort": "Combined",
-        "model_variant": "enhanced",
-        "features": {
-            "egfr_tx": 60.0,
-            "txbun_r": 20.0,
-            "txcreat_r": 1.0,
-            "ltxtrach": 0,
-            "txecmo": 0,
-            "txnomcsd": 0,
-            "chd_papvr": 0,
-            "chd_anom": 0,
-            "donisch": 4.0,
-            "txsa_r": 3.5,
-            "txast": 30.0
-        }
-    }
-    
-    event = create_api_gateway_event(
-        http_method="POST",
-        path="/risk",
-        body=body
-    )
-    
-    try:
-        response = lambda_handler(event, None)
-        print(f"\nStatus Code: {response['statusCode']}")
-        
-        if response.get('body'):
-            body = json.loads(response['body'])
-            print(f"\nResponse Body:")
-            print(json.dumps(body, indent=2))
-            
-            if 'risk_score' in body:
-                print(f"\n✓ Risk Score: {body['risk_score']:.2f}%")
-                print(f"✓ Risk Band: {body.get('risk_band', 'N/A')}")
-        
-        return response['statusCode'] == 200
-    except Exception as e:
-        print(f"\n❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-
 def test_causal_endpoint():
-    """Test POST /causal endpoint."""
+    """Test POST /causal endpoint (top model)."""
     print("\n" + "="*80)
-    print("Testing POST /causal endpoint (Baseline Model)")
+    print("Testing POST /causal endpoint (Top Model)")
     print("="*80)
     
     body = {
         "cohort": "Combined",
-        "model_variant": "base",
+        "model_variant": "top",
         "top_k": 10
     }
     
@@ -249,106 +197,6 @@ def test_causal_endpoint():
         return False
 
 
-def test_causal_endpoint_enhanced():
-    """Test POST /causal endpoint with enhanced model."""
-    print("\n" + "="*80)
-    print("Testing POST /causal endpoint (Enhanced Model)")
-    print("="*80)
-    
-    body = {
-        "cohort": "Combined",
-        "model_variant": "enhanced",
-        "top_k": 10
-    }
-    
-    event = create_api_gateway_event(
-        http_method="POST",
-        path="/causal",
-        body=body
-    )
-    
-    try:
-        response = lambda_handler(event, None)
-        print(f"\nStatus Code: {response['statusCode']}")
-        
-        if response.get('body'):
-            body = json.loads(response['body'])
-            print(f"\nResponse Body:")
-            print(json.dumps(body, indent=2))
-            
-            if 'top_causal_factors' in body:
-                factors = body['top_causal_factors']
-                print(f"\n✓ Found {len(factors)} causal factors")
-        
-        return response['statusCode'] == 200
-    except Exception as e:
-        print(f"\n❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-
-def test_model_comparison():
-    """Test comparing baseline vs enhanced models."""
-    print("\n" + "="*80)
-    print("Testing Model Comparison (Baseline vs Enhanced)")
-    print("="*80)
-    
-    features = {
-        "egfr_tx": 60.0,
-        "txbun_r": 20.0,
-        "txcreat_r": 1.0,
-        "ltxtrach": 0,
-        "txecmo": 0,
-        "txnomcsd": 0,
-        "chd_papvr": 0,
-        "chd_anom": 0,
-        "donisch": 4.0,
-        "txsa_r": 3.5,
-        "txast": 30.0
-    }
-    
-    # Test baseline
-    baseline_event = create_api_gateway_event(
-        http_method="POST",
-        path="/risk",
-        body={"cohort": "Combined", "model_variant": "base", "features": features}
-    )
-    
-    # Test enhanced
-    enhanced_event = create_api_gateway_event(
-        http_method="POST",
-        path="/risk",
-        body={"cohort": "Combined", "model_variant": "enhanced", "features": features}
-    )
-    
-    try:
-        baseline_response = lambda_handler(baseline_event, None)
-        enhanced_response = lambda_handler(enhanced_event, None)
-        
-        if baseline_response['statusCode'] == 200 and enhanced_response['statusCode'] == 200:
-            baseline_body = json.loads(baseline_response['body'])
-            enhanced_body = json.loads(enhanced_response['body'])
-            
-            print("\nComparison Results:")
-            print("-" * 80)
-            print(f"Baseline Model Risk:  {baseline_body.get('risk_score', 0):.2f}%")
-            print(f"Enhanced Model Risk:  {enhanced_body.get('risk_score', 0):.2f}%")
-            print(f"Difference:           {enhanced_body.get('risk_score', 0) - baseline_body.get('risk_score', 0):.2f}%")
-            print("-" * 80)
-            
-            return True
-        else:
-            print(f"[ERROR] Baseline status: {baseline_response['statusCode']}")
-            print(f"[ERROR] Enhanced status: {enhanced_response['statusCode']}")
-            return False
-    except Exception as e:
-        print(f"\n[ERROR] Error: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-
 def check_prerequisites():
     """Check if required directories and files exist."""
     lambda_dir = Path(__file__).parent / 'lambda_dir_phts'
@@ -363,21 +211,15 @@ def check_prerequisites():
     if not model_dir.exists():
         issues.append("lambda_dir_phts/models/ not found")
     else:
-        # Check for Combined_base and Combined_enhanced
-        if not (model_dir / 'Combined_base').exists() and not (model_dir / 'Combined').exists():
-            issues.append("Neither Combined_base/ nor Combined/ model directory found")
-        if not (model_dir / 'Combined_enhanced').exists():
-            issues.append("Combined_enhanced/ model directory not found")
+        if not (model_dir / 'Combined_top').exists():
+            issues.append("Combined_top/ model directory not found (run train with --top_features_only, then prepare_lambda_dir_phts.py)")
     
-    # Check for dashboard data
     dashboard_dir = lambda_dir / 'dashboard_data'
     if not dashboard_dir.exists():
         issues.append("lambda_dir_phts/dashboard_data/ not found")
     else:
-        if not (dashboard_dir / 'Combined_base').exists() and not (dashboard_dir / 'Combined').exists():
-            issues.append("Neither Combined_base/ nor Combined/ dashboard data found")
-        if not (dashboard_dir / 'Combined_enhanced').exists():
-            issues.append("Combined_enhanced/ dashboard data not found")
+        if not (dashboard_dir / 'Combined_top').exists():
+            issues.append("Combined_top/ dashboard data not found (run SHAP/FFA with --model-variant top, then prepare_lambda_dir_phts.py)")
     
     return issues
 
@@ -403,14 +245,9 @@ def main():
         print()
     
     results = []
-    
-    # Run tests
     results.append(("Metadata (GET)", test_metadata_endpoint()))
-    results.append(("Risk Baseline (POST)", test_risk_endpoint()))
-    results.append(("Risk Enhanced (POST)", test_risk_endpoint_enhanced()))
-    results.append(("Causal Baseline (POST)", test_causal_endpoint()))
-    results.append(("Causal Enhanced (POST)", test_causal_endpoint_enhanced()))
-    results.append(("Model Comparison", test_model_comparison()))
+    results.append(("Risk (POST)", test_risk_endpoint()))
+    results.append(("Causal (POST)", test_causal_endpoint()))
     
     # Summary
     print("\n" + "="*80)

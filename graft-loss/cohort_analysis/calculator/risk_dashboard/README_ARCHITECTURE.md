@@ -86,7 +86,7 @@ The PHTS Risk Calculator uses a **serverless architecture** with static frontend
 - **Risk Calculator Tab**: Form inputs, risk calculation, causal factors display
 - **Causal Analysis Tab**: Interactive visualizations, factor controls, risk comparison
 - Real-time API communication
-- Baseline value loading
+- Default value loading
 - Error handling and user feedback
 
 **Communication:**

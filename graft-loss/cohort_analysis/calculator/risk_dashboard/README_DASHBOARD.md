@@ -2,9 +2,9 @@
 
 ## Overview
 
-The PHTS Risk Calculator Dashboard is an interactive web application for calculating graft loss risk in pediatric heart transplant patients. The dashboard provides two main interfaces:
+The PHTS Risk Calculator Dashboard is an interactive web application for calculating graft loss risk in pediatric heart transplant patients. It uses a **single model** trained on the **top 15 high causal/importance features** (Combined_top). The dashboard provides:
 
-1. **Risk Calculator Tab**: Calculate risk scores from clinical features
+1. **Risk Calculator Tab**: Calculate risk scores from clinical features (top-features model only)
 2. **Causal Analysis Tab**: Explore how causal factors affect risk in real-time
 
 ## Access
@@ -49,9 +49,9 @@ The dashboard accepts the following clinical features:
 
 **Note**: See `README_FINAL_MODELS.md` in the calculator directory for the complete feature list.
 
-### Baseline Values
+### Default Values
 
-The dashboard includes baseline/default values that represent typical healthy ranges:
+The dashboard includes default values that represent typical healthy ranges:
 - **eGFR**: 90.0 mL/min/1.73m²
 - **BUN**: 15.0 mg/dL
 - **Creatinine**: 0.8 mg/dL
@@ -59,7 +59,7 @@ The dashboard includes baseline/default values that represent typical healthy ra
 - **AST**: 25.0 U/L
 - **Binary features**: All set to "No" (0)
 
-Click "Load Baseline Values" to reset all fields to defaults.
+Click "Load Default Values" to reset all fields to defaults.
 
 ### Results Display
 
@@ -115,7 +115,7 @@ Explore how causal factors affect patient risk through interactive visualization
 #### 4. Risk Comparison Panel
 
 Shows:
-- **Baseline Risk**: From current form values (or defaults)
+- **Reference Risk**: From current form values (or defaults)
 - **Current Risk**: After modifying factors
 - **Risk Change**: Absolute difference and percentage change
 - **Color Coding**: Green (decrease), Red (increase), Gray (no change)
@@ -130,7 +130,7 @@ Shows:
 
 ### Best Practices
 
-1. **Start with Baseline**: Use baseline values as reference point
+1. **Start with default values**: Use default values as reference point
 2. **Adjust One at a Time**: Isolate impact of individual factors
 3. **Compare Scenarios**: Use comparison panel to see intervention effects
 4. **Consider Clinical Context**: Use realistic factor values

@@ -121,26 +121,20 @@ def get_model_cohort_name(cohort: str, model_variant: Optional[str] = None) -> s
         model_variant: Model variant ("base", "enhanced", or None for auto-detect)
     
     Returns:
-        Model directory name (e.g., "Combined_base", "Combined_enhanced", or "Combined")
+        Model directory name (e.g., "Combined_top" for final workflow)
     """
     if model_variant is None or model_variant == "auto":
-        # Try to auto-detect: check both _base and _enhanced
-        base_path = CALCULATOR_DIR / "outputs" / "models" / f"{cohort}_base" / "best_model.txt"
-        enhanced_path = CALCULATOR_DIR / "outputs" / "models" / f"{cohort}_enhanced" / "best_model.txt"
-        
-        if enhanced_path.exists():
-            return f"{cohort}_enhanced"
-        elif base_path.exists():
-            return f"{cohort}_base"
-        else:
-            # Fallback to old structure (no suffix)
-            return cohort
-    elif model_variant == "base":
-        return f"{cohort}_base"
-    elif model_variant == "enhanced":
-        return f"{cohort}_enhanced"
+        # Final workflow: prefer _top only; fallback to plain cohort if _top missing
+        top_path = CALCULATOR_DIR / "outputs" / "models" / f"{cohort}_top" / "best_model.txt"
+        if top_path.exists():
+            return f"{cohort}_top"
+        return cohort
+    elif model_variant == "top":
+        return f"{cohort}_top"
+    elif model_variant in ("base", "enhanced"):
+        # Legacy: map to _top for final workflow
+        return f"{cohort}_top"
     else:
-        # Unknown variant, return as-is (for backward compatibility)
         return cohort
 
 
@@ -2176,8 +2170,8 @@ def main():
         "--model-variant",
         type=str,
         default="auto",
-        choices=["base", "enhanced", "auto"],
-        help="Model variant to use: 'base' for baseline model, 'enhanced' for extended model, 'auto' to auto-detect (default: auto)"
+        choices=["base", "enhanced", "top", "auto"],
+        help="Model variant: 'base', 'enhanced', 'top' (top 15 features only), or 'auto' to auto-detect (default: auto)"
     )
 
     args = parser.parse_args()
@@ -2466,9 +2460,9 @@ def main():
                 # Filter to calculator features to match the model
                 # Use the model_cohort name to determine feature set (handles "auto" detection)
                 # model_cohort was already determined earlier and will be "Combined_enhanced" or "Combined_base"
-                include_recommended = model_cohort.endswith("_enhanced")
+                include_recommended = model_cohort.endswith("_enhanced") or model_cohort.endswith("_top")
                 if include_recommended:
-                    logger.info("Using enhanced model - will include recommended features in test data")
+                    logger.info("Using enhanced or top model - will include recommended features in test data")
                 else:
                     logger.info("Detected base model - will use base calculator features only")
                 

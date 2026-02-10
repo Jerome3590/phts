@@ -407,17 +407,15 @@
       Enter the most recent patient values below (at transplant is preferred over at listing). Calculate risk score and view top causal factors.
     </div>
     
-    <!-- Tab Navigation -->
+    <!-- Tab Navigation: single model = top causal model features only (no Baseline/Extended) -->
     <div class="tabs">
-      <button class="tab active" onclick="switchTab('baseline-model')">Baseline Model</button>
-      <button class="tab" onclick="switchTab('extended-model')">Extended Model</button>
-      <button class="tab" onclick="switchTab('model-comparison')">Model Comparison</button>
-      <button class="tab" onclick="switchTab('causal-analysis')">Causal Analysis</button>
+      <button class="tab active" onclick="switchTab('risk-calculator')">Risk Calculator</button>
+      <button class="tab" onclick="switchTab('causal-analysis')">Top Causal Model Features</button>
       <button class="tab" onclick="window.location.href='phts_readme.html'">Documentation</button>
     </div>
     
-    <!-- Baseline Model Tab -->
-    <div id="baseline-model-tab" class="tab-content active">
+    <!-- Risk Calculator Tab (top causal model features) -->
+    <div id="risk-calculator-tab" class="tab-content active">
     <div class="cohort-selector">
       <label for="cohort">Cohort:</label>
       <select id="cohort">
@@ -505,7 +503,7 @@
     <div class="button-group">
       <button class="primary" id="calculate-btn" onclick="calculateRisk()">Calculate Risk</button>
       <button class="secondary" onclick="clearForm()">Clear Form</button>
-      <button class="secondary" onclick="loadBaseline()">Load Baseline Values</button>
+      <button class="secondary" onclick="loadBaseline()">Load Default Values</button>
     </div>
     
     <div class="loading" id="loading">
@@ -527,214 +525,15 @@
       </div>
     </div>
     </div>
-    <!-- End Baseline Model Tab -->
+    <!-- End Risk Calculator Tab -->
     
-    <!-- Extended Model Tab -->
-    <div id="extended-model-tab" class="tab-content">
-    <div class="cohort-selector">
-      <label for="cohort-extended">Cohort:</label>
-      <select id="cohort-extended">
-        <option value="Combined">Combined</option>
-      </select>
-    </div>
-    
-    <div class="controls">
-      <div class="control-group">
-        <h3>Kidney Function</h3>
-        <div class="form-group">
-          <label for="egfr_tx-extended">eGFR at Transplant (mL/min/1.73m²)</label>
-          <input type="number" id="egfr_tx-extended" step="0.1" placeholder="e.g., 60.0" value="90.0">
-        </div>
-        <div class="form-group">
-          <label for="txbun_r-extended">BUN at Transplant (mg/dL)</label>
-          <input type="number" id="txbun_r-extended" step="0.1" placeholder="e.g., 20.0" value="15.0">
-        </div>
-        <div class="form-group">
-          <label for="txcreat_r-extended">Creatinine at Transplant (mg/dL)</label>
-          <input type="number" id="txcreat_r-extended" step="0.01" placeholder="e.g., 1.0" value="0.8">
-        </div>
-      </div>
-      
-      <div class="control-group">
-        <h3>Cardiac Support</h3>
-        <div class="form-group">
-          <label for="ltxtrach-extended">Left Ventricular Assist Device (LVAD)</label>
-          <select id="ltxtrach-extended">
-            <option value="0">No</option>
-            <option value="1">Yes</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label for="txecmo-extended">ECMO at Transplant</label>
-          <select id="txecmo-extended">
-            <option value="0">No</option>
-            <option value="1">Yes</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label for="txnomcsd-extended">Mechanical Circulatory Support Device</label>
-          <select id="txnomcsd-extended">
-            <option value="0">No</option>
-            <option value="1">Yes</option>
-          </select>
-        </div>
-      </div>
-      
-      <div class="control-group">
-        <h3>Diagnosis & Demographics</h3>
-        <div class="form-group">
-          <label for="chd_papvr-extended">CHD: Partial Anomalous Pulmonary Venous Return</label>
-          <select id="chd_papvr-extended">
-            <option value="0">No</option>
-            <option value="1">Yes</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label for="chd_anom-extended">CHD: Anomaly</label>
-          <select id="chd_anom-extended">
-            <option value="0">No</option>
-            <option value="1">Yes</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label for="donisch-extended">Donor Ischemic Time (hours)</label>
-          <input type="number" id="donisch-extended" step="0.1" placeholder="e.g., 4.5" value="4.0">
-        </div>
-      </div>
-      
-      <div class="control-group">
-        <h3>Lab Values</h3>
-        <div class="form-group">
-          <label for="txsa_r-extended">Serum Albumin at Transplant (g/dL)</label>
-          <input type="number" id="txsa_r-extended" step="0.1" placeholder="e.g., 3.5" value="3.8">
-        </div>
-        <div class="form-group">
-          <label for="txast-extended">AST at Transplant (U/L)</label>
-          <input type="number" id="txast-extended" step="0.1" placeholder="e.g., 30.0" value="25.0">
-        </div>
-      </div>
-    </div>
-    
-    <div class="button-group">
-      <button class="primary" id="calculate-btn-extended" onclick="calculateRiskExtended()">Calculate Risk</button>
-      <button class="secondary" onclick="clearFormExtended()">Clear Form</button>
-      <button class="secondary" onclick="loadBaselineExtended()">Load Baseline Values</button>
-    </div>
-    
-    <div class="loading" id="loading-extended">
-      <p>Calculating risk score...</p>
-    </div>
-    
-    <div class="error" id="error-extended"></div>
-    
-    <div class="results" id="results-extended">
-      <div class="risk-score">
-        <h2>Risk Score</h2>
-        <div class="risk-value" id="risk-value-extended">-</div>
-        <div class="risk-band" id="risk-band-extended">-</div>
-      </div>
-      
-      <div class="causal-factors">
-        <h3>Top Causal Factors</h3>
-        <div id="causal-factors-list-extended"></div>
-      </div>
-    </div>
-    </div>
-    <!-- End Extended Model Tab -->
-    
-    <!-- Model Comparison Tab -->
-    <div id="model-comparison-tab" class="tab-content">
-      <div class="cohort-selector">
-        <label for="cohort-comparison">Cohort:</label>
-        <select id="cohort-comparison">
-          <option value="Combined">Combined</option>
-        </select>
-        <button class="primary" onclick="compareModels()" style="margin-left: 1rem;">Compare Models</button>
-      </div>
-      
-      <div class="info-box" style="margin-bottom: 2rem;">
-        <strong>Model Comparison:</strong> Compare risk predictions and causal factors from Baseline and Extended models using the same patient inputs.
-      </div>
-      
-      <!-- Risk Score Comparison -->
-      <div class="causal-charts" style="margin-bottom: 2rem;">
-        <h3>Risk Score Comparison</h3>
-        <div class="chart-container" style="height: 400px;">
-          <canvas id="risk-comparison-chart"></canvas>
-        </div>
-      </div>
-      
-      <!-- Causal Factors Comparison -->
-      <div class="causal-charts" style="margin-bottom: 2rem;">
-        <h3>Top Causal Factors Comparison</h3>
-        <div id="causal-comparison-no-data" class="info-box" style="display: none; margin: 1rem 0;">
-          <p>No causal factors available for comparison. Ensure SHAP/FFA has been run for both Baseline and Extended models and dashboard data is deployed (<code>dashboard_data.json</code> with <code>top_causal_factors</code> in <code>dashboard_data/Combined_base/</code> and/or <code>dashboard_data/Combined_enhanced/</code>, or <code>dashboard_data/Combined/</code>).</p>
-        </div>
-        <div class="chart-container" style="height: 500px;">
-          <canvas id="causal-comparison-chart"></canvas>
-        </div>
-      </div>
-      
-      <!-- Feature Importance Comparison -->
-      <div class="causal-charts" style="margin-bottom: 2rem;">
-        <h3>Feature Importance Comparison</h3>
-        <div id="importance-comparison-no-data" class="info-box" style="display: none; margin: 1rem 0;">
-          <p>No causal factors available for comparison. Deploy <code>dashboard_data.json</code> with <code>top_causal_factors</code> for both models.</p>
-        </div>
-        <div class="chart-container" style="height: 500px;">
-          <canvas id="importance-comparison-chart"></canvas>
-        </div>
-      </div>
-      
-      <!-- Side-by-side Risk Scores -->
-      <div class="risk-comparison" style="margin-top: 2rem;">
-        <h3>Risk Score Details</h3>
-        <div class="risk-comparison-grid">
-          <div class="risk-comparison-item">
-            <div class="label">Baseline Model Risk</div>
-            <div class="value" id="baseline-comparison-risk">-</div>
-            <div class="change neutral" id="baseline-comparison-band">-</div>
-            <div style="font-size: 0.875rem; color: #64748b; margin-top: 0.5rem;" id="baseline-comparison-percentile">-</div>
-          </div>
-          <div class="risk-comparison-item">
-            <div class="label">Extended Model Risk</div>
-            <div class="value" id="enhanced-comparison-risk">-</div>
-            <div class="change neutral" id="enhanced-comparison-band">-</div>
-            <div style="font-size: 0.875rem; color: #64748b; margin-top: 0.5rem;" id="enhanced-comparison-percentile">-</div>
-          </div>
-        </div>
-        <div style="text-align: center; margin-top: 1rem;">
-          <div class="label">Difference (Extended - Baseline)</div>
-          <div class="value" id="risk-difference" style="font-size: 1.5rem;">-</div>
-          <div class="change neutral" id="risk-difference-percent">-</div>
-        </div>
-      </div>
-      
-      <!-- Causal Factors Lists -->
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-top: 2rem;">
-        <div class="causal-factors">
-          <h3>Baseline Model - Top Causal Factors</h3>
-          <div id="baseline-causal-list"></div>
-        </div>
-        <div class="causal-factors">
-          <h3>Extended Model - Top Causal Factors</h3>
-          <div id="enhanced-causal-list"></div>
-        </div>
-      </div>
-    </div>
-    <!-- End Model Comparison Tab -->
-    
-    <!-- Causal Analysis Tab -->
+    <!-- Top Causal Model Features Tab -->
     <div id="causal-analysis-tab" class="tab-content">
+      <p class="subtitle" style="margin-bottom: 1rem;">Explore importance and causal responsibility for the top 15 causal features model.</p>
       <div class="cohort-selector">
         <label for="cohort-causal">Cohort:</label>
         <select id="cohort-causal">
           <option value="Combined">Combined</option>
-        </select>
-        <label for="model-variant-causal" style="margin-left: 2rem;">Model:</label>
-        <select id="model-variant-causal">
-          <option value="base">Baseline Model</option>
-          <option value="enhanced">Extended Model</option>
         </select>
       </div>
       
@@ -763,7 +562,7 @@
         <h3>Risk Comparison</h3>
         <div class="risk-comparison-grid">
           <div class="risk-comparison-item">
-            <div class="label">Baseline Risk</div>
+            <div class="label">Reference Risk</div>
             <div class="value" id="baseline-risk">-</div>
             <div class="change neutral" id="baseline-risk-band">-</div>
           </div>
@@ -856,23 +655,16 @@
       return document.getElementById('cohort').value;
     }
     
-    // Get cohort from extended model selector
-    function getCohortExtended() {
-      return document.getElementById('cohort-extended').value;
-    }
     
-    // Collect all form values (for baseline model)
+    // Collect all form values (single top-features model)
     function collectFeatures() {
       const features = {};
-      const inputs = document.querySelectorAll('#baseline-model-tab input, #baseline-model-tab select');
-      
+      const inputs = document.querySelectorAll('#risk-calculator-tab input, #risk-calculator-tab select');
       inputs.forEach(input => {
-        if (input.id && input.id !== 'cohort' && !input.id.includes('-extended')) {
+        if (input.id && input.id !== 'cohort') {
           const value = input.value;
           if (value !== '' && value !== null) {
-            // Remove -extended suffix if present and use base feature name
-            const featureName = input.id.replace('-extended', '');
-            // Convert to appropriate type
+            const featureName = input.id;
             if (input.type === 'number') {
               features[featureName] = parseFloat(value);
             } else if (input.type === 'select-one') {
@@ -883,33 +675,6 @@
           }
         }
       });
-      
-      return features;
-    }
-    
-    // Collect all form values (for extended model)
-    function collectFeaturesExtended() {
-      const features = {};
-      const inputs = document.querySelectorAll('#extended-model-tab input, #extended-model-tab select');
-      
-      inputs.forEach(input => {
-        if (input.id && input.id !== 'cohort-extended' && input.id.includes('-extended')) {
-          const value = input.value;
-          if (value !== '' && value !== null) {
-            // Remove -extended suffix to get base feature name
-            const featureName = input.id.replace('-extended', '');
-            // Convert to appropriate type
-            if (input.type === 'number') {
-              features[featureName] = parseFloat(value);
-            } else if (input.type === 'select-one') {
-              features[featureName] = parseInt(value);
-            } else {
-              features[featureName] = value;
-            }
-          }
-        }
-      });
-      
       return features;
     }
     
@@ -942,7 +707,7 @@
             cohort: cohort,
             features: features,
             use_ensemble: false,
-            model_variant: 'base'  // Use baseline model
+            model_variant: 'top'  // Single model: top 15 features only
           }),
           mode: 'cors'  // Explicitly set CORS mode
         });
@@ -1049,9 +814,8 @@
       document.getElementById('error').classList.remove('show');
     }
     
-    // Load baseline/default values
+    // Load default form values (typical/normal ranges for pediatric heart transplant)
     function loadBaseline() {
-      // Baseline values based on typical/normal ranges for pediatric heart transplant
       const baseline = {
         // Kidney Function - normal ranges
         'egfr_tx': 90.0,        // Normal eGFR (mL/min/1.73m²)
@@ -1128,201 +892,17 @@
       const tabs = document.querySelectorAll('.tab');
       tabs.forEach(tab => {
         const tabText = tab.textContent.trim();
-        if (tabName === 'baseline-model' && tabText === 'Baseline Model') {
+        if (tabName === 'risk-calculator' && tabText === 'Risk Calculator') {
           tab.classList.add('active');
-        } else if (tabName === 'extended-model' && tabText === 'Extended Model') {
-          tab.classList.add('active');
-        } else if (tabName === 'model-comparison' && tabText === 'Model Comparison') {
-          tab.classList.add('active');
-        } else if (tabName === 'causal-analysis' && tabText === 'Causal Analysis') {
+        } else if (tabName === 'causal-analysis' && tabText === 'Top Causal Model Features') {
           tab.classList.add('active');
         } else if (tabName === 'documentation' && tabText === 'Documentation') {
           tab.classList.add('active');
         }
       });
-      
-      // Load causal analysis if switching to that tab
       if (tabName === 'causal-analysis') {
         loadCausalAnalysis();
       }
-      
-      // Auto-compare models when switching to comparison tab
-      if (tabName === 'model-comparison' && (!comparisonData.baseline || !comparisonData.enhanced)) {
-        compareModels();
-      }
-    }
-    
-    // Calculate risk for extended model
-    async function calculateRiskExtended() {
-      const cohort = getCohortExtended();
-      const features = collectFeaturesExtended();
-      
-      if (Object.keys(features).length === 0) {
-        showErrorExtended('Please enter at least one clinical feature value.');
-        return;
-      }
-      
-      // Show loading
-      document.getElementById('loading-extended').classList.add('show');
-      document.getElementById('error-extended').classList.remove('show');
-      document.getElementById('results-extended').classList.remove('show');
-      document.getElementById('calculate-btn-extended').disabled = true;
-      
-      try {
-        console.log('Calling API for extended model:', `${LAMBDA_API_URL}/risk`);
-        console.log('Request body:', { cohort, features, use_ensemble: false, model_variant: 'enhanced' });
-        
-        const response = await fetch(`${LAMBDA_API_URL}/risk`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            cohort: cohort,
-            features: features,
-            use_ensemble: false,
-            model_variant: 'enhanced'  // Use extended/enhanced model
-          }),
-          mode: 'cors'  // Explicitly set CORS mode
-        });
-        
-        console.log('Response status:', response.status);
-        console.log('Response headers:', [...response.headers.entries()]);
-        
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('Error response:', errorText);
-          let errorData;
-          try {
-            errorData = JSON.parse(errorText);
-          } catch (e) {
-            errorData = { error: errorText || `HTTP ${response.status}` };
-          }
-          throw new Error(errorData.error || 'Failed to calculate risk');
-        }
-        
-        const data = await response.json();
-        console.log('Success response:', data);
-        displayResultsExtended(data);
-        
-      } catch (error) {
-        console.error('Fetch error:', error);
-        if (error.name === 'TypeError' && error.message.includes('fetch')) {
-          showErrorExtended(`Network error: Unable to connect to API. Please check your connection and try again.`);
-        } else {
-          showErrorExtended(`Error: ${error.message}`);
-        }
-      } finally {
-        document.getElementById('loading-extended').classList.remove('show');
-        document.getElementById('calculate-btn-extended').disabled = false;
-      }
-    }
-    
-    // Display results for extended model
-    function displayResultsExtended(data) {
-      const riskScore = data.risk_score;  // Normalized score (percentile 0-100)
-      const rawScore = data.raw_score;  // Original raw prediction
-      const percentile = data.percentile;  // Percentile rank
-      const riskBand = data.risk_band;
-      const causalFactors = data.top_causal_factors || [];
-      
-      // Update risk score - display as percentile if available
-      const riskValueEl = document.getElementById('risk-value-extended');
-      if (percentile !== null && percentile !== undefined) {
-        // Display as percentile (0-100)
-        riskValueEl.textContent = percentile.toFixed(1) + '%';
-        riskValueEl.title = `Percentile: ${percentile.toFixed(1)}% (Raw score: ${rawScore.toFixed(3)})`;
-      } else {
-        // Fallback to normalized or raw score
-        riskValueEl.textContent = riskScore.toFixed(3);
-        if (rawScore !== undefined) {
-          riskValueEl.title = `Raw score: ${rawScore.toFixed(3)}`;
-        }
-      }
-      riskValueEl.className = `risk-value ${riskBand}`;
-      
-      // Update risk band
-      const riskBandEl = document.getElementById('risk-band-extended');
-      riskBandEl.textContent = riskBand.toUpperCase().replace('_', ' ');
-      riskBandEl.className = `risk-band ${riskBand}`;
-      
-      // Display causal factors
-      const factorsListEl = document.getElementById('causal-factors-list-extended');
-      factorsListEl.innerHTML = '';
-      
-      if (causalFactors.length === 0) {
-        factorsListEl.innerHTML = '<p>No causal factors available.</p>';
-      } else {
-        causalFactors.forEach((factor, index) => {
-          const factorEl = document.createElement('div');
-          factorEl.className = 'factor-item';
-          factorEl.innerHTML = `
-            <div class="factor-name">${index + 1}. ${factor.feature}</div>
-            <div class="factor-importance">
-              Importance: ${(factor.causal_responsibility || factor.importance || 0).toFixed(4)}
-            </div>
-          `;
-          factorsListEl.appendChild(factorEl);
-        });
-      }
-      
-      // Show results
-      document.getElementById('results-extended').classList.add('show');
-    }
-    
-    // Show error for extended model
-    function showErrorExtended(message) {
-      const errorEl = document.getElementById('error-extended');
-      errorEl.textContent = message;
-      errorEl.classList.add('show');
-    }
-    
-    // Clear form for extended model
-    function clearFormExtended() {
-      document.querySelectorAll('#extended-model-tab input, #extended-model-tab select').forEach(input => {
-        if (input.id !== 'cohort-extended') {
-          input.value = '';
-        }
-      });
-      document.getElementById('results-extended').classList.remove('show');
-      document.getElementById('error-extended').classList.remove('show');
-    }
-    
-    // Load baseline/default values for extended model
-    function loadBaselineExtended() {
-      // Baseline values based on typical/normal ranges for pediatric heart transplant
-      const baseline = {
-        // Kidney Function - normal ranges
-        'egfr_tx': 90.0,        // Normal eGFR (mL/min/1.73m²)
-        'txbun_r': 15.0,        // Normal BUN (mg/dL)
-        'txcreat_r': 0.8,       // Normal creatinine (mg/dL)
-        
-        // Cardiac Support - default to "No"
-        'ltxtrach': '0',        // No LVAD
-        'txecmo': '0',          // No ECMO
-        'txnomcsd': '0',        // No MCSD
-        
-        // Diagnosis & Demographics
-        'chd_papvr': '0',       // No CHD PAPVR
-        'chd_anom': '0',        // No CHD anomaly
-        'donisch': 4.0,         // Typical donor ischemic time (hours)
-        
-        // Lab Values - normal ranges
-        'txsa_r': 3.8,          // Normal serum albumin (g/dL)
-        'txast': 25.0           // Normal AST (U/L)
-      };
-      
-      // Apply baseline values (with -extended suffix)
-      Object.keys(baseline).forEach(id => {
-        const element = document.getElementById(`${id}-extended`);
-        if (element) {
-          element.value = baseline[id];
-        }
-      });
-      
-      // Clear results when loading baseline
-      document.getElementById('results-extended').classList.remove('show');
-      document.getElementById('error-extended').classList.remove('show');
     }
     
     // Causal Analysis state
@@ -1333,19 +913,10 @@
     let responsibilityChart = null;
     let causalFactorControls = {};
     
-    // Model Comparison state
-    let riskComparisonChart = null;
-    let causalComparisonChart = null;
-    let importanceComparisonChart = null;
-    let comparisonData = {
-      baseline: null,
-      enhanced: null
-    };
-    
     // Load causal analysis data
     async function loadCausalAnalysis() {
       const cohort = document.getElementById('cohort-causal').value;
-      const modelVariant = document.getElementById('model-variant-causal').value; // 'base' or 'enhanced'
+      const modelVariant = 'top'; // Single model: top 15 features only
       
       // Show loading state
       const controlsList = document.getElementById('causal-controls-list');
@@ -1394,21 +965,10 @@
           return;
         }
         
-        // Calculate baseline risk with current form values (or baseline defaults)
-        // Use the appropriate feature collection function based on model variant
-        let baselineFeatures = {};
-        if (modelVariant === 'enhanced') {
-          baselineFeatures = collectFeaturesExtended();
-          if (Object.keys(baselineFeatures).length === 0) {
-            loadBaselineExtended();
-            baselineFeatures = collectFeaturesExtended();
-          }
-        } else {
+        let baselineFeatures = collectFeatures();
+        if (Object.keys(baselineFeatures).length === 0) {
+          loadBaseline();
           baselineFeatures = collectFeatures();
-          if (Object.keys(baselineFeatures).length === 0) {
-            loadBaseline();
-            baselineFeatures = collectFeatures();
-          }
         }
         baselineRiskData = await calculateRiskForFeatures(cohort, baselineFeatures, modelVariant);
         
@@ -1618,33 +1178,14 @@
       });
     }
     
-    // Update causal factor and recalculate risk
     async function updateCausalFactor(featureName, value) {
-      // Update the main form input if it exists (check both baseline and extended tabs)
       const mainInput = document.getElementById(featureName);
-      const extendedInput = document.getElementById(featureName + '-extended');
-      if (mainInput) {
-        mainInput.value = value;
-      }
-      if (extendedInput) {
-        extendedInput.value = value;
-      }
-      
-      // Recalculate risk with updated features
+      if (mainInput) mainInput.value = value;
       const cohort = document.getElementById('cohort-causal').value;
-      const modelVariant = document.getElementById('model-variant-causal').value;
-      
-      // Use the appropriate feature collection function based on model variant
-      let features = {};
-      if (modelVariant === 'enhanced') {
-        features = collectFeaturesExtended();
-      } else {
-        features = collectFeatures();
-      }
+      const features = collectFeatures();
       features[featureName] = parseFloat(value) || parseInt(value) || value;
-      
       try {
-        currentRiskData = await calculateRiskForFeatures(cohort, features, modelVariant);
+        currentRiskData = await calculateRiskForFeatures(cohort, features, 'top');
         updateRiskComparison();
       } catch (error) {
         console.error('Error updating risk:', error);
@@ -1652,7 +1193,7 @@
     }
     
     // Calculate risk for given features
-    async function calculateRiskForFeatures(cohort, features, modelVariant = 'base') {
+    async function calculateRiskForFeatures(cohort, features, modelVariant = 'top') {
       const response = await fetch(`${LAMBDA_API_URL}/risk`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1714,454 +1255,6 @@
     
     // Load causal analysis when cohort or model variant changes in causal tab
     document.getElementById('cohort-causal').addEventListener('change', loadCausalAnalysis);
-    document.getElementById('model-variant-causal').addEventListener('change', loadCausalAnalysis);
-    
-    // Model Comparison Functions
-    async function compareModels() {
-      const cohort = document.getElementById('cohort-comparison').value;
-      
-      // Show loading state
-      const loadingMsg = document.createElement('div');
-      loadingMsg.className = 'info-box';
-      loadingMsg.innerHTML = '<p>Loading comparison data...</p>';
-      const chartsContainer = document.querySelector('#model-comparison-tab .causal-charts');
-      if (chartsContainer) {
-        chartsContainer.parentNode.insertBefore(loadingMsg, chartsContainer);
-      }
-      
-      try {
-        // Collect features from baseline tab (use baseline as reference)
-        const features = collectFeatures();
-        if (Object.keys(features).length === 0) {
-          loadBaseline();
-          Object.assign(features, collectFeatures());
-        }
-        
-        // Fetch predictions from both models
-        const [baselineResponse, enhancedResponse] = await Promise.all([
-          fetch(`${LAMBDA_API_URL}/risk`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              cohort: cohort, 
-              features: features, 
-              use_ensemble: false,
-              model_variant: 'base'
-            }),
-            mode: 'cors'
-          }),
-          fetch(`${LAMBDA_API_URL}/risk`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              cohort: cohort, 
-              features: features, 
-              use_ensemble: false,
-              model_variant: 'enhanced'
-            }),
-            mode: 'cors'
-          })
-        ]);
-        
-        if (!baselineResponse.ok || !enhancedResponse.ok) {
-          throw new Error('Failed to fetch model predictions');
-        }
-        
-        const baselineData = await baselineResponse.json();
-        const enhancedData = await enhancedResponse.json();
-        
-        // Fetch causal factors from both models
-        const [baselineCausalResponse, enhancedCausalResponse] = await Promise.all([
-          fetch(`${LAMBDA_API_URL}/causal`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              cohort: cohort, 
-              model_variant: 'base',
-              top_k: 15 
-            }),
-            mode: 'cors'
-          }),
-          fetch(`${LAMBDA_API_URL}/causal`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              cohort: cohort, 
-              model_variant: 'enhanced',
-              top_k: 15 
-            }),
-            mode: 'cors'
-          })
-        ]);
-        
-        if (!baselineCausalResponse.ok || !enhancedCausalResponse.ok) {
-          const baselineErr = baselineCausalResponse.ok ? '' : await baselineCausalResponse.text();
-          const enhancedErr = enhancedCausalResponse.ok ? '' : await enhancedCausalResponse.text();
-          const msg = [baselineErr, enhancedErr].filter(Boolean).join('; ') || 'Failed to fetch causal factors';
-          throw new Error(msg);
-        }
-        
-        const baselineCausal = await baselineCausalResponse.json();
-        const enhancedCausal = await enhancedCausalResponse.json();
-        
-        // Store comparison data
-        comparisonData.baseline = {
-          risk: baselineData,
-          causal: baselineCausal
-        };
-        comparisonData.enhanced = {
-          risk: enhancedData,
-          causal: enhancedCausal
-        };
-        
-        // Render visualizations
-        renderRiskComparisonChart();
-        renderCausalComparisonChart();
-        renderImportanceComparisonChart();
-        renderComparisonDetails();
-        renderCausalFactorLists();
-        
-        // Remove loading message
-        if (loadingMsg.parentNode) {
-          loadingMsg.parentNode.removeChild(loadingMsg);
-        }
-        
-      } catch (error) {
-        console.error('Error comparing models:', error);
-        alert('Error comparing models: ' + error.message);
-        if (loadingMsg.parentNode) {
-          loadingMsg.parentNode.removeChild(loadingMsg);
-        }
-      }
-    }
-    
-    function renderRiskComparisonChart() {
-      if (!comparisonData.baseline || !comparisonData.enhanced) return;
-      
-      const baselineRisk = comparisonData.baseline.risk.percentile || comparisonData.baseline.risk.risk_score || 0;
-      const enhancedRisk = comparisonData.enhanced.risk.percentile || comparisonData.enhanced.risk.risk_score || 0;
-      const baselineRaw = comparisonData.baseline.risk.raw_score || 0;
-      const enhancedRaw = comparisonData.enhanced.risk.raw_score || 0;
-      
-      const ctx = document.getElementById('risk-comparison-chart').getContext('2d');
-      if (riskComparisonChart) {
-        riskComparisonChart.destroy();
-      }
-      
-      riskComparisonChart = new Chart(ctx, {
-        type: 'bar',
-        data: {
-          labels: ['Baseline Model', 'Extended Model'],
-          datasets: [
-            {
-              label: 'Normalized Risk Score (%)',
-              data: [baselineRisk, enhancedRisk],
-              backgroundColor: ['rgba(59, 130, 246, 0.6)', 'rgba(16, 185, 129, 0.6)'],
-              borderColor: ['rgba(59, 130, 246, 1)', 'rgba(16, 185, 129, 1)'],
-              borderWidth: 2,
-              yAxisID: 'y'
-            },
-            {
-              label: 'Raw Risk Score',
-              data: [baselineRaw, enhancedRaw],
-              backgroundColor: ['rgba(239, 68, 68, 0.3)', 'rgba(239, 68, 68, 0.3)'],
-              borderColor: ['rgba(239, 68, 68, 1)', 'rgba(239, 68, 68, 1)'],
-              borderWidth: 1,
-              yAxisID: 'y1',
-              type: 'line'
-            }
-          ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          scales: {
-            y: {
-              beginAtZero: true,
-              title: { display: true, text: 'Normalized Risk Score (%)' },
-              position: 'left'
-            },
-            y1: {
-              beginAtZero: true,
-              title: { display: true, text: 'Raw Risk Score' },
-              position: 'right',
-              grid: { drawOnChartArea: false }
-            }
-          },
-          plugins: {
-            legend: { display: true, position: 'top' },
-            tooltip: {
-              callbacks: {
-                label: function(context) {
-                  let label = context.dataset.label || '';
-                  if (label) {
-                    label += ': ';
-                  }
-                  label += context.parsed.y.toFixed(2);
-                  if (context.datasetIndex === 0) {
-                    label += '%';
-                  }
-                  return label;
-                }
-              }
-            }
-          }
-        }
-      });
-    }
-    
-    function renderCausalComparisonChart() {
-      if (!comparisonData.baseline || !comparisonData.enhanced) return;
-      
-      const baselineFactors = comparisonData.baseline.causal.top_causal_factors || [];
-      const enhancedFactors = comparisonData.enhanced.causal.top_causal_factors || [];
-      const noDataEl = document.getElementById('causal-comparison-no-data');
-      const chartContainer = document.getElementById('causal-comparison-chart').parentElement;
-      
-      if (baselineFactors.length === 0 && enhancedFactors.length === 0) {
-        if (noDataEl) noDataEl.style.display = 'block';
-        if (chartContainer) chartContainer.style.display = 'none';
-        if (causalComparisonChart) {
-          causalComparisonChart.destroy();
-          causalComparisonChart = null;
-        }
-        return;
-      }
-      if (noDataEl) noDataEl.style.display = 'none';
-      if (chartContainer) chartContainer.style.display = 'block';
-      
-      // Get top 10 features from both models
-      const allFeatures = new Set();
-      baselineFactors.slice(0, 10).forEach(f => allFeatures.add(f.feature));
-      enhancedFactors.slice(0, 10).forEach(f => allFeatures.add(f.feature));
-      
-      const features = Array.from(allFeatures).slice(0, 10);
-      // Use same metric as Feature Importance chart (causal_responsibility 0-1) so both charts show visible bars
-      const baselineImportance = features.map(f => {
-        const factor = baselineFactors.find(x => x.feature === f);
-        return factor ? (factor.causal_responsibility ?? factor.combined_importance ?? factor.importance ?? 0) : 0;
-      });
-      const enhancedImportance = features.map(f => {
-        const factor = enhancedFactors.find(x => x.feature === f);
-        return factor ? (factor.causal_responsibility ?? factor.combined_importance ?? factor.importance ?? 0) : 0;
-      });
-      
-      const ctx = document.getElementById('causal-comparison-chart').getContext('2d');
-      if (causalComparisonChart) {
-        causalComparisonChart.destroy();
-      }
-      
-      causalComparisonChart = new Chart(ctx, {
-        type: 'bar',
-        data: {
-          labels: features,
-          datasets: [
-            {
-              label: 'Baseline Model',
-              data: baselineImportance,
-              backgroundColor: 'rgba(59, 130, 246, 0.6)',
-              borderColor: 'rgba(59, 130, 246, 1)',
-              borderWidth: 1
-            },
-            {
-              label: 'Extended Model',
-              data: enhancedImportance,
-              backgroundColor: 'rgba(16, 185, 129, 0.6)',
-              borderColor: 'rgba(16, 185, 129, 1)',
-              borderWidth: 1
-            }
-          ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          indexAxis: 'y',
-          scales: {
-            x: {
-              beginAtZero: true,
-              max: 1,
-              title: { display: true, text: 'Causal Responsibility' }
-            },
-            y: {
-              title: { display: true, text: 'Feature' }
-            }
-          },
-          plugins: {
-            legend: { display: true, position: 'top' },
-            tooltip: { mode: 'index', intersect: false }
-          }
-        }
-      });
-    }
-    
-    function renderImportanceComparisonChart() {
-      if (!comparisonData.baseline || !comparisonData.enhanced) return;
-      
-      const baselineFactors = comparisonData.baseline.causal.top_causal_factors || [];
-      const enhancedFactors = comparisonData.enhanced.causal.top_causal_factors || [];
-      const noDataEl = document.getElementById('importance-comparison-no-data');
-      const chartContainer = document.getElementById('importance-comparison-chart').parentElement;
-      if (baselineFactors.length === 0 && enhancedFactors.length === 0) {
-        if (noDataEl) noDataEl.style.display = 'block';
-        if (chartContainer) chartContainer.style.display = 'none';
-        if (importanceComparisonChart) {
-          importanceComparisonChart.destroy();
-          importanceComparisonChart = null;
-        }
-        return;
-      }
-      if (noDataEl) noDataEl.style.display = 'none';
-      if (chartContainer) chartContainer.style.display = 'block';
-      
-      // Get top 15 features from both models
-      const allFeatures = new Set();
-      baselineFactors.slice(0, 15).forEach(f => allFeatures.add(f.feature));
-      enhancedFactors.slice(0, 15).forEach(f => allFeatures.add(f.feature));
-      
-      const features = Array.from(allFeatures).slice(0, 15);
-      const baselineResponsibility = features.map(f => {
-        const factor = baselineFactors.find(x => x.feature === f);
-        return factor ? (factor.causal_responsibility || 0) : 0;
-      });
-      const enhancedResponsibility = features.map(f => {
-        const factor = enhancedFactors.find(x => x.feature === f);
-        return factor ? (factor.causal_responsibility || 0) : 0;
-      });
-      
-      const ctx = document.getElementById('importance-comparison-chart').getContext('2d');
-      if (importanceComparisonChart) {
-        importanceComparisonChart.destroy();
-      }
-      
-      importanceComparisonChart = new Chart(ctx, {
-        type: 'bar',
-        data: {
-          labels: features,
-          datasets: [
-            {
-              label: 'Baseline Model - Causal Responsibility',
-              data: baselineResponsibility,
-              backgroundColor: 'rgba(59, 130, 246, 0.6)',
-              borderColor: 'rgba(59, 130, 246, 1)',
-              borderWidth: 1
-            },
-            {
-              label: 'Extended Model - Causal Responsibility',
-              data: enhancedResponsibility,
-              backgroundColor: 'rgba(16, 185, 129, 0.6)',
-              borderColor: 'rgba(16, 185, 129, 1)',
-              borderWidth: 1
-            }
-          ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          indexAxis: 'y',
-          scales: {
-            x: {
-              beginAtZero: true,
-              max: 1,
-              title: { display: true, text: 'Causal Responsibility' }
-            },
-            y: {
-              title: { display: true, text: 'Feature' }
-            }
-          },
-          plugins: {
-            legend: { display: true, position: 'top' },
-            tooltip: { mode: 'index', intersect: false }
-          }
-        }
-      });
-    }
-    
-    function renderComparisonDetails() {
-      if (!comparisonData.baseline || !comparisonData.enhanced) return;
-      
-      const baselineRisk = comparisonData.baseline.risk.percentile || comparisonData.baseline.risk.risk_score || 0;
-      const enhancedRisk = comparisonData.enhanced.risk.percentile || comparisonData.enhanced.risk.risk_score || 0;
-      const baselineBand = comparisonData.baseline.risk.risk_band || 'medium';
-      const enhancedBand = comparisonData.enhanced.risk.risk_band || 'medium';
-      
-      const difference = enhancedRisk - baselineRisk;
-      const differencePercent = baselineRisk > 0 ? ((difference / baselineRisk) * 100).toFixed(1) : 0;
-      
-      // Update baseline
-      document.getElementById('baseline-comparison-risk').textContent = baselineRisk.toFixed(1) + '%';
-      document.getElementById('baseline-comparison-band').textContent = baselineBand.toUpperCase();
-      document.getElementById('baseline-comparison-band').className = `change ${baselineBand}`;
-      document.getElementById('baseline-comparison-percentile').textContent = 
-        `Percentile: ${(comparisonData.baseline.risk.percentile || baselineRisk).toFixed(1)}%`;
-      
-      // Update enhanced
-      document.getElementById('enhanced-comparison-risk').textContent = enhancedRisk.toFixed(1) + '%';
-      document.getElementById('enhanced-comparison-band').textContent = enhancedBand.toUpperCase();
-      document.getElementById('enhanced-comparison-band').className = `change ${enhancedBand}`;
-      document.getElementById('enhanced-comparison-percentile').textContent = 
-        `Percentile: ${(comparisonData.enhanced.risk.percentile || enhancedRisk).toFixed(1)}%`;
-      
-      // Update difference
-      const diffEl = document.getElementById('risk-difference');
-      const diffPercentEl = document.getElementById('risk-difference-percent');
-      
-      if (difference > 0) {
-        diffEl.textContent = `+${difference.toFixed(1)}%`;
-        diffEl.className = 'value positive';
-        diffPercentEl.textContent = `+${differencePercent}% increase`;
-        diffPercentEl.className = 'change positive';
-      } else if (difference < 0) {
-        diffEl.textContent = `${difference.toFixed(1)}%`;
-        diffEl.className = 'value negative';
-        diffPercentEl.textContent = `${Math.abs(differencePercent)}% decrease`;
-        diffPercentEl.className = 'change negative';
-      } else {
-        diffEl.textContent = '0%';
-        diffEl.className = 'value neutral';
-        diffPercentEl.textContent = 'No change';
-        diffPercentEl.className = 'change neutral';
-      }
-    }
-    
-    function renderCausalFactorLists() {
-      if (!comparisonData.baseline || !comparisonData.enhanced) return;
-      
-      const baselineFactors = comparisonData.baseline.causal.top_causal_factors || [];
-      const enhancedFactors = comparisonData.enhanced.causal.top_causal_factors || [];
-      
-      // Render baseline factors
-      const baselineList = document.getElementById('baseline-causal-list');
-      baselineList.innerHTML = '';
-      const importanceVal = (f) => (f.importance ?? f.combined_importance ?? f.importance_mean ?? f.shap_importance ?? f.causal_responsibility ?? 0);
-      baselineFactors.slice(0, 10).forEach((factor, index) => {
-        const factorDiv = document.createElement('div');
-        factorDiv.className = 'factor-item';
-        factorDiv.innerHTML = `
-          <div class="factor-name">${index + 1}. ${factor.feature}</div>
-          <div class="factor-importance">
-            Importance: ${importanceVal(factor).toFixed(4)} |
-            Responsibility: ${(factor.causal_responsibility ?? 0).toFixed(4)}
-          </div>
-        `;
-        baselineList.appendChild(factorDiv);
-      });
-      
-      // Render enhanced factors
-      const enhancedList = document.getElementById('enhanced-causal-list');
-      enhancedList.innerHTML = '';
-      enhancedFactors.slice(0, 10).forEach((factor, index) => {
-        const factorDiv = document.createElement('div');
-        factorDiv.className = 'factor-item';
-        factorDiv.innerHTML = `
-          <div class="factor-name">${index + 1}. ${factor.feature}</div>
-          <div class="factor-importance">
-            Importance: ${importanceVal(factor).toFixed(4)} |
-            Responsibility: ${(factor.causal_responsibility ?? 0).toFixed(4)}
-          </div>
-        `;
-        enhancedList.appendChild(factorDiv);
-      });
-    }
   </script>
 </body>
 </html>

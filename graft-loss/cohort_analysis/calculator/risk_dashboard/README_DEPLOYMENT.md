@@ -16,8 +16,8 @@ This guide provides step-by-step instructions for deploying the PHTS Risk Calcul
 
 1. **AWS CLI** configured with appropriate permissions
 2. **Docker** installed and running
-3. **Models trained** and saved to `calculator/outputs/models/`
-4. **Dashboard data generated** in `calculator/outputs/shap_ffa/`
+3. **Top-features model trained**: `python train_python_models.py --top_features_only` → `calculator/outputs/models/Combined_top/`
+4. **Dashboard data generated** for Combined_top in `calculator/outputs/shap_ffa/Combined_top/`
 5. **Risk distributions computed** in `calculator/outputs/risk_distributions/`
 
 ### Docker Setup

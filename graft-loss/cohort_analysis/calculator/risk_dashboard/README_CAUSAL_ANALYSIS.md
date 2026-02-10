@@ -48,7 +48,7 @@ When you adjust any causal factor:
 
 Shows three key metrics:
 
-- **Baseline Risk**: Risk score calculated from current form values (or baseline defaults)
+- **Reference Risk**: Risk score calculated from current form values (or default values)
 - **Current Risk**: Risk score after modifying causal factors
 - **Risk Change**: 
   - Absolute difference (e.g., +5.2%)
@@ -72,7 +72,7 @@ The dashboard automatically loads:
 ### Step 3: Adjust Factors
 1. Use sliders or inputs to modify factor values
 2. Watch the risk score update in real-time
-3. Compare baseline vs. current risk in the comparison panel
+3. Compare reference vs. current risk in the comparison panel
 
 ### Step 4: Analyze Impact
 - Identify which factors have the greatest impact on risk
@@ -168,7 +168,7 @@ Response:
 
 ## Best Practices
 
-1. **Start with Baseline**: Use baseline/default values to establish a reference point
+1. **Start with default values**: Use default values to establish a reference point
 2. **Adjust One Factor at a Time**: Isolate the impact of individual factors
 3. **Compare Scenarios**: Use the comparison panel to see how interventions might affect risk
 4. **Consider Clinical Context**: Factor values should be clinically realistic

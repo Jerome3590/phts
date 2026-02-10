@@ -18,30 +18,24 @@ python test_local.py
 
 ## What It Tests
 
-The script tests all API Gateway endpoints:
+The script tests API Gateway endpoints:
 
 1. **GET /metadata** - Returns available cohorts and API information
-2. **POST /risk (Baseline)** - Calculates risk using baseline model
-3. **POST /risk (Enhanced)** - Calculates risk using enhanced model
-4. **POST /causal (Baseline)** - Returns causal factors for baseline model
-5. **POST /causal (Enhanced)** - Returns causal factors for enhanced model
-6. **Model Comparison** - Compares baseline vs enhanced model predictions
+2. **POST /risk** - Calculates risk using the top-features model (Combined_top)
+3. **POST /causal** - Returns causal factors for the top-features model
 
 ## Expected Results
 
 ### Success Case
 
-If `lambda_dir_phts/` is properly prepared with models in `Combined_base/` and `Combined_enhanced/` directories:
+If `lambda_dir_phts/` is prepared with `Combined_top/` (run `prepare_lambda_dir_phts.py` after training with `--top_features_only` and running SHAP/FFA for top):
 
 ```
 [PASS]: Metadata (GET)
-[PASS]: Risk Baseline (POST)
-[PASS]: Risk Enhanced (POST)
-[PASS]: Causal Baseline (POST)
-[PASS]: Causal Enhanced (POST)
-[PASS]: Model Comparison
+[PASS]: Risk (POST) - Combined_top
+[PASS]: Causal (POST) - Combined_top
 
-Total: 6/6 tests passed
+Total: 3/3 tests passed
 ```
 
 ### Partial Success (Current State)
@@ -50,17 +44,13 @@ The `/metadata` endpoint should always work as it doesn't require models:
 
 ```
 [PASS]: Metadata (GET)
-[FAIL]: Risk Baseline (POST) - Models not found
-[FAIL]: Risk Enhanced (POST) - Models not found
-[FAIL]: Causal Baseline (POST) - Dashboard data not found
-[FAIL]: Causal Enhanced (POST) - Dashboard data not found
-[FAIL]: Model Comparison - Models not found
+[FAIL]: Risk (POST) - Models not found
+[FAIL]: Causal (POST) - Dashboard data not found
 ```
 
 This is expected if:
-- Models haven't been prepared yet
-- Models are in `Combined/` instead of `Combined_base/` and `Combined_enhanced/`
-- Dashboard data hasn't been generated for baseline/enhanced variants
+- `prepare_lambda_dir_phts.py` has not been run after training with `--top_features_only`
+- `Combined_top/` is missing under `outputs/models/` or `outputs/shap_ffa/`
 
 ## Directory Structure Required
 
@@ -69,25 +59,14 @@ For full testing, `lambda_dir_phts/` should have:
 ```
 lambda_dir_phts/
 ├── models/
-│   ├── Combined_base/
-│   │   ├── catboost_model.cbm
-│   │   ├── xgboost_model.ubj
-│   │   ├── xgboost_rf_model.ubj
-│   │   └── best_model.txt
-│   └── Combined_enhanced/
-│       ├── catboost_model.cbm
-│       ├── xgboost_model.ubj
-│       ├── xgboost_rf_model.ubj
+│   └── Combined_top/
+│       ├── catboost_model.cbm (or xgboost*.ubj per best_model.txt)
 │       └── best_model.txt
 ├── dashboard_data/
-│   ├── Combined_base/
-│   │   └── dashboard_data.json
-│   └── Combined_enhanced/
+│   └── Combined_top/
 │       └── dashboard_data.json
 ├── model_features/
-│   ├── Combined_base/
-│   │   └── feature_metadata.json
-│   └── Combined_enhanced/
+│   └── Combined_top/
 │       └── feature_metadata.json
 └── risk_distributions/
     └── risk_distributions.json
@@ -107,19 +86,14 @@ lambda_dir_phts/
 
 If you see "Model not found" errors:
 
-1. Check that `lambda_dir_phts/models/` exists
-2. Verify `Combined_base/` and `Combined_enhanced/` directories exist
-3. Ensure model files (`.cbm`, `.ubj`) are present
-4. Run `prepare_lambda_dir_phts.py` to prepare the directory structure
+1. Check that `lambda_dir_phts/models/Combined_top/` exists
+2. Ensure model files (e.g. `.cbm` or `.ubj` per best_model.txt) and `best_model.txt` are present
+3. Run `prepare_lambda_dir_phts.py` after training with `--top_features_only` and SHAP/FFA for top
 
 ### Dashboard Data Not Found
 
-If you see "Dashboard data not found" errors:
-
-1. Check that `lambda_dir_phts/dashboard_data/` exists
-2. Verify `Combined_base/` and `Combined_enhanced/` subdirectories exist
-3. Ensure `dashboard_data.json` files are present
-4. Run SHAP/FFA analysis to generate dashboard data for both model variants
+1. Check that `lambda_dir_phts/dashboard_data/Combined_top/dashboard_data.json` exists
+2. Run SHAP/FFA with `--model-variant top` to generate dashboard data, then re-run `prepare_lambda_dir_phts.py`
 
 ### S3 Errors (Expected Locally)
 

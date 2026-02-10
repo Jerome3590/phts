@@ -995,7 +995,15 @@ def train_single_split_models(
     return results
 
 
-def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: float = 0.8, n_jobs: int = 1, time_horizon: float = 365.25, include_recommended_features: bool = False):
+def train_models_for_cohort(
+    cohort: str,
+    n_mc_splits: int = 25,
+    train_prop: float = 0.8,
+    n_jobs: int = 1,
+    time_horizon: float = 365.25,
+    include_recommended_features: bool = False,
+    top_feature_names: Optional[List[str]] = None,
+):
     """
     Train CatBoost, XGBoost (Gradient Boosting), and XGBoost Random Forest models for a cohort
     using Monte Carlo Cross-Validation (MC-CV) with 25 splits.
@@ -1014,6 +1022,10 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
         n_mc_splits: Number of MC-CV splits (default: 25)
         train_prop: Training proportion for MC-CV splits (default: 0.8)
         n_jobs: Number of parallel jobs for MC-CV (default: 1)
+        include_recommended_features: If True, use base + recommended features (Extended).
+        top_feature_names: If set, train only on these features (top causal/importance from SHAP/FFA).
+            Output is saved to cohort_top (e.g. Combined_top). Data is loaded with recommended
+            features so that top features like sec_dx, lsbaosat are available.
     """
     logger.info(f"\n{'='*80}")
     logger.info(f"Training models for cohort: {cohort}")
@@ -1113,20 +1125,31 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
     
     # Filter to only calculator features
     from calculator_features import filter_to_calculator_features
-    feature_cols = filter_to_calculator_features(df_clean, all_feature_cols, include_recommended=include_recommended_features)
-    
-    feature_set_name = "calculator features (with recommended)" if include_recommended_features else "base calculator features"
-    logger.info(f"Filtered to {feature_set_name}: {len(feature_cols)} features (from {len(all_feature_cols)} total)")
+    # When using top features only, we need extended feature set so sec_dx, lsbaosat etc. exist
+    use_recommended_for_filter = include_recommended_features or (top_feature_names is not None)
+    feature_cols = filter_to_calculator_features(df_clean, all_feature_cols, include_recommended=use_recommended_for_filter)
+
+    if top_feature_names is not None:
+        feature_cols = [f for f in top_feature_names if f in feature_cols]
+        missing = set(top_feature_names) - set(feature_cols)
+        if missing:
+            logger.warning(f"Top features not in data (dropped): {missing}")
+        logger.info(f"Restricted to top causal/importance features: {len(feature_cols)} features")
+    else:
+        feature_set_name = "calculator features (with recommended)" if include_recommended_features else "base calculator features"
+        logger.info(f"Filtered to {feature_set_name}: {len(feature_cols)} features (from {len(all_feature_cols)} total)")
     if len(feature_cols) < len(all_feature_cols):
         removed = set(all_feature_cols) - set(feature_cols)
         logger.info(f"Removed {len(removed)} non-calculator features (e.g., {', '.join(list(removed)[:10])}...)")
     
-    if include_recommended_features:
+    if include_recommended_features and top_feature_names is None:
         from calculator_features import get_recommended_additional_features
         recommended = get_recommended_additional_features()
         included_recommended = [f for f in recommended if f in feature_cols]
         if included_recommended:
             logger.info(f"Included {len(included_recommended)} recommended additional features: {', '.join(included_recommended[:10])}{'...' if len(included_recommended) > 10 else ''}")
+    if top_feature_names is not None:
+        logger.info(f"Top features for training: {', '.join(feature_cols)}")
     
     X = df_clean[feature_cols].copy()
     time = df_clean['time'].values
@@ -1183,8 +1206,11 @@ def train_models_for_cohort(cohort: str, n_mc_splits: int = 25, train_prop: floa
     # Prepare signed time labels for full dataset (for MC CV splits)
     y_all = prepare_survival_labels(time, status)
     
-    # Create output directory (with suffix for enhanced features if applicable)
-    feature_suffix = "_enhanced" if include_recommended_features else "_base"
+    # Create output directory (with suffix for enhanced / top features if applicable)
+    if top_feature_names is not None:
+        feature_suffix = "_top"
+    else:
+        feature_suffix = "_enhanced" if include_recommended_features else "_base"
     cohort_output_dir = MODELS_DIR / f"{cohort}{feature_suffix}"
     cohort_output_dir.mkdir(parents=True, exist_ok=True)
     mc_cv_output_dir = cohort_output_dir / "mc_cv"
@@ -1967,6 +1993,10 @@ if __name__ == "__main__":
                        help="Number of parallel jobs for MC-CV (default: 1)")
     parser.add_argument("--include_recommended", action="store_true",
                        help="Include recommended additional features (BNP, CRP, sec_dx/ter_dx, etc.)")
+    parser.add_argument("--top_features_only", action="store_true",
+                       help="Train only on top causal/importance features from SHAP/FFA (output: Combined_top)")
+    parser.add_argument("--top_features_file", type=str, default=None,
+                       help="CSV/JSON file with 'feature' or 'variable' column for top features (used with --top_features_only; default: built-in list)")
     
     args = parser.parse_args()
     
@@ -1974,7 +2004,27 @@ if __name__ == "__main__":
     if args.cohort != "Combined":
         logger.warning(f"Requested cohort '{args.cohort}' but using Combined model for all cohorts. Training Combined model.")
     
-    feature_set_name = "enhanced (with recommended features)" if args.include_recommended else "base calculator"
+    top_feature_names = None
+    if args.top_features_only:
+        if args.top_features_file and Path(args.top_features_file).exists():
+            p = Path(args.top_features_file)
+            if p.suffix.lower() == ".csv":
+                top_df = pd.read_csv(p)
+                col = "feature" if "feature" in top_df.columns else "variable"
+                if col not in top_df.columns and len(top_df.columns) > 0:
+                    col = top_df.columns[0]
+                top_feature_names = top_df[col].astype(str).str.strip().tolist()
+            else:
+                with open(p, "r") as f:
+                    data = json.load(f)
+                top_feature_names = data if isinstance(data, list) else data.get("features", data.get("feature", []))
+            logger.info(f"Loaded {len(top_feature_names)} top features from {args.top_features_file}")
+        else:
+            from top_causal_features import get_top_causal_features
+            top_feature_names = get_top_causal_features()
+            logger.info(f"Using built-in top causal features: {len(top_feature_names)} features")
+
+    feature_set_name = "top causal/importance features only" if top_feature_names else ("enhanced (with recommended features)" if args.include_recommended else "base calculator")
     logger.info(f"\n{'='*80}")
     logger.info(f"Training with {feature_set_name} feature set")
     logger.info(f"{'='*80}")
@@ -1984,5 +2034,6 @@ if __name__ == "__main__":
         n_mc_splits=args.n_mc_splits,
         train_prop=args.train_prop,
         n_jobs=args.n_jobs,
-        include_recommended_features=args.include_recommended
+        include_recommended_features=args.include_recommended,
+        top_feature_names=top_feature_names
     )

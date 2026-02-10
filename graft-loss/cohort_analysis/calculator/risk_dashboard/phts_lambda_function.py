@@ -65,11 +65,12 @@ DASHBOARD_DATA_PATH = os.environ.get("DASHBOARD_DATA_PATH", "/var/task/dashboard
 RISK_DISTRIBUTION_PATH = os.environ.get("RISK_DISTRIBUTION_PATH", "/var/task/risk_distributions")
 MODEL_CACHE_TTL = int(os.environ.get("MODEL_CACHE_TTL", "3600"))
 
-# Available cohorts - only Combined for both Baseline and Extended model
+# Available cohorts - single Combined model (top 15 causal features only)
 AVAILABLE_COHORTS = ["Combined"]
 COHORTS_WITH_DATA = ["Combined"]
-# Model cohort (always Combined - single model for all)
+# Model cohort: Combined_top (single top-features model for risk and causal)
 MODEL_COHORT = "Combined"
+MODEL_VARIANT_DEFAULT = "top"  # Combined_top
 
 # Risk score distributions for normalization (loaded on demand)
 _risk_distributions: Dict[str, Dict[str, Any]] = {}  # All cohorts have trained models
@@ -125,8 +126,11 @@ def get_feature_metadata(cohort: str) -> Dict[str, str]:
     Returns:
         Dictionary mapping feature names to their types: 'binary' or 'numeric'
     """
-    # Try container filesystem first (MODEL_FEATURES_PATH)
-    container_path = Path(MODEL_FEATURES_PATH) / cohort / "feature_metadata.json"
+    # Try container filesystem first (MODEL_FEATURES_PATH). For Combined, use Combined_top.
+    model_dir = f"{cohort}_top" if cohort == "Combined" else cohort
+    container_path = Path(MODEL_FEATURES_PATH) / model_dir / "feature_metadata.json"
+    if not container_path.exists() and cohort != model_dir:
+        container_path = Path(MODEL_FEATURES_PATH) / cohort / "feature_metadata.json"
     if container_path.exists():
         logger.info(f"Loading feature metadata from container: {container_path}")
         try:
@@ -175,45 +179,34 @@ def load_dashboard_data(cohort: str, model_variant: Optional[str] = None) -> Dic
     
     Args:
         cohort: Base cohort name (e.g., "Combined")
-        model_variant: Model variant ("base", "enhanced", or None for auto-detect)
+        model_variant: Model variant ("top" only for final workflow; "base"/"enhanced" ignored)
     
     Tries:
     1. Container filesystem (DASHBOARD_DATA_PATH)
     2. S3 bucket
     
-    For cohort "Combined": tries Combined_base / Combined_enhanced first;
-    if not found, falls back to Combined (single dashboard data for both models).
+    Final workflow: Combined_top only. No Baseline/Extended variants.
     """
-    # Determine model cohort name (with variant suffix)
-    if model_variant == "enhanced":
-        model_cohort = f"{cohort}_enhanced"
-    elif model_variant == "base":
-        model_cohort = f"{cohort}_base"
+    # Single model: Combined_top only
+    if model_variant == "top" or model_variant is None:
+        model_cohort = f"{cohort}_top"
+    elif model_variant in ("base", "enhanced"):
+        # Legacy variants no longer deployed; treat as top
+        model_cohort = f"{cohort}_top"
     else:
-        # Auto-detect: try enhanced first, then base, then cohort
-        enhanced_path = Path(DASHBOARD_DATA_PATH) / f"{cohort}_enhanced" / "dashboard_data.json"
-        base_path = Path(DASHBOARD_DATA_PATH) / f"{cohort}_base" / "dashboard_data.json"
-        cohort_path = Path(DASHBOARD_DATA_PATH) / cohort / "dashboard_data.json"
-        if enhanced_path.exists():
-            model_cohort = f"{cohort}_enhanced"
-        elif base_path.exists():
-            model_cohort = f"{cohort}_base"
-        elif cohort_path.exists():
-            model_cohort = cohort
-        else:
-            model_cohort = cohort
+        model_cohort = f"{cohort}_top"
     
     # Use model_cohort as cache key
     cache_key = model_cohort
     if cache_key in _dashboard_data_cache:
         return _dashboard_data_cache[cache_key]
     
-    # Try container filesystem: variant path first, then fallback to cohort (e.g. Combined)
+    # Try container filesystem: Combined_top (or cohort if present)
     container_path = Path(DASHBOARD_DATA_PATH) / model_cohort / "dashboard_data.json"
-    if not container_path.exists() and model_cohort in (f"{cohort}_base", f"{cohort}_enhanced"):
+    if not container_path.exists():
         fallback_path = Path(DASHBOARD_DATA_PATH) / cohort / "dashboard_data.json"
         if fallback_path.exists():
-            logger.info(f"Using single dashboard data for both models: {fallback_path}")
+            logger.info(f"Using dashboard data: {fallback_path}")
             container_path = fallback_path
     if container_path.exists():
         logger.info(f"Loading dashboard data from container: {container_path}")
@@ -448,14 +441,12 @@ def _percentile_to_risk_band(percentile: float) -> str:
 
 
 def _resolve_model_cohort_for_models(model_cohort: str) -> str:
-    """If model_cohort is Combined_base or Combined_enhanced but that path doesn't exist, use Combined (single model)."""
+    """Final workflow: only Combined_top. Legacy base/enhanced resolve to Combined_top if missing."""
     if model_cohort in ("Combined_base", "Combined_enhanced"):
-        variant_path = Path(MODEL_BASE_PATH) / model_cohort
-        if not variant_path.exists():
-            combined_path = Path(MODEL_BASE_PATH) / "Combined"
-            if combined_path.exists():
-                logger.info(f"Using single Combined model for variant {model_cohort}")
-                return "Combined"
+        top_path = Path(MODEL_BASE_PATH) / "Combined_top"
+        if top_path.exists():
+            logger.info(f"Using Combined_top for legacy variant {model_cohort}")
+            return "Combined_top"
     return model_cohort
 
 
@@ -464,7 +455,7 @@ def load_model(cohort: str, model_type: str) -> Any:
     Load a trained model for a cohort.
     
     Args:
-        cohort: Cohort name (CHD, Combined, Myocardio, or Combined_base/Combined_enhanced)
+        cohort: Cohort name (Combined_top for final workflow; CHD, Myocardio, or Combined for others)
         model_type: Model type ('catboost', 'xgboost', 'xgboost_rf')
     
     Returns:
@@ -696,16 +687,16 @@ def predict_risk_survival(
     if not MODEL_LIBS_AVAILABLE:
         raise RuntimeError("Model libraries not available")
     
-    # Use model variant if specified in cohort name (_base or _enhanced)
-    # If cohort ends with _base or _enhanced, use as-is; otherwise default to Combined_base
-    if cohort.endswith('_base') or cohort.endswith('_enhanced'):
+    # Final workflow: use Combined_top when cohort is Combined (or variant in name)
+    if cohort.endswith('_top'):
         model_cohort = cohort
-        base_cohort = cohort.rsplit('_', 1)[0]  # Extract base cohort name
-        logger.info(f"Using {model_cohort} model for cohort {base_cohort} (model variant specified)")
+        logger.info(f"Using {model_cohort} model (top causal features)")
+    elif cohort.endswith('_base') or cohort.endswith('_enhanced'):
+        model_cohort = _resolve_model_cohort_for_models(cohort)
+        logger.info(f"Using {model_cohort} model (legacy variant requested)")
     else:
-        # Default to baseline model if no variant specified
-        model_cohort = f"{MODEL_COHORT}_base"
-        logger.info(f"Using {model_cohort} model for cohort {cohort} (defaulting to baseline model)")
+        model_cohort = f"{MODEL_COHORT}_top"
+        logger.info(f"Using {model_cohort} model for cohort {cohort} (default: top causal features)")
     
     # Prepare features (create derived variables)
     prepared_features = prepare_features_for_inference(features)
@@ -947,7 +938,7 @@ def handle_metadata(event: Dict[str, Any]) -> Dict[str, Any]:
         # Safely get query parameters
         query_params = event.get("queryStringParameters") or {}
         cohort = query_params.get("cohort") if isinstance(query_params, dict) else None
-        model_variant = query_params.get("model_variant", "base") if isinstance(query_params, dict) else "base"
+        model_variant = query_params.get("model_variant", "top") if isinstance(query_params, dict) else "top"
         logger.info(f"Requested cohort: {cohort}, model_variant: {model_variant}")
         
         # Get API Gateway URL from environment variable or construct from request
@@ -1056,7 +1047,7 @@ def handle_risk(event: Dict[str, Any]) -> Dict[str, Any]:
             ...
         },
         "use_ensemble": false,  // optional, default: false (use best model only)
-        "model_variant": "base"  // optional, default: "base" (use baseline model), "enhanced" (use extended model)
+        "model_variant": "top"  // optional, default: "top" (single top 15 causal features model)
     }
     """
     try:
@@ -1071,15 +1062,10 @@ def handle_risk(event: Dict[str, Any]) -> Dict[str, Any]:
             return _response(400, {"error": "No features provided"})
         
         use_ensemble = body.get("use_ensemble", False)
-        model_variant = body.get("model_variant", "base")  # "base" or "enhanced"
-        
-        # Adjust cohort name based on model variant
-        # Models are stored in directories like "Combined_base" or "Combined_enhanced"
-        model_cohort = cohort
-        if model_variant == "enhanced":
-            model_cohort = f"{cohort}_enhanced"
-        else:
-            model_cohort = f"{cohort}_base"
+        model_variant = body.get("model_variant", "top")  # Single model: top 15 features only
+
+        # Model is always Combined_top (top 15 causal/importance features)
+        model_cohort = f"{cohort}_top"
         
         # Predict risk
         result = predict_risk_survival(model_cohort, features, use_best_model_only=not use_ensemble)
@@ -1132,15 +1118,15 @@ def handle_causal(event: Dict[str, Any]) -> Dict[str, Any]:
     Request body:
     {
         "cohort": "Combined",
-        "model_variant": "base" | "enhanced",  // optional, default: "base"
+        "model_variant": "top",  // optional, default: "top" (single model)
         "top_k": 10  // optional, default: 10
     }
-    Baseline values are not required for this endpoint; it returns causal factors and feature metadata only.
+    Default/reference values are not required; it returns causal factors and feature metadata only.
     """
     try:
         body = json.loads(event.get("body") or "{}")
         cohort = body.get("cohort", "Combined")
-        model_variant = body.get("model_variant", "base")  # "base" or "enhanced"
+        model_variant = body.get("model_variant", "top")  # Single model: top 15 features
         top_k = body.get("top_k", 10)
         
         if cohort not in AVAILABLE_COHORTS:
