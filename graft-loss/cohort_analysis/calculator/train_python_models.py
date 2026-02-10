@@ -1142,10 +1142,18 @@ def train_models_for_cohort(
                 expanded_top.append(f)
         if "sec_dx" in top_feature_names:
             logger.info(f"Expanded sec_dx to one-hot columns: {get_sec_dx_one_hot_columns()}")
-        feature_cols = [f for f in expanded_top if f in feature_cols]
         missing = set(expanded_top) - set(feature_cols)
         if missing:
-            logger.warning(f"Top features not in data (dropped): {missing}")
+            sec_dx_missing = [c for c in missing if c.startswith("sec_dx_")]
+            if sec_dx_missing:
+                for col in sec_dx_missing:
+                    df_clean[col] = 0
+                feature_cols = list(feature_cols) + sec_dx_missing
+                logger.info(f"Added missing sec_dx one-hot columns (as 0): {sec_dx_missing}")
+            other_missing = missing - set(sec_dx_missing)
+            if other_missing:
+                logger.warning(f"Top features not in data (dropped): {other_missing}")
+        feature_cols = [f for f in expanded_top if f in feature_cols]
         logger.info(f"Restricted to top causal/importance features: {len(feature_cols)} features")
     else:
         feature_set_name = "calculator features (with recommended)" if include_recommended_features else "base calculator features"
