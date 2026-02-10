@@ -1220,30 +1220,29 @@ def compute_calculator_shap_values(
                 else:
                     booster = model
 
-            # Use SHAP TreeExplainer with Booster
+            # XGBoost SHAP: use pred_contribs first (avoids XGBoost 3.1+ / SHAP TreeExplainer bug
+            # where base_score is a list and SHAP raises "could not convert string to float: '[1.0E0]'").
+            # pred_contribs gives equivalent SHAP values for tree models.
+            shap_values = None
             try:
-                explainer = shap.TreeExplainer(booster)
-                shap_values = explainer.shap_values(X_sample_clean)
-
-                # Handle multi-dimensional output
-                if isinstance(shap_values, list):
-                    shap_values = shap_values[0]  # Use first output
-
-            except Exception as e:
-                # Fallback: try using Booster's predict with pred_contribs
-                logger.warning(f"SHAP TreeExplainer failed: {e}, trying alternative method")
+                dmat = xgb.DMatrix(X_sample_clean)
+                if isinstance(booster, xgb.Booster):
+                    shap_values = booster.predict(dmat, pred_contribs=True)
+                    shap_values = np.array(shap_values)
+                    if shap_values.ndim == 2:
+                        shap_values = shap_values[:, :-1]  # drop base value column
+            except Exception as e_dmat:
+                pass
+            if shap_values is None:
                 try:
-                    dmat = xgb.DMatrix(X_sample_clean)
-                    if isinstance(booster, xgb.Booster):
-                        shap_values = booster.predict(dmat, pred_contribs=True)
-                        shap_values = np.array(shap_values)
-                        # Remove base value column
-                        if shap_values.ndim == 2:
-                            shap_values = shap_values[:, :-1]
-                    else:
-                        raise RuntimeError(f"Could not compute XGBoost SHAP values: {e}") from e
-                except Exception as e2:
-                    raise RuntimeError(f"Could not compute XGBoost SHAP values: {e2}") from e2
+                    explainer = shap.TreeExplainer(booster)
+                    shap_values = explainer.shap_values(X_sample_clean)
+                    if isinstance(shap_values, list):
+                        shap_values = shap_values[0]
+                except Exception as e:
+                    raise RuntimeError(
+                        f"Could not compute XGBoost SHAP values (tried pred_contribs and TreeExplainer): {e}"
+                    ) from e
 
         # Handle multi-dimensional output
         if isinstance(shap_values, list):

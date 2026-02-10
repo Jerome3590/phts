@@ -1069,6 +1069,7 @@ def handle_metadata(event: Dict[str, Any]) -> Dict[str, Any]:
                 feature_level_labels = dashboard_data.get("feature_level_labels", {})
                 sec_dx_dropdown_options = dashboard_data.get("sec_dx_dropdown_options", SEC_DX_LEVELS)
                 sec_dx_one_hot_map = dashboard_data.get("sec_dx_one_hot_map", {lev: _sec_dx_col(lev) for lev in SEC_DX_LEVELS})
+                feature_display_names = dashboard_data.get("feature_display_names", {})
                 return _response(200, {
                     "cohort": cohort,
                     "model_variant": model_variant,
@@ -1078,6 +1079,7 @@ def handle_metadata(event: Dict[str, Any]) -> Dict[str, Any]:
                     "feature_metadata": feature_metadata,
                     "feature_levels": feature_levels,
                     "feature_level_labels": feature_level_labels,
+                    "feature_display_names": feature_display_names,
                     "sec_dx_dropdown_options": sec_dx_dropdown_options,
                     "sec_dx_one_hot_map": sec_dx_one_hot_map,
                     "api_url": api_url,
@@ -1091,6 +1093,7 @@ def handle_metadata(event: Dict[str, Any]) -> Dict[str, Any]:
                     "available_cohorts": AVAILABLE_COHORTS,
                     "causal_factors": [],
                     "summary": {},
+                    "feature_display_names": {},
                     "warning": f"Dashboard data not available: {str(e)}",
                     "api_url": api_url,
                     "metrics_s3_url": metrics_s3_url
@@ -1112,7 +1115,8 @@ def handle_metadata(event: Dict[str, Any]) -> Dict[str, Any]:
                         "summary": dashboard_data.get("summary", {}),
                         "feature_metadata": feature_metadata,
                         "feature_levels": feature_levels,
-                        "feature_level_labels": feature_level_labels
+                        "feature_level_labels": feature_level_labels,
+                        "feature_display_names": dashboard_data.get("feature_display_names", {})
                     }
                     available_cohorts_with_data.append(c)
                     logger.info(f"Successfully loaded dashboard data for {c}")

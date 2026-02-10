@@ -281,6 +281,18 @@
     .tab-content.active {
       display: block;
     }
+    .improvement-list {
+      list-style: none;
+      padding-left: 0;
+      margin: 0.5rem 0;
+    }
+    .improvement-list li {
+      padding: 0.35rem 0;
+      border-bottom: 1px solid #e2e8f0;
+      color: #334155;
+    }
+    .improvement-list li:last-child { border-bottom: none; }
+    .improvement-list.empty { color: #94a3b8; font-style: italic; }
     /* Causal Analysis styles */
     .causal-analysis {
       display: grid;
@@ -420,6 +432,7 @@
     <div class="tabs">
       <button class="tab active" onclick="switchTab('risk-calculator')">Risk Calculator</button>
       <button class="tab" onclick="switchTab('causal-analysis')">Top Causal Model Features</button>
+      <button class="tab" onclick="switchTab('model-improvement')">Model Improvement</button>
       <button class="tab" onclick="switchTab('documentation')">Documentation</button>
     </div>
     
@@ -593,7 +606,22 @@
       </div>
     </div>
     <!-- End Causal Analysis Tab -->
-
+    
+    <!-- Model Improvement Tab -->
+    <div id="model-improvement-tab" class="tab-content">
+      <p class="subtitle" style="margin-bottom: 1rem;">See what the model may have missed: missing data and values that went against typical risk-increasing relationships.</p>
+      <div class="control-group" style="margin-bottom: 1.5rem;">
+        <p id="model-improvement-hint" style="color: #64748b; margin: 0 0 1rem 0;">Calculate risk in the Risk Calculator tab first; then this tab will show a breakdown of missing or protective data elements.</p>
+        <h3 style="margin-top: 0;">Missing or default data</h3>
+        <p style="color: #475569; font-size: 0.9rem;">Top causal factors that were not provided or were left at default/empty. Providing these can improve prediction.</p>
+        <ul id="model-improvement-missing" class="improvement-list"></ul>
+        <h3>Values that went against typical risk direction</h3>
+        <p style="color: #475569; font-size: 0.9rem;">Features where your value was in the &quot;protective&quot; or risk-lowering direction (e.g. no ECMO, lower donor age). The model used these as entered.</p>
+        <ul id="model-improvement-against" class="improvement-list"></ul>
+      </div>
+    </div>
+    <!-- End Model Improvement Tab -->
+    
     <!-- Documentation Tab (inline) -->
     <div id="documentation-tab" class="tab-content">
       <div class="control-group" style="max-width: 900px;">
@@ -633,6 +661,7 @@
         <ul style="margin-left: 1.5rem;">
           <li><strong>Risk Calculator</strong>: Enter features → risk score and top causal factors.</li>
           <li><strong>Top Causal Model Features</strong>: Importance and causal responsibility; adjust factors and see risk update in real time.</li>
+          <li><strong>Model Improvement</strong>: After a risk calculation, see which data were missing or in a protective (risk-lowering) direction.</li>
           <li><strong>Documentation</strong>: This reference.</li>
         </ul>
       </div>
@@ -800,6 +829,8 @@
         
         const data = await response.json();
         console.log('Success response:', data);
+        lastFeaturesUsed = features;
+        lastRiskResult = data;
         displayResults(data);
         
       } catch (error) {
@@ -940,6 +971,9 @@
     let riskFeatureLevelLabels = {};
     let riskSecDxDropdownOptions = [];  // One dropdown: "Secondary diagnosis" with these labels (from API)
     let riskSecDxOneHotMap = {};
+    let lastFeaturesUsed = null;   // Features sent with last successful risk calculation
+    let lastRiskResult = null;     // Last risk API response (for Model Improvement tab)
+    let modelImprovementMetadata = { causal_factors: [], feature_display_names: {} };
     const KNOWN_CATEGORICAL = ['ter_dx', 'hxsurg', 'chd_sv', 'hxaf_fl', 'prim_dx'];
 
     function levelLabel(v, labelsByIndex) {
@@ -1017,6 +1051,8 @@
           riskFeatureLevelLabels = data.feature_level_labels || {};
           riskSecDxDropdownOptions = data.sec_dx_dropdown_options || [];
           riskSecDxOneHotMap = data.sec_dx_one_hot_map || {};
+          modelImprovementMetadata.causal_factors = data.causal_factors || [];
+          modelImprovementMetadata.feature_display_names = data.feature_display_names || {};
           if (Object.keys(riskFeatureLevels).length === 0 && riskSecDxDropdownOptions.length === 0) {
             console.warn('Metadata has no feature_levels; using default [0,1] for ter_dx etc. Re-run SHAP/FFA and redeploy for actual levels.');
           }
@@ -1039,6 +1075,8 @@
           riskFeatureLevelLabels = data.feature_level_labels || {};
           riskSecDxDropdownOptions = data.sec_dx_dropdown_options || [];
           riskSecDxOneHotMap = data.sec_dx_one_hot_map || {};
+          modelImprovementMetadata.causal_factors = data.causal_factors || [];
+          modelImprovementMetadata.feature_display_names = data.feature_display_names || {};
           populateRiskExtraFeatures();
         }
       } catch (error) {
@@ -1067,12 +1105,17 @@
           tab.classList.add('active');
         } else if (tabName === 'causal-analysis' && tabText === 'Top Causal Model Features') {
           tab.classList.add('active');
+        } else if (tabName === 'model-improvement' && tabText === 'Model Improvement') {
+          tab.classList.add('active');
         } else if (tabName === 'documentation' && tabText === 'Documentation') {
           tab.classList.add('active');
         }
       });
       if (tabName === 'causal-analysis') {
         loadCausalAnalysis();
+      }
+      if (tabName === 'model-improvement') {
+        loadModelImprovement();
       }
       if (tabName === 'documentation') {
         loadDocModelMetrics();
@@ -1473,6 +1516,90 @@
         updateRiskComparison();
       } catch (error) {
         console.error('Error updating risk:', error);
+      }
+    }
+    
+    // Model Improvement tab: risk direction for "went against" (higher value = more risk, or 1 = more risk for binary)
+    const RISK_DIRECTION = {
+      donor_age: 'higher', txalt: 'higher', lbun_r: 'higher', txbun_r: 'higher', txcreat_r: 'higher',
+      donisch: 'higher', donor_weight_ratio: 'higher', donor_size_ratio: 'higher', bmi_txpl: 'higher',
+      lstp_r: 'higher', txsa_r: 'lower', egfr_tx: 'lower', egfr_change: 'lower', lsbaosat: 'lower',
+      ltxtrach: 'binary_1', txecmo: 'binary_1', txnomcsd: 'binary_1', chd_sv: 'binary_1', hxsurg: 'binary_1', hxaf_fl: 'binary_1'
+    };
+    function displayName(feat) {
+      return modelImprovementMetadata.feature_display_names[feat] || feat;
+    }
+    function isSecDxFeature(feat) { return typeof feat === 'string' && feat.startsWith('sec_dx_'); }
+    function providedForSecDx(features) {
+      const v = features && (features.sec_dx !== undefined) ? String(features.sec_dx || '').trim() : '';
+      return v !== '';
+    }
+    function providedForFeature(features, modelFeatureName) {
+      if (isSecDxFeature(modelFeatureName)) return providedForSecDx(features);
+      const v = features[modelFeatureName];
+      if (v === undefined || v === null || v === '') return false;
+      if (typeof v === 'number' && Number.isNaN(v)) return false;
+      return true;
+    }
+    function valueWentAgainstRiskDirection(features, modelFeatureName) {
+      if (isSecDxFeature(modelFeatureName)) return false;
+      const dir = RISK_DIRECTION[modelFeatureName];
+      if (!dir) return false;
+      const v = features[modelFeatureName];
+      if (v === undefined || v === null) return false;
+      const num = typeof v === 'number' ? v : parseFloat(v);
+      if (Number.isNaN(num)) return false;
+      if (dir === 'binary_1') return num === 0;
+      if (dir === 'higher') return num <= 0;
+      if (dir === 'lower') return num > 40;
+      return false;
+    }
+    function loadModelImprovement() {
+      const missingEl = document.getElementById('model-improvement-missing');
+      const againstEl = document.getElementById('model-improvement-against');
+      const hintEl = document.getElementById('model-improvement-hint');
+      if (!missingEl || !againstEl) return;
+      const factors = modelImprovementMetadata.causal_factors || [];
+      const displayNames = modelImprovementMetadata.feature_display_names || {};
+      if (!lastFeaturesUsed || !lastRiskResult) {
+        hintEl.textContent = 'Calculate risk in the Risk Calculator tab first; then this tab will show a breakdown of missing or protective data elements.';
+        missingEl.innerHTML = '<li class="empty">No data yet. Run a risk calculation first.</li>';
+        missingEl.classList.add('empty');
+        againstEl.innerHTML = '<li class="empty">No data yet.</li>';
+        againstEl.classList.add('empty');
+        return;
+      }
+      hintEl.textContent = 'Breakdown for the last risk calculation (percentile: ' + (lastRiskResult.percentile != null ? lastRiskResult.percentile.toFixed(1) : '-') + '%).';
+      const missing = [];
+      const against = [];
+      let secDxMissingAdded = false;
+      for (const f of factors) {
+        const name = f.feature;
+        const label = displayNames[name] || name;
+        if (isSecDxFeature(name)) {
+          if (secDxMissingAdded) continue;
+          if (!providedForFeature(lastFeaturesUsed, name)) {
+            missing.push('Secondary diagnosis (not selected)');
+            secDxMissingAdded = true;
+          }
+          continue;
+        }
+        if (!providedForFeature(lastFeaturesUsed, name)) missing.push(label);
+        else if (valueWentAgainstRiskDirection(lastFeaturesUsed, name)) against.push(label);
+      }
+      if (missing.length === 0) {
+        missingEl.innerHTML = '<li class="empty">None — all top factors were provided.</li>';
+        missingEl.classList.add('empty');
+      } else {
+        missingEl.classList.remove('empty');
+        missingEl.innerHTML = missing.map(l => '<li>' + escapeHtml(l) + '</li>').join('');
+      }
+      if (against.length === 0) {
+        againstEl.innerHTML = '<li class="empty">None — all provided values were in the typical risk-increasing direction or neutral.</li>';
+        againstEl.classList.add('empty');
+      } else {
+        againstEl.classList.remove('empty');
+        againstEl.innerHTML = against.map(l => '<li>' + escapeHtml(l) + '</li>').join('');
       }
     }
     

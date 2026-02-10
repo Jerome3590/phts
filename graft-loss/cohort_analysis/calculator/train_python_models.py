@@ -1003,6 +1003,7 @@ def train_models_for_cohort(
     time_horizon: float = 365.25,
     include_recommended_features: bool = False,
     top_feature_names: Optional[List[str]] = None,
+    force: bool = False,
 ):
     """
     Train CatBoost, XGBoost (Gradient Boosting), and XGBoost Random Forest models for a cohort
@@ -1026,6 +1027,7 @@ def train_models_for_cohort(
         top_feature_names: If set, train only on these features (top causal/importance from SHAP/FFA).
             Output is saved to cohort_top (e.g. Combined_top). Data is loaded with recommended
             features so that top features like sec_dx, lsbaosat are available.
+        force: If True, re-run training even when outputs already exist (overrides idempotency skip).
     """
     logger.info(f"\n{'='*80}")
     logger.info(f"Training models for cohort: {cohort}")
@@ -1165,15 +1167,19 @@ def train_models_for_cohort(
     time = df_clean['time'].values
     status = df_clean['status'].values
     
-    # Remove constant columns
+    # Remove constant columns (keep sec_dx_* one-hot columns so model always has same feature set for inference)
+    from calculator_features import get_sec_dx_one_hot_columns
+    sec_dx_cols_keep = set(get_sec_dx_one_hot_columns())
     constant_cols = []
     for col in X.columns:
+        if col in sec_dx_cols_keep:
+            continue  # never drop one-hot sec_dx_* so dashboard/inference feature set is stable
         unique_vals = X[col].dropna().unique()
         if len(unique_vals) < 2:
             constant_cols.append(col)
     
     if constant_cols:
-        logger.info(f"Removing {len(constant_cols)} constant columns")
+        logger.info(f"Removing {len(constant_cols)} constant columns (sec_dx_* one-hot kept for stable feature set)")
         X = X.drop(columns=constant_cols)
         feature_cols = [col for col in feature_cols if col not in constant_cols]
     
@@ -1227,24 +1233,27 @@ def train_models_for_cohort(
     mc_cv_output_dir.mkdir(parents=True, exist_ok=True)
     
     # ============================================================================
-    # IDEMPOTENCY CHECK: Skip training if all outputs already exist
+    # IDEMPOTENCY CHECK: Skip training if all outputs already exist (unless --force)
     # ============================================================================
     logger.info("\n" + "="*80)
     logger.info("CHECKING FOR EXISTING OUTPUTS (IDEMPOTENCY CHECK)")
     logger.info("="*80)
     
-    if check_training_complete(cohort_output_dir, n_mc_splits):
+    if not force and check_training_complete(cohort_output_dir, n_mc_splits):
         logger.info(f"\n✓ All training outputs already complete for {cohort_output_dir.name}")
         logger.info(f"  Skipping model training. Outputs found:")
         logger.info(f"    - MC-CV models: {n_mc_splits} splits with all 3 models")
         logger.info(f"    - Aggregated metrics and feature importances")
         logger.info(f"    - Final models (temporal split)")
         logger.info(f"    - Best model info")
-        logger.info(f"\n  To retrain, delete the output directory: {cohort_output_dir}")
+        logger.info(f"\n  To retrain, use --force or delete the output directory: {cohort_output_dir}")
         logger.info("="*80)
         return
     
-    logger.info(f"Training outputs incomplete or missing. Proceeding with training...")
+    if force:
+        logger.info("Force re-train: ignoring existing outputs")
+    else:
+        logger.info(f"Training outputs incomplete or missing. Proceeding with training...")
     logger.info("="*80)
     
     # ============================================================================
@@ -2007,8 +2016,16 @@ if __name__ == "__main__":
                        help="Train only on top causal/importance features from SHAP/FFA (output: Combined_top)")
     parser.add_argument("--top_features_file", type=str, default=None,
                        help="CSV/JSON file with 'feature' or 'variable' column for top features (used with --top_features_only; default: built-in list)")
+    parser.add_argument("--force", action="store_true",
+                       help="Ignore existing outputs and re-run training (overrides idempotency skip)")
     
     args = parser.parse_args()
+    
+    # Allow force via environment (e.g. TRAIN_FORCE=1 for scripts/CI)
+    import os
+    if os.environ.get("TRAIN_FORCE", "").strip().lower() in ("1", "true", "yes"):
+        args.force = True
+        logger.info("Force re-train enabled via TRAIN_FORCE")
     
     # Always train Combined model (single model for all cohorts)
     if args.cohort != "Combined":
@@ -2045,5 +2062,6 @@ if __name__ == "__main__":
         train_prop=args.train_prop,
         n_jobs=args.n_jobs,
         include_recommended_features=args.include_recommended,
-        top_feature_names=top_feature_names
+        top_feature_names=top_feature_names,
+        force=args.force
     )
