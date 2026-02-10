@@ -256,6 +256,10 @@ The Lambda function uses environment variables for configuration. These can be s
   - Default: `/var/task/risk_distributions`
   - Used by: Lambda for risk score normalization
 
+- **`METRICS_S3_URL`**: Optional URL to the model metrics file in S3
+  - Example: `https://bucket.s3.region.amazonaws.com/prefix/model_metrics.json`
+  - Used by: Lambda `GET /model-metrics` response; the dashboard Documentation tab shows a "View in S3" link when set. Metrics are always read from `best_model.txt` in the container; this only adds a link to where the same (or full) metrics are stored in S3.
+
 #### Setting Environment Variables
 
 **Method 1: Using update_lambda_env.sh (Recommended)**

@@ -242,6 +242,12 @@
       margin-bottom: 1rem;
       border-left: 4px solid #f59e0b;
     }
+    code {
+      background: #f1f5f9;
+      padding: 0.125rem 0.375rem;
+      border-radius: 0.25rem;
+      font-size: 0.9em;
+    }
     /* Tab system */
     .tabs {
       display: flex;
@@ -411,7 +417,7 @@
     <div class="tabs">
       <button class="tab active" onclick="switchTab('risk-calculator')">Risk Calculator</button>
       <button class="tab" onclick="switchTab('causal-analysis')">Top Causal Model Features</button>
-      <button class="tab" onclick="window.location.href='phts_readme.html'">Documentation</button>
+      <button class="tab" onclick="switchTab('documentation')">Documentation</button>
     </div>
     
     <!-- Risk Calculator Tab (top causal model features) -->
@@ -580,6 +586,51 @@
       </div>
     </div>
     <!-- End Causal Analysis Tab -->
+
+    <!-- Documentation Tab (inline) -->
+    <div id="documentation-tab" class="tab-content">
+      <div class="control-group" style="max-width: 900px;">
+        <h2 style="margin-top: 0; color: #1e40af; border-bottom: 2px solid #e2e8f0; padding-bottom: 0.5rem;">PHTS Risk Calculator – Top Model Workflow</h2>
+        <p>The calculator uses a <strong>single model</strong> trained on the <strong>top 15 causal/importance features</strong> only (Combined cohort). Model directory: <code>Combined_top/</code>.</p>
+
+        <h3 style="color: #1e40af; margin-top: 1.5rem;">Workflow</h3>
+        <ol style="margin-left: 1.5rem; margin-bottom: 1rem;">
+          <li><strong>Train</strong>: <code>train_python_models.py --top_features_only</code> → CatBoost, XGBoost, XGBoost RF on top 15 features; best model by C-index (then AU-PRC) → <code>outputs/models/Combined_top/</code></li>
+          <li><strong>SHAP/FFA</strong>: <code>run_shap_ffa_workflow.py --model-variant top</code> → causal factors and <code>dashboard_data.json</code> in <code>outputs/shap_ffa/Combined_top/</code></li>
+          <li><strong>Deploy</strong>: <code>prepare_lambda_dir_phts.py</code> copies <code>Combined_top/</code> for Lambda; dashboard uses this model only.</li>
+        </ol>
+
+        <h3 style="color: #1e40af; margin-top: 1.5rem;">Final Model Metrics</h3>
+        <p>Best model and MC-CV metrics are written to <code>outputs/models/Combined_top/best_model.txt</code>. Key metrics:</p>
+        <table style="width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.95rem;">
+          <thead>
+            <tr style="background: #f1f5f9;">
+              <th style="padding: 0.75rem; text-align: left; border-bottom: 2px solid #cbd5e1;">Metric</th>
+              <th style="padding: 0.75rem; text-align: left; border-bottom: 2px solid #cbd5e1;">Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="border-bottom: 1px solid #e2e8f0;"><td style="padding: 0.75rem;"><strong>C-index</strong></td><td style="padding: 0.75rem;">Concordance index (primary selection). Mean ± SD and 95% CI across MC-CV splits. Higher = better ranking of risk.</td></tr>
+            <tr style="border-bottom: 1px solid #e2e8f0;"><td style="padding: 0.75rem;"><strong>Recall</strong></td><td style="padding: 0.75rem;">Recall at evaluation time horizon (e.g. 1 year). Fraction of events correctly identified.</td></tr>
+            <tr style="border-bottom: 1px solid #e2e8f0;"><td style="padding: 0.75rem;"><strong>AUC</strong></td><td style="padding: 0.75rem;">Area under the ROC curve at the time horizon.</td></tr>
+            <tr style="border-bottom: 1px solid #e2e8f0;"><td style="padding: 0.75rem;"><strong>AU-PRC</strong></td><td style="padding: 0.75rem;">Area under the precision-recall curve (tiebreaker for best model selection).</td></tr>
+          </tbody>
+        </table>
+        <p style="font-size: 0.9rem; color: #64748b;">Deployed values (loaded from the API):</p>
+        <div id="doc-model-metrics" style="margin: 1rem 0; padding: 1rem; background: #f8fafc; border-radius: 0.5rem; min-height: 2rem;">
+          <span style="color: #64748b;">Loading metrics…</span>
+        </div>
+        <p id="doc-metrics-s3-link" style="font-size: 0.9rem; color: #64748b; display: none;"></p>
+
+        <h3 style="color: #1e40af; margin-top: 1.5rem;">Tabs</h3>
+        <ul style="margin-left: 1.5rem;">
+          <li><strong>Risk Calculator</strong>: Enter features → risk score and top causal factors.</li>
+          <li><strong>Top Causal Model Features</strong>: Importance and causal responsibility; adjust factors and see risk update in real time.</li>
+          <li><strong>Documentation</strong>: This reference.</li>
+        </ul>
+      </div>
+    </div>
+    <!-- End Documentation Tab -->
   </div>
   
   <script>
@@ -903,6 +954,56 @@
       if (tabName === 'causal-analysis') {
         loadCausalAnalysis();
       }
+      if (tabName === 'documentation') {
+        loadDocModelMetrics();
+      }
+    }
+
+    async function loadDocModelMetrics() {
+      const el = document.getElementById('doc-model-metrics');
+      const s3El = document.getElementById('doc-metrics-s3-link');
+      if (!el) return;
+      if (!LAMBDA_API_URL) {
+        el.innerHTML = '<span style="color: #94a3b8;">API URL not set.</span>';
+        return;
+      }
+      try {
+        const res = await fetch(`${LAMBDA_API_URL}/model-metrics`, { method: 'GET', mode: 'cors' });
+        if (!res.ok) {
+          el.innerHTML = '<span style="color: #b91c1c;">Could not load metrics (' + res.status + ').</span>';
+          s3El.style.display = 'none';
+          return;
+        }
+        const data = await res.json();
+        const best = data.best_model != null ? data.best_model : '—';
+        const cIdx = data.c_index != null ? data.c_index.toFixed(4) : '—';
+        const cIdxCi = data.c_index_ci || '';
+        const auc = data.auc != null ? data.auc.toFixed(4) : '—';
+        const auPrc = data.au_prc != null ? data.au_prc.toFixed(4) : '—';
+        const recall = data.recall != null ? data.recall.toFixed(4) : '—';
+        let html = '<table style="width: auto; border-collapse: collapse; font-size: 0.9rem;">';
+        html += '<tr><td style="padding: 0.25rem 1rem 0.25rem 0;"><strong>Best model</strong></td><td>' + escapeHtml(best) + '</td></tr>';
+        html += '<tr><td style="padding: 0.25rem 1rem 0.25rem 0;"><strong>C-index</strong></td><td>' + cIdx + (cIdxCi ? ' (' + escapeHtml(cIdxCi) + ')' : '') + '</td></tr>';
+        html += '<tr><td style="padding: 0.25rem 1rem 0.25rem 0;"><strong>AUC</strong></td><td>' + auc + '</td></tr>';
+        html += '<tr><td style="padding: 0.25rem 1rem 0.25rem 0;"><strong>AU-PRC</strong></td><td>' + auPrc + '</td></tr>';
+        html += '<tr><td style="padding: 0.25rem 1rem 0.25rem 0;"><strong>Recall</strong></td><td>' + recall + '</td></tr>';
+        html += '</table>';
+        el.innerHTML = html;
+        if (data.s3_url) {
+          s3El.innerHTML = 'Metrics file in S3: <a href="' + escapeHtml(data.s3_url) + '" target="_blank" rel="noopener">View in S3</a>';
+          s3El.style.display = 'block';
+        } else {
+          s3El.style.display = 'none';
+        }
+      } catch (err) {
+        el.innerHTML = '<span style="color: #b91c1c;">Failed to load metrics: ' + escapeHtml(String(err.message)) + '</span>';
+        s3El.style.display = 'none';
+      }
+    }
+    function escapeHtml(s) {
+      const div = document.createElement('div');
+      div.textContent = s;
+      return div.innerHTML;
     }
     
     // Causal Analysis state

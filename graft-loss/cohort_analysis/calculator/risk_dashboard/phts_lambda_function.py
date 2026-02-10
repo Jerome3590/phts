@@ -10,11 +10,13 @@ This function:
 
 Endpoints:
 - GET /metadata - Returns available cohorts and causal factors
+- GET /model-metrics - Returns deployed model metrics (C-index, AUC, AU-PRC, Recall) and optional S3 link
 - POST /risk - Calculates risk score from clinical features
 - POST /causal - Returns causal factor explanations
 
 Environment Variables:
 - PHTS_BUCKET: S3 bucket name (default: phts-calculator)
+- METRICS_S3_URL: Optional URL to metrics file in S3 (e.g. https://bucket.s3.region.amazonaws.com/prefix/model_metrics.json)
 - MODEL_BASE_PATH: Path to models in container (default: /var/task/models)
 - MODEL_FEATURES_PATH: Path to model features (default: /var/task/model_features)
 - DASHBOARD_DATA_PATH: Path to dashboard data (default: /var/task/dashboard_data)
@@ -524,6 +526,64 @@ def load_model(cohort: str, model_type: str) -> Any:
         raise FileNotFoundError(f"Model not found for {cohort}/{model_type}: {e}")
 
 
+def load_model_metrics(cohort: str) -> Dict[str, Any]:
+    """
+    Load model metrics from best_model.txt in the container (or S3 if configured).
+    Returns dict with best_model, c_index, auc, au_prc, recall, metrics_text, s3_url.
+    """
+    model_cohort = "Combined_top" if cohort == "Combined" else cohort
+    model_cohort = _resolve_model_cohort_for_models(model_cohort)
+    out = {
+        "best_model": None,
+        "c_index": None,
+        "c_index_ci": None,
+        "auc": None,
+        "au_prc": None,
+        "recall": None,
+        "metrics_text": None,
+        "s3_url": os.environ.get("METRICS_S3_URL"),  # Optional: link to metrics in S3
+    }
+    best_model_path = Path(MODEL_BASE_PATH) / model_cohort / "best_model.txt"
+    if not best_model_path.exists():
+        return out
+    try:
+        with open(best_model_path, "r") as f:
+            text = f.read()
+        out["metrics_text"] = text
+        for line in text.splitlines():
+            if "Best Model" in line and ":" in line:
+                out["best_model"] = line.split(":", 1)[1].strip()
+            elif "MC-CV Mean C-index:" in line:
+                try:
+                    out["c_index"] = float(line.split(":", 1)[1].strip())
+                except ValueError:
+                    pass
+            elif "MC-CV 95% CI:" in line:
+                try:
+                    part = line.split("MC-CV 95% CI:")[-1].strip().strip("[]")
+                    out["c_index_ci"] = part
+                except Exception:
+                    pass
+            elif "MC-CV Mean AUC:" in line:
+                try:
+                    out["auc"] = float(line.split(":", 1)[1].strip().split()[0])
+                except (ValueError, IndexError):
+                    pass
+            elif "MC-CV Mean AU-PRC:" in line:
+                try:
+                    out["au_prc"] = float(line.split(":", 1)[1].strip().split()[0])
+                except (ValueError, IndexError):
+                    pass
+            elif "MC-CV Mean Recall:" in line:
+                try:
+                    out["recall"] = float(line.split(":", 1)[1].strip().split()[0])
+                except (ValueError, IndexError):
+                    pass
+    except Exception as e:
+        logger.warning(f"Error reading model metrics: {e}")
+    return out
+
+
 def get_best_model(cohort: str) -> str:
     """Get the best model type for a cohort from best_model.txt."""
     cohort = _resolve_model_cohort_for_models(cohort)
@@ -532,8 +592,8 @@ def get_best_model(cohort: str) -> str:
     if best_model_path.exists():
         with open(best_model_path, 'r') as f:
             for line in f:
-                if line.startswith("Best Model:"):
-                    best_model = line.split("Best Model:")[1].strip()
+                if "Best Model" in line and ":" in line:
+                    best_model = line.split(":", 1)[1].strip()
                     # Normalize model name
                     if "XGBoost RF" in best_model:
                         return "xgboost_rf"
@@ -847,22 +907,23 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         if method == "OPTIONS":
             return _response(200, {"message": "OK"})
         
-        # Match routes - check if path contains metadata, risk, or causal
+        # Match routes - check if path contains metadata, model-metrics, risk, or causal
         # Handle various formats: "/metadata", "/prod/metadata", "metadata", etc.
         is_metadata = ("metadata" in path_clean.lower() if path_clean else False)
+        is_model_metrics = ("model-metrics" in path_clean.lower() if path_clean else False)
         is_risk = ("risk" in path_clean.lower() if path_clean else False)
         is_causal = ("causal" in path_clean.lower() if path_clean else False)
         
         # Also check if the resource directly matches
         resource_clean = resource.strip("/") if resource else ""
-        if not is_metadata and not is_risk and not is_causal:
+        if not is_metadata and not is_model_metrics and not is_risk and not is_causal:
             is_metadata = ("metadata" in resource_clean.lower() if resource_clean else False)
+            is_model_metrics = ("model-metrics" in resource_clean.lower() if resource_clean else False)
             is_risk = ("risk" in resource_clean.lower() if resource_clean else False)
             is_causal = ("causal" in resource_clean.lower() if resource_clean else False)
         
         # If path is empty but we have a GET request, assume it's /metadata
-        # This handles cases where API Gateway doesn't populate path/resource correctly
-        if not is_metadata and not is_risk and not is_causal:
+        if not is_metadata and not is_model_metrics and not is_risk and not is_causal:
             if not path_clean and not resource_clean and method == "GET":
                 logger.info("Path is empty for GET request, assuming /metadata route")
                 is_metadata = True
@@ -873,6 +934,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 return handle_metadata(event)
             except Exception as e:
                 logger.error(f"Error in handle_metadata: {e}", exc_info=True)
+                raise
+        elif method == "GET" and is_model_metrics:
+            logger.info("Matched GET /model-metrics route")
+            try:
+                return handle_model_metrics(event)
+            except Exception as e:
+                logger.error(f"Error in handle_model_metrics: {e}", exc_info=True)
                 raise
         elif method == "POST" and is_risk:
             logger.info("Matched POST /risk route")
@@ -895,7 +963,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 "httpMethod": method,
                 "event_keys": list(event.keys()),
                 "requestContext_keys": list(request_context.keys()) if request_context else None,
-                "available_routes": ["GET /metadata", "POST /risk", "POST /causal"]
+                "available_routes": ["GET /metadata", "GET /model-metrics", "POST /risk", "POST /causal"]
             }
         })
     
@@ -924,6 +992,24 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 "headers": {"Content-Type": "application/json"},
                 "body": json.dumps({"error": "Internal server error", "details": str(exc)})
             }
+
+
+def handle_model_metrics(event: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    GET /model-metrics - Returns deployed model metrics (from best_model.txt in container)
+    and optional S3 URL (METRICS_S3_URL) where metrics are saved.
+    """
+    metrics = load_model_metrics("Combined")
+    body = {
+        "best_model": metrics.get("best_model"),
+        "c_index": metrics.get("c_index"),
+        "c_index_ci": metrics.get("c_index_ci"),
+        "auc": metrics.get("auc"),
+        "au_prc": metrics.get("au_prc"),
+        "recall": metrics.get("recall"),
+        "s3_url": metrics.get("s3_url"),
+    }
+    return _response(200, body)
 
 
 def handle_metadata(event: Dict[str, Any]) -> Dict[str, Any]:
