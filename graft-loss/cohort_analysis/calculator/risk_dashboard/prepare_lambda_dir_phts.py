@@ -10,6 +10,7 @@ This script:
 5. Validates all files are present
 """
 
+import csv
 import json
 import shutil
 import sys
@@ -26,8 +27,8 @@ DASHBOARD_DIR = CALCULATOR_DIR / "outputs" / "shap_ffa"
 RISK_DIST_DIR = CALCULATOR_DIR / "outputs" / "risk_distributions"
 LAMBDA_DIR = Path(__file__).parent / "lambda_dir_phts"
 
-# One-model workflow: only Combined (Combined_top) is deployed.
-COHORTS = ["Combined"]
+# Model per cohort: deploy CHD_top, Myocardio_top, Combined_top (copy whichever exist)
+COHORTS = ["CHD", "Myocardio", "Combined"]
 
 
 def prepare_lambda_directory():
@@ -51,11 +52,10 @@ def prepare_lambda_directory():
     print(f"Lambda directory: {LAMBDA_DIR}")
     print()
     
-    # Copy models for each cohort (final workflow: Combined_top only for Combined; plain dir for others)
+    # Copy models for each cohort (CHD_top, Myocardio_top, Combined_top)
     print("Copying models...")
     models_copied = 0
     for cohort in COHORTS:
-        # Combined only: Combined_top
         variant_dirs = [
             (MODELS_DIR / f"{cohort}_top", lambda_models_dir / f"{cohort}_top"),
         ]
@@ -98,7 +98,7 @@ def prepare_lambda_directory():
     print(f"Total model files copied: {models_copied}")
     print()
     
-    # Copy feature metadata (final workflow: Combined_top only for Combined)
+    # Copy feature metadata per cohort
     print("Copying feature metadata...")
     features_copied = 0
     for cohort in COHORTS:
@@ -151,10 +151,34 @@ def prepare_lambda_directory():
             
             cohort_lambda_dir.mkdir(parents=True, exist_ok=True)
             
-            # Copy dashboard_data.json
+            # Copy dashboard_data.json and merge aggregated feature importance if available
             dashboard_data_file = cohort_dashboard_dir / "dashboard_data.json"
             if dashboard_data_file.exists():
-                shutil.copy2(dashboard_data_file, cohort_lambda_dir / "dashboard_data.json")
+                with open(dashboard_data_file, "r", encoding="utf-8") as f:
+                    dashboard_data = json.load(f)
+                # Merge MC-CV aggregated feature importance from training output (one row per feature, mean ± std across models)
+                agg_path = MODELS_DIR / f"{cohort}_top" / "mc_cv_aggregated_feature_importance.csv"
+                if agg_path.exists():
+                    try:
+                        with open(agg_path, "r", encoding="utf-8", newline="") as af:
+                            reader = csv.DictReader(af)
+                            rows = list(reader)
+                        aggregated = []
+                        for r in rows:
+                            try:
+                                aggregated.append({
+                                    "feature": r.get("feature", ""),
+                                    "importance_mean": float(r.get("importance_mean", 0)),
+                                    "importance_std": float(r.get("importance_std", 0)),
+                                })
+                            except (ValueError, TypeError):
+                                continue
+                        dashboard_data["aggregated_feature_importance"] = aggregated
+                        print(f"  [OK] {variant_name}: merged {len(aggregated)} aggregated feature importance rows")
+                    except Exception as e:
+                        print(f"  [WARNING] {variant_name}: could not merge aggregated feature importance: {e}")
+                with open(cohort_lambda_dir / "dashboard_data.json", "w", encoding="utf-8") as f:
+                    json.dump(dashboard_data, f, indent=2)
                 data_copied += 1
                 variant_name = cohort_lambda_dir.name
                 print(f"  [OK] {variant_name}: dashboard_data.json copied")

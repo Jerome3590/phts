@@ -117,8 +117,7 @@ def test_risk_endpoint():
             "ltxtrach": 0,
             "txecmo": 0,
             "txnomcsd": 0,
-            "chd_papvr": 0,
-            "chd_anom": 0,
+            "chd_sv": 0,
             "donisch": 4.0,
             "txsa_r": 3.5,
             "txast": 30.0
@@ -206,20 +205,24 @@ def check_prerequisites():
         issues.append("lambda_dir_phts/ directory not found")
         return issues
     
-    # Check for model directories
+    # Check for model directories (model per cohort: at least one of CHD_top, Myocardio_top, Combined_top)
     model_dir = lambda_dir / 'models'
     if not model_dir.exists():
         issues.append("lambda_dir_phts/models/ not found")
     else:
-        if not (model_dir / 'Combined_top').exists():
-            issues.append("Combined_top/ model directory not found (run train with --top_features_only, then prepare_lambda_dir_phts.py)")
+        expected = ['CHD_top', 'Myocardio_top', 'Combined_top']
+        found = [c for c in expected if (model_dir / c).exists()]
+        if not found:
+            issues.append("No cohort model dir found (expected one or more of CHD_top, Myocardio_top, Combined_top; run train_python_models.py --cohort <C> --top_features_only, then prepare_lambda_dir_phts.py)")
     
     dashboard_dir = lambda_dir / 'dashboard_data'
     if not dashboard_dir.exists():
         issues.append("lambda_dir_phts/dashboard_data/ not found")
     else:
-        if not (dashboard_dir / 'Combined_top').exists():
-            issues.append("Combined_top/ dashboard data not found (run SHAP/FFA with --model-variant top, then prepare_lambda_dir_phts.py)")
+        expected = ['CHD_top', 'Myocardio_top', 'Combined_top']
+        found = [c for c in expected if (dashboard_dir / c).exists()]
+        if not found:
+            issues.append("No cohort dashboard data found (expected one or more of CHD_top, Myocardio_top, Combined_top; run run_shap_ffa_workflow.py --cohort <C> --model-variant top, then prepare_lambda_dir_phts.py)")
     
     return issues
 

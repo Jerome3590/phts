@@ -16,8 +16,8 @@ This guide provides step-by-step instructions for deploying the PHTS Risk Calcul
 
 1. **AWS CLI** configured with appropriate permissions
 2. **Docker** installed and running
-3. **Top-features model trained**: `python train_python_models.py --top_features_only` → `calculator/outputs/models/Combined_top/`
-4. **Dashboard data generated** for Combined_top in `calculator/outputs/shap_ffa/Combined_top/`
+3. **Top-features models trained** (one per cohort): `python train_python_models.py --cohort CHD --top_features_only` (repeat for Myocardio, Combined) → `calculator/outputs/models/{cohort}_top/`
+4. **Dashboard data generated** per cohort: `run_shap_ffa_workflow.py --cohort CHD --model-variant top` (repeat for Myocardio, Combined) → `calculator/outputs/shap_ffa/{cohort}_top/` (each has cohort-specific sec_dx options)
 5. **Risk distributions computed** in `calculator/outputs/risk_distributions/`
 
 ### Docker Setup

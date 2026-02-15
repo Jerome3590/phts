@@ -432,16 +432,19 @@
     <div class="tabs">
       <button class="tab active" onclick="switchTab('risk-calculator')">Risk Calculator</button>
       <button class="tab" onclick="switchTab('causal-analysis')">Top Causal Model Features</button>
+      <button class="tab" onclick="switchTab('aggregated-importance')">Aggregated Feature Importance</button>
       <button class="tab" onclick="switchTab('model-improvement')">Model Improvement</button>
       <button class="tab" onclick="switchTab('documentation')">Documentation</button>
     </div>
     
     <!-- Risk Calculator Tab (top causal model features) -->
     <div id="risk-calculator-tab" class="tab-content active">
-    <div class="cohort-selector">
+      <div class="cohort-selector">
       <label for="cohort">Cohort:</label>
       <select id="cohort">
-        <option value="Combined">Combined</option>
+        <option value="CHD">CHD</option>
+        <option value="Myocardio">Myocardio</option>
+        <option value="Combined" selected>Combined</option>
       </select>
     </div>
     
@@ -490,15 +493,8 @@
       <div class="control-group">
         <h3>Diagnosis & Demographics</h3>
         <div class="form-group">
-          <label for="chd_papvr">CHD: Partial Anomalous Pulmonary Venous Return</label>
-          <select id="chd_papvr">
-            <option value="0">No</option>
-            <option value="1">Yes</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label for="chd_anom">CHD: Anomaly</label>
-          <select id="chd_anom">
+          <label for="chd_sv">CHD: Single Ventricle</label>
+          <select id="chd_sv">
             <option value="0">No</option>
             <option value="1">Yes</option>
           </select>
@@ -559,7 +555,9 @@
       <div class="cohort-selector">
         <label for="cohort-causal">Cohort:</label>
         <select id="cohort-causal">
-          <option value="Combined">Combined</option>
+          <option value="CHD">CHD</option>
+          <option value="Myocardio">Myocardio</option>
+          <option value="Combined" selected>Combined</option>
         </select>
       </div>
       
@@ -607,6 +605,29 @@
     </div>
     <!-- End Causal Analysis Tab -->
     
+    <!-- Aggregated Feature Importance Tab -->
+    <div id="aggregated-importance-tab" class="tab-content">
+      <p class="subtitle" style="margin-bottom: 1rem;">Mean feature importance across CatBoost, XGBoost, and XGBoost RF (MC-CV).</p>
+      <div class="cohort-selector">
+        <label for="cohort-agg">Cohort:</label>
+        <select id="cohort-agg">
+          <option value="CHD">CHD</option>
+          <option value="Myocardio">Myocardio</option>
+          <option value="Combined" selected>Combined</option>
+        </select>
+      </div>
+      <div class="causal-analysis">
+        <div class="causal-charts">
+          <h3>Aggregated Feature Importance (Top 25)</h3>
+          <div class="chart-container">
+            <canvas id="aggregated-importance-chart"></canvas>
+          </div>
+          <p id="aggregated-importance-hint" style="font-size: 0.875rem; color: #64748b; margin-top: 0.5rem;">Loading…</p>
+        </div>
+      </div>
+    </div>
+    <!-- End Aggregated Feature Importance Tab -->
+    
     <!-- Model Improvement Tab -->
     <div id="model-improvement-tab" class="tab-content">
       <p class="subtitle" style="margin-bottom: 1rem;">See what the model may have missed: missing data and values that went against typical risk-increasing relationships.</p>
@@ -625,18 +646,18 @@
     <!-- Documentation Tab (inline) -->
     <div id="documentation-tab" class="tab-content">
       <div class="control-group" style="max-width: 900px;">
-        <h2 style="margin-top: 0; color: #1e40af; border-bottom: 2px solid #e2e8f0; padding-bottom: 0.5rem;">PHTS Risk Calculator – Top Model Workflow</h2>
-        <p>The calculator uses a <strong>single model</strong> trained on the <strong>top 15 causal/importance features</strong> only (Combined cohort). Model directory: <code>Combined_top/</code>.</p>
+        <h2 style="margin-top: 0; color: #1e40af; border-bottom: 2px solid #e2e8f0; padding-bottom: 0.5rem;">PHTS Risk Calculator – Model per Cohort</h2>
+        <p>The calculator uses <strong>one model per cohort</strong> (CHD, Myocardio, Combined), each trained on the <strong>top 15 causal/importance features</strong>. Model directories: <code>CHD_top/</code>, <code>Myocardio_top/</code>, <code>Combined_top/</code>. Each cohort has its own <strong>sec_dx</strong> (secondary diagnosis) options and causal factors from that cohort’s SHAP/FFA run.</p>
 
         <h3 style="color: #1e40af; margin-top: 1.5rem;">Workflow</h3>
         <ol style="margin-left: 1.5rem; margin-bottom: 1rem;">
-          <li><strong>Train</strong>: <code>train_python_models.py --top_features_only</code> → CatBoost, XGBoost, XGBoost RF on top 15 features; best model by C-index (then AU-PRC) → <code>outputs/models/Combined_top/</code></li>
-          <li><strong>SHAP/FFA</strong>: <code>run_shap_ffa_workflow.py --model-variant top</code> → causal factors and <code>dashboard_data.json</code> in <code>outputs/shap_ffa/Combined_top/</code></li>
-          <li><strong>Deploy</strong>: <code>prepare_lambda_dir_phts.py</code> copies <code>Combined_top/</code> for Lambda; dashboard uses this model only.</li>
+          <li><strong>Train</strong> (per cohort): <code>train_python_models.py --cohort CHD --top_features_only</code> (repeat for <code>Myocardio</code>, <code>Combined</code>) → best model by C-index (then AU-PRC) → <code>outputs/models/{cohort}_top/</code></li>
+          <li><strong>SHAP/FFA</strong> (per cohort): <code>run_shap_ffa_workflow.py --cohort CHD --model-variant top</code> (repeat for Myocardio, Combined) → cohort-specific <code>dashboard_data.json</code> (incl. <code>sec_dx_dropdown_options</code>) in <code>outputs/shap_ffa/{cohort}_top/</code></li>
+          <li><strong>Deploy</strong>: <code>prepare_lambda_dir_phts.py</code> copies all <code>*_top/</code> models and dashboard data for Lambda; dashboard uses the selected cohort’s model and sec_dx options.</li>
         </ol>
 
         <h3 style="color: #1e40af; margin-top: 1.5rem;">Final Model Metrics</h3>
-        <p>Best model and MC-CV metrics are written to <code>outputs/models/Combined_top/best_model.txt</code>. Key metrics:</p>
+        <p>Best model and MC-CV metrics per cohort are written to <code>outputs/models/{cohort}_top/best_model.txt</code>. Key metrics:</p>
         <table style="width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.95rem;">
           <thead>
             <tr style="background: #f1f5f9;">
@@ -651,7 +672,7 @@
             <tr style="border-bottom: 1px solid #e2e8f0;"><td style="padding: 0.75rem;"><strong>AU-PRC</strong></td><td style="padding: 0.75rem;">Area under the precision-recall curve (tiebreaker for best model selection).</td></tr>
           </tbody>
         </table>
-        <p style="font-size: 0.9rem; color: #64748b;">Deployed values (loaded from the API):</p>
+        <p style="font-size: 0.9rem; color: #64748b;">Deployed values (loaded from the API). All model performance metrics (C-index, Recall, AUC, AU-PRC) per cohort:</p>
         <div id="doc-model-metrics" style="margin: 1rem 0; padding: 1rem; background: #f8fafc; border-radius: 0.5rem; min-height: 2rem;">
           <span style="color: #64748b;">Loading metrics…</span>
         </div>
@@ -661,6 +682,7 @@
         <ul style="margin-left: 1.5rem;">
           <li><strong>Risk Calculator</strong>: Enter features → risk score and top causal factors.</li>
           <li><strong>Top Causal Model Features</strong>: Importance and causal responsibility; adjust factors and see risk update in real time.</li>
+          <li><strong>Aggregated Feature Importance</strong>: Mean importance across CatBoost, XGBoost, and XGBoost RF (MC-CV), per cohort.</li>
           <li><strong>Model Improvement</strong>: After a risk calculation, see which data were missing or in a protective (risk-lowering) direction.</li>
           <li><strong>Documentation</strong>: This reference.</li>
         </ul>
@@ -930,9 +952,8 @@
         'txecmo': '0',          // No ECMO
         'txnomcsd': '0',        // No MCSD
         
-        // Diagnosis & Demographics
-        'chd_papvr': '0',       // No CHD PAPVR
-        'chd_anom': '0',        // No CHD anomaly
+        // Diagnosis & Demographics (chd_sv = Single Ventricle; top causal feature from SHAP/FFA)
+        'chd_sv': '0',          // No single ventricle
         'donisch': 4.0,         // Typical donor ischemic time (hours)
         
         // Lab Values - normal ranges
@@ -1105,6 +1126,8 @@
           tab.classList.add('active');
         } else if (tabName === 'causal-analysis' && tabText === 'Top Causal Model Features') {
           tab.classList.add('active');
+        } else if (tabName === 'aggregated-importance' && tabText === 'Aggregated Feature Importance') {
+          tab.classList.add('active');
         } else if (tabName === 'model-improvement' && tabText === 'Model Improvement') {
           tab.classList.add('active');
         } else if (tabName === 'documentation' && tabText === 'Documentation') {
@@ -1114,6 +1137,9 @@
       if (tabName === 'causal-analysis') {
         loadCausalAnalysis();
       }
+      if (tabName === 'aggregated-importance') {
+        loadAggregatedImportance();
+      }
       if (tabName === 'model-improvement') {
         loadModelImprovement();
       }
@@ -1122,20 +1148,46 @@
       }
     }
 
-    function renderDocModelMetrics(data, el, s3El) {
-      const best = data.best_model != null ? data.best_model : '—';
-      const cIdx = data.c_index != null ? data.c_index.toFixed(4) : '—';
-      const cIdxCi = data.c_index_ci || '';
-      const auc = data.auc != null ? data.auc.toFixed(4) : '—';
-      const auPrc = data.au_prc != null ? data.au_prc.toFixed(4) : '—';
-      const recall = data.recall != null ? data.recall.toFixed(4) : '—';
+    function fmtMetric(v) {
+      return v != null && typeof v === 'number' && !Number.isNaN(v) ? v.toFixed(4) : '—';
+    }
+    function renderOneCohortMetrics(cohortName, m) {
+      const best = m.best_model != null ? m.best_model : '—';
+      const cIdx = fmtMetric(m.c_index);
+      const cIdxCi = m.c_index_ci || '';
+      const recall = fmtMetric(m.recall);
+      const auc = fmtMetric(m.auc);
+      const auPrc = fmtMetric(m.au_prc);
       let html = '<table style="width: auto; border-collapse: collapse; font-size: 0.9rem;">';
       html += '<tr><td style="padding: 0.25rem 1rem 0.25rem 0;"><strong>Best model</strong></td><td>' + escapeHtml(best) + '</td></tr>';
       html += '<tr><td style="padding: 0.25rem 1rem 0.25rem 0;"><strong>C-index</strong></td><td>' + cIdx + (cIdxCi ? ' (' + escapeHtml(cIdxCi) + ')' : '') + '</td></tr>';
+      html += '<tr><td style="padding: 0.25rem 1rem 0.25rem 0;"><strong>Recall</strong></td><td>' + recall + '</td></tr>';
       html += '<tr><td style="padding: 0.25rem 1rem 0.25rem 0;"><strong>AUC</strong></td><td>' + auc + '</td></tr>';
       html += '<tr><td style="padding: 0.25rem 1rem 0.25rem 0;"><strong>AU-PRC</strong></td><td>' + auPrc + '</td></tr>';
-      html += '<tr><td style="padding: 0.25rem 1rem 0.25rem 0;"><strong>Recall</strong></td><td>' + recall + '</td></tr>';
       html += '</table>';
+      return html;
+    }
+    function renderDocModelMetrics(data, el, s3El) {
+      let html = '';
+      if (data.by_cohort && typeof data.by_cohort === 'object') {
+        const order = ['CHD', 'Myocardio', 'Combined'];
+        order.forEach(function(cohortName) {
+          const m = data.by_cohort[cohortName];
+          if (!m) return;
+          html += '<div style="margin-bottom: 1.25rem;"><strong style="color: #1e40af;">' + escapeHtml(cohortName) + '</strong>';
+          html += renderOneCohortMetrics(cohortName, m) + '</div>';
+        });
+      }
+      if (!html) {
+        html = renderOneCohortMetrics('Combined', {
+          best_model: data.best_model,
+          c_index: data.c_index,
+          c_index_ci: data.c_index_ci,
+          recall: data.recall,
+          auc: data.auc,
+          au_prc: data.au_prc
+        });
+      }
       el.innerHTML = html;
       if (data.s3_url) {
         s3El.innerHTML = 'Metrics file in S3: <a href="' + escapeHtml(data.s3_url) + '" target="_blank" rel="noopener">View in S3</a>';
@@ -1666,6 +1718,84 @@
     
     // Load causal analysis when cohort or model variant changes in causal tab
     document.getElementById('cohort-causal').addEventListener('change', loadCausalAnalysis);
+
+    // Aggregated Feature Importance tab
+    let aggregatedImportanceChart = null;
+
+    async function loadAggregatedImportance() {
+      const cohort = document.getElementById('cohort-agg').value;
+      const hintEl = document.getElementById('aggregated-importance-hint');
+      if (hintEl) hintEl.textContent = 'Loading…';
+      if (!LAMBDA_API_URL) {
+        if (hintEl) hintEl.textContent = 'API URL not set.';
+        return;
+      }
+      try {
+        const response = await fetch(`${LAMBDA_API_URL}/metadata?cohort=${cohort}`);
+        if (!response.ok) throw new Error('Failed to load metadata');
+        const data = await response.json();
+        const list = data.aggregated_feature_importance || [];
+        if (hintEl) {
+          hintEl.textContent = list.length === 0
+            ? 'No aggregated feature importance data for this cohort. Run training and prepare_lambda_dir_phts to include mc_cv_aggregated_feature_importance.csv.'
+            : `Showing top 25 of ${list.length} features (mean ± std across CatBoost, XGBoost, XGBoost RF).`;
+        }
+        renderAggregatedImportanceChart(list);
+      } catch (e) {
+        console.error('Error loading aggregated importance:', e);
+        if (hintEl) hintEl.textContent = 'Error loading data: ' + e.message;
+      }
+    }
+
+    function renderAggregatedImportanceChart(list) {
+      const top25 = (list || []).slice(0, 25);
+      const ctx = document.getElementById('aggregated-importance-chart');
+      if (!ctx) return;
+      if (aggregatedImportanceChart) {
+        aggregatedImportanceChart.destroy();
+        aggregatedImportanceChart = null;
+      }
+      if (top25.length === 0) return;
+      const labels = top25.map(f => f.feature);
+      const means = top25.map(f => Number(f.importance_mean) || 0);
+      const stds = top25.map(f => Number(f.importance_std) || 0);
+      aggregatedImportanceChart = new Chart(ctx.getContext('2d'), {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Mean importance',
+            data: means,
+            backgroundColor: 'rgba(59, 130, 246, 0.6)',
+            borderColor: 'rgba(59, 130, 246, 1)',
+            borderWidth: 1
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: { beginAtZero: true, title: { display: true, text: 'Mean importance (across models)' } },
+            y: { title: { display: true, text: 'Feature' } }
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                afterLabel: function(ctx) {
+                  const i = ctx.dataIndex;
+                  if (stds[i] != null) return 'Std: ' + stds[i].toFixed(4);
+                  return '';
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    document.getElementById('cohort-agg').addEventListener('change', loadAggregatedImportance);
   </script>
 </body>
 </html>

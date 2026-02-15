@@ -73,7 +73,11 @@ try:
     HAS_SKLEARN_METRICS = True
 except ImportError:
     HAS_SKLEARN_METRICS = False
-    logger.warning("sklearn.metrics not available. AUC and AU-PRC will not be calculated.")
+
+# Standard model performance metrics for all models (top, wisotzkey, base, enhanced).
+# Order: C-Index, Recall, AUC, AUC-PR. Used in mc_cv_model_metrics.csv, best_model.txt, and plots.
+STANDARD_METRICS = ["C_Index_Mean", "Recall_Mean", "AUC_Mean", "AU_PRC_Mean"]
+STANDARD_METRICS_DISPLAY = ["C-index", "Recall", "AUC", "AU-PRC"]
 
 
 def calculate_survival_auc_auprc_recall(
@@ -1003,7 +1007,8 @@ def train_models_for_cohort(
     time_horizon: float = 365.25,
     include_recommended_features: bool = False,
     top_feature_names: Optional[List[str]] = None,
-    force: bool = False,
+    use_wisotzkey_vars_only: bool = False,
+    force: bool = True,
 ):
     """
     Train CatBoost, XGBoost (Gradient Boosting), and XGBoost Random Forest models for a cohort
@@ -1027,7 +1032,9 @@ def train_models_for_cohort(
         top_feature_names: If set, train only on these features (top causal/importance from SHAP/FFA).
             Output is saved to cohort_top (e.g. Combined_top). Data is loaded with recommended
             features so that top features like sec_dx, lsbaosat are available.
-        force: If True, re-run training even when outputs already exist (overrides idempotency skip).
+        use_wisotzkey_vars_only: If True, train on Wisotzkey et al. variable set (same SAS data).
+            Output: cohort_wisotzkey. Use with top-15 models for comparison.
+        force: If True (default), re-run training even when outputs exist. If False, skip when outputs exist (idempotent).
     """
     logger.info(f"\n{'='*80}")
     logger.info(f"Training models for cohort: {cohort}")
@@ -1038,138 +1045,129 @@ def train_models_for_cohort(
     logger.info(f"  - Parallel jobs: {n_jobs}")
     logger.info(f"  - Time horizon for AUC/AU-PRC/Recall: {time_horizon} days")
     logger.info("")
-    
-    # Import here to avoid circular import (run_shap_ffa_workflow imports from this module)
-    from run_shap_ffa_workflow import (
-        load_calculator_data_for_shap,
-        prepare_calculator_features
-    )
-    
-    # Load and prepare data
-    logger.info("Loading calculator data...")
-    df = load_calculator_data_for_shap(cohort)
-    logger.info(f"Loaded {len(df)} rows")
-    
-    # Prepare features
-    df = prepare_calculator_features(df)
-    
-    # Derive survival labels from raw data (matching R code logic)
-    # R code: ev_time = pmin(int_dead, int_graft_loss, na.rm = TRUE)
-    #         ev_type = pmax(dtx_patient, graft_loss, na.rm = TRUE)
-    if 'ev_time' not in df.columns:
-        if 'int_dead' in df.columns and 'int_graft_loss' in df.columns:
-            # ev_time = minimum of int_dead and int_graft_loss (earliest event)
-            df['ev_time'] = df[['int_dead', 'int_graft_loss']].min(axis=1, skipna=True)
-            logger.info("Derived ev_time from int_dead and int_graft_loss")
-        elif 'outcome_int_graft_loss' in df.columns:
-            df['ev_time'] = df['outcome_int_graft_loss']
-            logger.info("Using outcome_int_graft_loss as ev_time")
-        else:
-            raise ValueError(
-                f"Cannot derive ev_time. Need int_dead and int_graft_loss, or outcome_int_graft_loss. "
-                f"Available columns: {[c for c in df.columns if 'dead' in c.lower() or 'graft' in c.lower() or 'time' in c.lower()][:10]}"
-            )
-    
-    if 'ev_type' not in df.columns:
-        if 'dtx_patient' in df.columns and 'graft_loss' in df.columns:
-            # ev_type = maximum of dtx_patient and graft_loss (1 if either is 1)
-            df['ev_type'] = df[['dtx_patient', 'graft_loss']].max(axis=1, skipna=True)
-            logger.info("Derived ev_type from dtx_patient and graft_loss")
-        elif 'outcome_graft_loss' in df.columns:
-            df['ev_type'] = df['outcome_graft_loss']
-            logger.info("Using outcome_graft_loss as ev_type")
-        else:
-            raise ValueError(
-                f"Cannot derive ev_type. Need dtx_patient and graft_loss, or outcome_graft_loss. "
-                f"Available columns: {[c for c in df.columns if 'dtx' in c.lower() or 'graft' in c.lower() or 'outcome' in c.lower()][:10]}"
-            )
-    
-    # Fix non-positive times (set to small positive value if <= 0)
-    # This matches R's fix_non_positive_times function
-    if (df['ev_time'] <= 0).any():
-        n_fixed = (df['ev_time'] <= 0).sum()
-        df.loc[df['ev_time'] <= 0, 'ev_time'] = 0.1  # Small positive value
-        logger.info(f"Fixed {n_fixed} non-positive ev_time values")
-    
-    # Map to time and status columns (standardize naming)
-    if 'time' not in df.columns:
-        df['time'] = df['ev_time']
-    
-    if 'status' not in df.columns:
-        # ev_type: 1 = event, 0 = censored
-        df['status'] = (df['ev_type'] == 1).astype(int)
-    
-    # Filter valid data
-    df = df[
-        df['time'].notna() & 
-        df['status'].notna() & 
-        (df['time'] > 0) & 
-        (df['status'].isin([0, 1]))
-    ].copy()
-    
-    logger.info(f"Valid survival data: {len(df)} rows")
-    
-    # Preserve txpl_year for temporal splitting (before leakage removal)
-    # Note: txpl_year is a leakage variable but we need it for temporal split
-    txpl_year_values = df['txpl_year'].values if 'txpl_year' in df.columns else None
-    
-    # Remove leakage predictors (matches R remove_leakage_predictors)
-    # Pass cohort to get correct leakage keywords (keeps primary_etiology for Combined)
-    leak_keywords = get_survival_leakage_keywords(cohort=cohort)
-    df_clean = remove_leakage_predictors(df, leak_keywords=leak_keywords, time_col='time', status_col='status')
-    
-    # Re-add txpl_year if it was removed (needed for temporal split, but not as a feature)
-    if txpl_year_values is not None and 'txpl_year' not in df_clean.columns:
-        df_clean['txpl_year'] = txpl_year_values
-    
-    # Extract features (exclude time/status columns and txpl_year)
-    all_feature_cols = [col for col in df_clean.columns if col not in ['time', 'status', 'txpl_year']]
-    
-    # Filter to only calculator features
-    from calculator_features import filter_to_calculator_features
-    # When using top features only, we need extended feature set so sec_dx, lsbaosat etc. exist
-    use_recommended_for_filter = include_recommended_features or (top_feature_names is not None)
-    feature_cols = filter_to_calculator_features(df_clean, all_feature_cols, include_recommended=use_recommended_for_filter)
 
-    if top_feature_names is not None:
-        # Expand "sec_dx" to one-hot columns (sec_dx_*) so training matches prepare_calculator_features
-        from calculator_features import get_sec_dx_one_hot_columns
-        expanded_top = []
-        for f in top_feature_names:
-            if f == "sec_dx":
-                expanded_top.extend(get_sec_dx_one_hot_columns())
-            else:
-                expanded_top.append(f)
-        if "sec_dx" in top_feature_names:
-            logger.info(f"Expanded sec_dx to one-hot columns: {get_sec_dx_one_hot_columns()}")
-        missing = set(expanded_top) - set(feature_cols)
+    if use_wisotzkey_vars_only:
+        from wisotzkey_data import load_wisotzkey_data_for_training, WISOTZKEY_FEATURES
+        logger.info("Loading Wisotzkey-vars data (same SAS dataset as calculator pipeline)...")
+        df = load_wisotzkey_data_for_training(cohort)
+        df_clean = df[
+            df["time"].notna()
+            & df["status"].notna()
+            & (df["time"] > 0)
+            & (df["status"].isin([0, 1]))
+        ].copy()
+        feature_cols = [f for f in WISOTZKEY_FEATURES if f in df_clean.columns]
+        missing = set(WISOTZKEY_FEATURES) - set(feature_cols)
         if missing:
-            sec_dx_missing = [c for c in missing if c.startswith("sec_dx_")]
-            if sec_dx_missing:
-                for col in sec_dx_missing:
-                    df_clean[col] = 0
-                feature_cols = list(feature_cols) + sec_dx_missing
-                logger.info(f"Added missing sec_dx one-hot columns (as 0): {sec_dx_missing}")
-            other_missing = missing - set(sec_dx_missing)
-            if other_missing:
-                logger.warning(f"Top features not in data (dropped): {other_missing}")
-        feature_cols = [f for f in expanded_top if f in feature_cols]
-        logger.info(f"Restricted to top causal/importance features: {len(feature_cols)} features")
+            raise ValueError(f"Wisotzkey data missing columns: {missing}")
+        logger.info(f"Valid survival data: {len(df_clean)} rows (Wisotzkey vars: {len(feature_cols)} features)")
+        if "txpl_year" not in df_clean.columns:
+            df_clean["txpl_year"] = 2020
     else:
-        feature_set_name = "calculator features (with recommended)" if include_recommended_features else "base calculator features"
-        logger.info(f"Filtered to {feature_set_name}: {len(feature_cols)} features (from {len(all_feature_cols)} total)")
-    if len(feature_cols) < len(all_feature_cols):
-        removed = set(all_feature_cols) - set(feature_cols)
-        logger.info(f"Removed {len(removed)} non-calculator features (e.g., {', '.join(list(removed)[:10])}...)")
-    
-    if include_recommended_features and top_feature_names is None:
-        from calculator_features import get_recommended_additional_features
-        recommended = get_recommended_additional_features()
-        included_recommended = [f for f in recommended if f in feature_cols]
-        if included_recommended:
-            logger.info(f"Included {len(included_recommended)} recommended additional features: {', '.join(included_recommended[:10])}{'...' if len(included_recommended) > 10 else ''}")
-    if top_feature_names is not None:
-        logger.info(f"Top features for training: {', '.join(feature_cols)}")
+        from run_shap_ffa_workflow import (
+            load_calculator_data_for_shap,
+            prepare_calculator_features
+        )
+        logger.info("Loading calculator data...")
+        df = load_calculator_data_for_shap(cohort)
+        logger.info(f"Loaded {len(df)} rows")
+
+        # Prepare features
+        df = prepare_calculator_features(df)
+
+        # Derive survival labels from raw data (matching R code logic)
+        # R code: ev_time = pmin(int_dead, int_graft_loss, na.rm = TRUE)
+        #         ev_type = pmax(dtx_patient, graft_loss, na.rm = TRUE)
+        if 'ev_time' not in df.columns:
+            if 'int_dead' in df.columns and 'int_graft_loss' in df.columns:
+                df['ev_time'] = df[['int_dead', 'int_graft_loss']].min(axis=1, skipna=True)
+                logger.info("Derived ev_time from int_dead and int_graft_loss")
+            elif 'outcome_int_graft_loss' in df.columns:
+                df['ev_time'] = df['outcome_int_graft_loss']
+                logger.info("Using outcome_int_graft_loss as ev_time")
+            else:
+                raise ValueError(
+                    f"Cannot derive ev_time. Need int_dead and int_graft_loss, or outcome_int_graft_loss. "
+                    f"Available columns: {[c for c in df.columns if 'dead' in c.lower() or 'graft' in c.lower() or 'time' in c.lower()][:10]}"
+                )
+
+        if 'ev_type' not in df.columns:
+            if 'dtx_patient' in df.columns and 'graft_loss' in df.columns:
+                df['ev_type'] = df[['dtx_patient', 'graft_loss']].max(axis=1, skipna=True)
+                logger.info("Derived ev_type from dtx_patient and graft_loss")
+            elif 'outcome_graft_loss' in df.columns:
+                df['ev_type'] = df['outcome_graft_loss']
+                logger.info("Using outcome_graft_loss as ev_type")
+            else:
+                raise ValueError(
+                    f"Cannot derive ev_type. Need dtx_patient and graft_loss, or outcome_graft_loss. "
+                    f"Available columns: {[c for c in df.columns if 'dtx' in c.lower() or 'graft' in c.lower() or 'outcome' in c.lower()][:10]}"
+                )
+
+        if (df['ev_time'] <= 0).any():
+            n_fixed = (df['ev_time'] <= 0).sum()
+            df.loc[df['ev_time'] <= 0, 'ev_time'] = 0.1
+            logger.info(f"Fixed {n_fixed} non-positive ev_time values")
+
+        if 'time' not in df.columns:
+            df['time'] = df['ev_time']
+        if 'status' not in df.columns:
+            df['status'] = (df['ev_type'] == 1).astype(int)
+
+        df = df[
+            df['time'].notna() & df['status'].notna() & (df['time'] > 0) & (df['status'].isin([0, 1]))
+        ].copy()
+        logger.info(f"Valid survival data: {len(df)} rows")
+
+        txpl_year_values = df['txpl_year'].values if 'txpl_year' in df.columns else None
+        leak_keywords = get_survival_leakage_keywords(cohort=cohort)
+        df_clean = remove_leakage_predictors(df, leak_keywords=leak_keywords, time_col='time', status_col='status')
+        if txpl_year_values is not None and 'txpl_year' not in df_clean.columns:
+            df_clean['txpl_year'] = txpl_year_values
+
+        all_feature_cols = [col for col in df_clean.columns if col not in ['time', 'status', 'txpl_year']]
+        from calculator_features import filter_to_calculator_features
+        use_recommended_for_filter = include_recommended_features or (top_feature_names is not None)
+        feature_cols = filter_to_calculator_features(df_clean, all_feature_cols, include_recommended=use_recommended_for_filter)
+
+        if top_feature_names is not None:
+            from calculator_features import get_sec_dx_one_hot_columns
+            expanded_top = []
+            for f in top_feature_names:
+                if f == "sec_dx":
+                    expanded_top.extend(get_sec_dx_one_hot_columns())
+                else:
+                    expanded_top.append(f)
+            if "sec_dx" in top_feature_names:
+                logger.info(f"Expanded sec_dx to one-hot columns: {get_sec_dx_one_hot_columns()}")
+            missing = set(expanded_top) - set(feature_cols)
+            if missing:
+                sec_dx_missing = [c for c in missing if c.startswith("sec_dx_")]
+                if sec_dx_missing:
+                    for col in sec_dx_missing:
+                        df_clean[col] = 0
+                    feature_cols = list(feature_cols) + sec_dx_missing
+                    logger.info(f"Added missing sec_dx one-hot columns (as 0): {sec_dx_missing}")
+                other_missing = missing - set(sec_dx_missing)
+                if other_missing:
+                    logger.warning(f"Top features not in data (dropped): {other_missing}")
+            feature_cols = [f for f in expanded_top if f in feature_cols]
+            logger.info(f"Restricted to top causal/importance features: {len(feature_cols)} features")
+        else:
+            feature_set_name = "calculator features (with recommended)" if include_recommended_features else "base calculator features"
+            logger.info(f"Filtered to {feature_set_name}: {len(feature_cols)} features (from {len(all_feature_cols)} total)")
+        if len(feature_cols) < len(all_feature_cols):
+            removed = set(all_feature_cols) - set(feature_cols)
+            logger.info(f"Removed {len(removed)} non-calculator features (e.g., {', '.join(list(removed)[:10])}...)")
+
+        if include_recommended_features and top_feature_names is None:
+            from calculator_features import get_recommended_additional_features
+            recommended = get_recommended_additional_features()
+            included_recommended = [f for f in recommended if f in feature_cols]
+            if included_recommended:
+                logger.info(f"Included {len(included_recommended)} recommended additional features: {', '.join(included_recommended[:10])}{'...' if len(included_recommended) > 10 else ''}")
+        if top_feature_names is not None:
+            logger.info(f"Top features for training: {', '.join(feature_cols)}")
     
     X = df_clean[feature_cols].copy()
     time = df_clean['time'].values
@@ -1230,8 +1228,10 @@ def train_models_for_cohort(
     # Prepare signed time labels for full dataset (for MC CV splits)
     y_all = prepare_survival_labels(time, status)
     
-    # Create output directory (with suffix for enhanced / top features if applicable)
-    if top_feature_names is not None:
+    # Create output directory (with suffix for top / wisotzkey / enhanced / base)
+    if use_wisotzkey_vars_only:
+        feature_suffix = "_wisotzkey"
+    elif top_feature_names is not None:
         feature_suffix = "_top"
     else:
         feature_suffix = "_enhanced" if include_recommended_features else "_base"
@@ -1254,7 +1254,7 @@ def train_models_for_cohort(
         logger.info(f"    - Aggregated metrics and feature importances")
         logger.info(f"    - Final models (temporal split)")
         logger.info(f"    - Best model info")
-        logger.info(f"\n  To retrain, use --force or delete the output directory: {cohort_output_dir}")
+        logger.info(f"\n  To retrain, run without --no-force or delete the output directory: {cohort_output_dir}")
         logger.info("="*80)
         return
     
@@ -1455,21 +1455,24 @@ def train_models_for_cohort(
     metrics_df.to_csv(metrics_path, index=False)
     logger.info(f"Saved MC-CV metrics to: {metrics_path}")
     
-    # Print summary
-    logger.info("\nMC-CV Model Performance Summary:")
+    # Print summary (same order for all models: C-index, Recall, AUC, AU-PRC)
+    logger.info("\nMC-CV Model Performance Summary (C-index, Recall, AUC, AU-PRC):")
     for _, row in metrics_df.iterrows():
         logger.info(f"  {row['Model']:15s}:")
         logger.info(f"    C-index = {row['C_Index_Mean']:.6f} ± {row['C_Index_SD']:.6f} "
                    f"(95% CI: {row['C_Index_CI_Lower']:.6f} - {row['C_Index_CI_Upper']:.6f})")
-        if not np.isnan(row['AUC_Mean']):
-            logger.info(f"    AUC     = {row['AUC_Mean']:.6f} ± {row['AUC_SD']:.6f} "
-                       f"(95% CI: {row['AUC_CI_Lower']:.6f} - {row['AUC_CI_Upper']:.6f})")
-        if not np.isnan(row['AU_PRC_Mean']):
-            logger.info(f"    AU-PRC  = {row['AU_PRC_Mean']:.6f} ± {row['AU_PRC_SD']:.6f} "
-                       f"(95% CI: {row['AU_PRC_CI_Lower']:.6f} - {row['AU_PRC_CI_Upper']:.6f})")
-        if not np.isnan(row['Recall_Mean']):
-            logger.info(f"    Recall  = {row['Recall_Mean']:.6f} ± {row['Recall_SD']:.6f} "
-                       f"(95% CI: {row['Recall_CI_Lower']:.6f} - {row['Recall_CI_Upper']:.6f})")
+        _r = row.get('Recall_Mean', np.nan)
+        if not np.isnan(_r):
+            logger.info(f"    Recall  = {_r:.6f} ± {row.get('Recall_SD', np.nan):.6f} "
+                       f"(95% CI: {row.get('Recall_CI_Lower', np.nan):.6f} - {row.get('Recall_CI_Upper', np.nan):.6f})")
+        _a = row.get('AUC_Mean', np.nan)
+        if not np.isnan(_a):
+            logger.info(f"    AUC     = {_a:.6f} ± {row.get('AUC_SD', np.nan):.6f} "
+                       f"(95% CI: {row.get('AUC_CI_Lower', np.nan):.6f} - {row.get('AUC_CI_Upper', np.nan):.6f})")
+        _p = row.get('AU_PRC_Mean', np.nan)
+        if not np.isnan(_p):
+            logger.info(f"    AU-PRC  = {_p:.6f} ± {row.get('AU_PRC_SD', np.nan):.6f} "
+                       f"(95% CI: {row.get('AU_PRC_CI_Lower', np.nan):.6f} - {row.get('AU_PRC_CI_Upper', np.nan):.6f})")
         logger.info(f"    [{int(row['n_splits'])} splits]")
     
     # Determine best model: first by C-index, then by AU-PRC as tiebreaker
@@ -1562,12 +1565,39 @@ def train_models_for_cohort(
         agg_df.to_csv(imp_path, index=False)
         logger.info(f"  Saved {model_name} feature importance to: {imp_path}")
     
-    # Combine all models for visualization
+    # Combine all models for visualization (long table: one row per feature per model)
     if aggregated_importances:
         all_importance_df = pd.concat(aggregated_importances.values(), ignore_index=True)
         all_importance_path = cohort_output_dir / "mc_cv_all_models_feature_importance.csv"
         all_importance_df.to_csv(all_importance_path, index=False)
         logger.info(f"  Saved combined feature importance to: {all_importance_path}")
+    
+    # Aggregate feature importance across all models (one row per feature: mean ± std over CatBoost, XGBoost, XGBoost RF)
+    aggregated_all_models_df = None
+    if aggregated_importances:
+        # Each model has feature, importance_mean, importance_std, importance_count, Model
+        rows = []
+        all_features = set()
+        for agg_df in aggregated_importances.values():
+            all_features.update(agg_df['feature'].tolist())
+        for feat in all_features:
+            means = []
+            for model_name, agg_df in aggregated_importances.items():
+                row = agg_df[agg_df['feature'] == feat]
+                if len(row) > 0:
+                    means.append(row['importance_mean'].iloc[0])
+            if means:
+                rows.append({
+                    'feature': feat,
+                    'importance_mean': float(np.mean(means)),
+                    'importance_std': float(np.std(means)) if len(means) > 1 else 0.0,
+                    'n_models': len(means),
+                })
+        if rows:
+            aggregated_all_models_df = pd.DataFrame(rows).sort_values('importance_mean', ascending=False)
+            agg_path = cohort_output_dir / "mc_cv_aggregated_feature_importance.csv"
+            aggregated_all_models_df.to_csv(agg_path, index=False)
+            logger.info(f"  Saved aggregated feature importance (all models) to: {agg_path}")
     
     # ============================================================================
     # CREATE VISUALIZATIONS
@@ -1689,12 +1719,10 @@ def train_models_for_cohort(
         else:
             logger.warning("Recall_Mean column not found or all NaN, skipping Recall plot")
         
-        # 5. Combined Metrics Heatmap
+        # 5. Combined Metrics Heatmap (same order for all models: C-Index, Recall, AUC, AU-PRC)
         logger.info("Creating combined metrics heatmap...")
         try:
-            # Create a heatmap with all metrics
-            heatmap_metrics = ['C_Index_Mean', 'AUC_Mean', 'AU_PRC_Mean', 'Recall_Mean']
-            available_metrics = [m for m in heatmap_metrics if m in metrics_df.columns and not metrics_df[m].isna().all()]
+            available_metrics = [m for m in STANDARD_METRICS if m in metrics_df.columns and not metrics_df[m].isna().all()]
             
             if available_metrics and len(available_metrics) > 0:
                 # Verify metrics_df has the required columns
@@ -1702,6 +1730,9 @@ def train_models_for_cohort(
                     logger.warning("metrics_df missing 'Model' column, skipping heatmap")
                 else:
                     heatmap_data = metrics_df.set_index('Model')[available_metrics].T
+                    # Use display names for y-axis (C-index, Recall, AUC, AU-PRC)
+                    name_map = dict(zip(STANDARD_METRICS, STANDARD_METRICS_DISPLAY, strict=True))
+                    heatmap_data = heatmap_data.rename(index=name_map)
                     # Normalize each metric to [0, 1] for visualization
                     # After transposing, rows are metrics and columns are models
                     heatmap_data_norm = heatmap_data.copy()
@@ -1731,7 +1762,7 @@ def train_models_for_cohort(
                     plt.close()
                     logger.info(f"  Saved metrics heatmap to: {metrics_heatmap_path}")
             else:
-                logger.warning(f"No available metrics for heatmap. Expected columns: {heatmap_metrics}, found: {list(metrics_df.columns)}")
+                logger.warning(f"No available metrics for heatmap. Expected columns: {STANDARD_METRICS}, found: {list(metrics_df.columns)}")
         except Exception as e:
             logger.warning(f"Error creating metrics heatmap: {e}", exc_info=True)
         
@@ -1816,6 +1847,28 @@ def train_models_for_cohort(
                 logger.warning(f"Error creating feature importance heatmap: {e}", exc_info=True)
         else:
             logger.warning("No aggregated importances available, skipping feature importance heatmap")
+        
+        # 7. Aggregated feature importance (all models) bar chart
+        if aggregated_all_models_df is not None and len(aggregated_all_models_df) > 0:
+            try:
+                logger.info("Creating aggregated feature importance bar chart...")
+                top_n = 25
+                plot_df = aggregated_all_models_df.head(top_n)
+                fig, ax = plt.subplots(figsize=(10, max(6, len(plot_df) * 0.25)))
+                yerr = plot_df['importance_std'] if 'importance_std' in plot_df.columns else None
+                ax.barh(range(len(plot_df)), plot_df['importance_mean'], xerr=yerr, capsize=2, alpha=0.8)
+                ax.set_yticks(range(len(plot_df)))
+                ax.set_yticklabels(plot_df['feature'], fontsize=9)
+                ax.invert_yaxis()
+                ax.set_xlabel('Mean importance (across CatBoost, XGBoost, XGBoost RF)', fontsize=11)
+                ax.set_title(f'Aggregated Feature Importance - All Models ({cohort}, Top {top_n})', fontsize=14, fontweight='bold')
+                plt.tight_layout()
+                agg_plot_path = plots_dir / "aggregated_feature_importance.png"
+                plt.savefig(agg_plot_path, dpi=300, bbox_inches='tight')
+                plt.close()
+                logger.info(f"  Saved aggregated feature importance plot to: {agg_plot_path}")
+            except Exception as e:
+                logger.warning(f"Error creating aggregated feature importance plot: {e}", exc_info=True)
 
     except ImportError:
         logger.warning("Matplotlib/Seaborn not available. Skipping visualizations.")
@@ -1955,39 +2008,35 @@ def train_models_for_cohort(
         output_dir=cohort_output_dir
     )
     
-    # Save best model info
+    # Save best model info (same four metrics for all models: C-Index, Recall, AUC, AU-PRC)
     best_model_path = cohort_output_dir / "best_model.txt"
     with open(best_model_path, 'w') as f:
         f.write(f"Best Model (MC-CV): {best_model_name}\n")
         f.write(f"Selection Criteria: C-index (primary), AU-PRC (tiebreaker)\n")
-        f.write(f"MC-CV Mean C-index: {best_c_index:.6f}\n")
-        f.write(f"MC-CV 95% CI: [{best_model_row['C_Index_CI_Lower']:.6f}, {best_model_row['C_Index_CI_Upper']:.6f}]\n")
-        f.write(f"MC-CV SD: {best_model_row['C_Index_SD']:.6f}\n")
-        if not np.isnan(best_model_row.get('AUC_Mean', np.nan)):
-            f.write(f"MC-CV Mean AUC: {best_model_row['AUC_Mean']:.6f} ± {best_model_row['AUC_SD']:.6f}\n")
-        if not np.isnan(best_model_row.get('AU_PRC_Mean', np.nan)):
-            f.write(f"MC-CV Mean AU-PRC: {best_model_row['AU_PRC_Mean']:.6f} ± {best_model_row['AU_PRC_SD']:.6f}\n")
-        if not np.isnan(best_model_row.get('Recall_Mean', np.nan)):
-            f.write(f"MC-CV Mean Recall: {best_model_row['Recall_Mean']:.6f} ± {best_model_row['Recall_SD']:.6f}\n")
-        f.write(f"MC-CV n_splits: {int(best_model_row['n_splits'])}\n")
+        f.write(f"Standard metrics (all models): C-index, Recall, AUC, AU-PRC\n")
+        f.write(f"\nBest model MC-CV metrics:\n")
+        f.write(f"  C-index: {best_c_index:.6f} (95% CI: [{best_model_row['C_Index_CI_Lower']:.6f}, {best_model_row['C_Index_CI_Upper']:.6f}], SD: {best_model_row['C_Index_SD']:.6f})\n")
+        _v = best_model_row.get('Recall_Mean', np.nan)
+        f.write(f"  Recall:  {_v:.6f} ± {best_model_row.get('Recall_SD', np.nan):.6f}\n" if not np.isnan(_v) else "  Recall:  N/A\n")
+        _v = best_model_row.get('AUC_Mean', np.nan)
+        f.write(f"  AUC:     {_v:.6f} ± {best_model_row.get('AUC_SD', np.nan):.6f}\n" if not np.isnan(_v) else "  AUC:     N/A\n")
+        _v = best_model_row.get('AU_PRC_Mean', np.nan)
+        f.write(f"  AU-PRC:  {_v:.6f} ± {best_model_row.get('AU_PRC_SD', np.nan):.6f}\n" if not np.isnan(_v) else "  AU-PRC:  N/A\n")
+        f.write(f"  n_splits: {int(best_model_row['n_splits'])}\n")
         f.write(f"\nTemporal Split Results:\n")
         f.write(f"  CatBoost: {cb_cindex:.6f}\n")
         f.write(f"  XGBoost: {xgb_cindex:.6f}\n")
         f.write(f"  XGBoost RF: {xgb_rf_cindex:.6f}\n")
-        f.write(f"\nMC-CV Model Performance (all models):\n")
+        f.write(f"\nMC-CV Model Performance (all models) - C-index, Recall, AUC, AU-PRC:\n")
         for _, row in metrics_df.iterrows():
             f.write(f"  {row['Model']}:\n")
-            f.write(f"    C-index: {row['C_Index_Mean']:.6f} ± {row['C_Index_SD']:.6f} "
-                   f"(95% CI: {row['C_Index_CI_Lower']:.6f} - {row['C_Index_CI_Upper']:.6f})\n")
-            if not np.isnan(row.get('AUC_Mean', np.nan)):
-                f.write(f"    AUC: {row['AUC_Mean']:.6f} ± {row['AUC_SD']:.6f} "
-                       f"(95% CI: {row['AUC_CI_Lower']:.6f} - {row['AUC_CI_Upper']:.6f})\n")
-            if not np.isnan(row.get('AU_PRC_Mean', np.nan)):
-                f.write(f"    AU-PRC: {row['AU_PRC_Mean']:.6f} ± {row['AU_PRC_SD']:.6f} "
-                       f"(95% CI: {row['AU_PRC_CI_Lower']:.6f} - {row['AU_PRC_CI_Upper']:.6f})\n")
-            if not np.isnan(row.get('Recall_Mean', np.nan)):
-                f.write(f"    Recall: {row['Recall_Mean']:.6f} ± {row['Recall_SD']:.6f} "
-                       f"(95% CI: {row['Recall_CI_Lower']:.6f} - {row['Recall_CI_Upper']:.6f})\n")
+            f.write(f"    C-index: {row['C_Index_Mean']:.6f} ± {row['C_Index_SD']:.6f} (95% CI: {row['C_Index_CI_Lower']:.6f} - {row['C_Index_CI_Upper']:.6f})\n")
+            _r = row.get('Recall_Mean', np.nan)
+            f.write(f"    Recall:  {_r:.6f} ± {row.get('Recall_SD', np.nan):.6f}\n" if not np.isnan(_r) else "    Recall:  N/A\n")
+            _a = row.get('AUC_Mean', np.nan)
+            f.write(f"    AUC:     {_a:.6f} ± {row.get('AUC_SD', np.nan):.6f}\n" if not np.isnan(_a) else "    AUC:     N/A\n")
+            _p = row.get('AU_PRC_Mean', np.nan)
+            f.write(f"    AU-PRC:  {_p:.6f} ± {row.get('AU_PRC_SD', np.nan):.6f}\n" if not np.isnan(_p) else "    AU-PRC:  N/A\n")
             f.write(f"    [{int(row['n_splits'])} splits]\n")
     
     logger.info(f"\n{'='*80}")
@@ -2000,7 +2049,7 @@ def train_models_for_cohort(
         logger.info(f"MC-CV Mean AU-PRC: {best_auprc:.6f}")
     logger.info(f"\nAll outputs saved to: {cohort_output_dir}")
     logger.info(f"  - MC-CV metrics: {metrics_path}")
-    logger.info(f"  - Feature importances: {cohort_output_dir / 'mc_cv_*_feature_importance.csv'}")
+    logger.info(f"  - Feature importances: {cohort_output_dir / 'mc_cv_*_feature_importance.csv'} (per-model + mc_cv_aggregated_feature_importance.csv)")
     logger.info(f"  - Visualizations: {plots_dir}")
     logger.info(f"  - Final models: {cohort_output_dir}")
 
@@ -2011,7 +2060,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train Python survival models")
     parser.add_argument("--cohort", type=str, default="Combined",
                        choices=["Combined", "CHD", "Myocardio"],
-                       help="Cohort to train models for (default: Combined - single model for all cohorts)")
+                       help="Cohort to train (one model per cohort; with --top_features_only output is e.g. CHD_top, Combined_top)")
     parser.add_argument("--n_mc_splits", type=int, default=25,
                        help="Number of Monte Carlo cross-validation splits (default: 25)")
     parser.add_argument("--train_prop", type=float, default=0.8,
@@ -2021,23 +2070,25 @@ if __name__ == "__main__":
     parser.add_argument("--include_recommended", action="store_true",
                        help="Include recommended additional features (BNP, CRP, sec_dx/ter_dx, etc.)")
     parser.add_argument("--top_features_only", action="store_true",
-                       help="Train only on top causal/importance features from SHAP/FFA (output: Combined_top)")
+                       help="Train only on top causal/importance features from SHAP/FFA (output: {cohort}_top)")
+    parser.add_argument("--wisotzkey_vars_only", action="store_true",
+                       help="Train on Wisotzkey et al. variable set only (output: {cohort}_wisotzkey; compare with _top models)")
     parser.add_argument("--top_features_file", type=str, default=None,
                        help="CSV/JSON file with 'feature' or 'variable' column for top features (used with --top_features_only; default: built-in list)")
-    parser.add_argument("--force", action="store_true",
-                       help="Ignore existing outputs and re-run training (overrides idempotency skip)")
+    parser.add_argument("--force", action="store_true", default=True,
+                       help="Re-run training even when outputs exist (default: True)")
+    parser.add_argument("--no-force", action="store_true", dest="no_force",
+                       help="Skip training if outputs already exist (idempotent)")
     
     args = parser.parse_args()
+    if getattr(args, "no_force", False):
+        args.force = False
     
     # Allow force via environment (e.g. TRAIN_FORCE=1 for scripts/CI)
     import os
     if os.environ.get("TRAIN_FORCE", "").strip().lower() in ("1", "true", "yes"):
         args.force = True
         logger.info("Force re-train enabled via TRAIN_FORCE")
-    
-    # Always train Combined model (single model for all cohorts)
-    if args.cohort != "Combined":
-        logger.warning(f"Requested cohort '{args.cohort}' but using Combined model for all cohorts. Training Combined model.")
     
     top_feature_names = None
     if args.top_features_only:
@@ -2064,12 +2115,15 @@ if __name__ == "__main__":
     logger.info(f"Training with {feature_set_name} feature set")
     logger.info(f"{'='*80}")
     
+    if args.wisotzkey_vars_only:
+        logger.info("Using Wisotzkey et al. variable set (wisotzkey_data.WISOTZKEY_FEATURES)")
     train_models_for_cohort(
-        cohort="Combined",
+        cohort=args.cohort,
         n_mc_splits=args.n_mc_splits,
         train_prop=args.train_prop,
         n_jobs=args.n_jobs,
         include_recommended_features=args.include_recommended,
         top_feature_names=top_feature_names,
+        use_wisotzkey_vars_only=args.wisotzkey_vars_only,
         force=args.force
     )

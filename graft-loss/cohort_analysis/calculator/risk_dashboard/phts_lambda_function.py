@@ -67,12 +67,10 @@ DASHBOARD_DATA_PATH = os.environ.get("DASHBOARD_DATA_PATH", "/var/task/dashboard
 RISK_DISTRIBUTION_PATH = os.environ.get("RISK_DISTRIBUTION_PATH", "/var/task/risk_distributions")
 MODEL_CACHE_TTL = int(os.environ.get("MODEL_CACHE_TTL", "3600"))
 
-# Available cohorts - single Combined model (top 15 causal features only)
-AVAILABLE_COHORTS = ["Combined"]
-COHORTS_WITH_DATA = ["Combined"]
-# Model cohort: Combined_top (single top-features model for risk and causal)
-MODEL_COHORT = "Combined"
-MODEL_VARIANT_DEFAULT = "top"  # Combined_top
+# Model per cohort: CHD_top, Myocardio_top, Combined_top (each has its own sec_dx options and causal factors)
+AVAILABLE_COHORTS = ["CHD", "Myocardio", "Combined"]
+COHORTS_WITH_DATA = ["CHD", "Myocardio", "Combined"]
+MODEL_VARIANT_DEFAULT = "top"  # cohort_top (e.g. CHD_top, Combined_top)
 
 # Risk score distributions for normalization (loaded on demand)
 _risk_distributions: Dict[str, Dict[str, Any]] = {}  # All cohorts have trained models
@@ -128,8 +126,8 @@ def get_feature_metadata(cohort: str) -> Dict[str, str]:
     Returns:
         Dictionary mapping feature names to their types: 'binary' or 'numeric'
     """
-    # Try container filesystem first (MODEL_FEATURES_PATH). For Combined, use Combined_top.
-    model_dir = f"{cohort}_top" if cohort == "Combined" else cohort
+    # Model per cohort: each cohort uses {cohort}_top (e.g. CHD_top, Combined_top)
+    model_dir = f"{cohort}_top" if cohort in ("CHD", "Myocardio", "Combined") else cohort
     container_path = Path(MODEL_FEATURES_PATH) / model_dir / "feature_metadata.json"
     if not container_path.exists() and cohort != model_dir:
         container_path = Path(MODEL_FEATURES_PATH) / cohort / "feature_metadata.json"
@@ -153,9 +151,9 @@ def get_feature_metadata(cohort: str) -> Dict[str, str]:
     except Exception as e:
         logger.warning(f"Error loading feature metadata from dashboard_data: {e}")
     
-    # Fallback: Try S3 (if client is available)
+    # Fallback: Try S3 (if client is available); use model_dir to match container layout (e.g. CHD_top)
     if s3_client is not None:
-        s3_key = f"{S3_PREFIX}/model_features/{cohort}/feature_metadata.json"
+        s3_key = f"{S3_PREFIX}/model_features/{model_dir}/feature_metadata.json"
         try:
             logger.info(f"Loading feature metadata from S3: s3://{S3_BUCKET}/{s3_key}")
             response = s3_client.get_object(Bucket=S3_BUCKET, Key=s3_key)
@@ -187,9 +185,8 @@ def load_dashboard_data(cohort: str, model_variant: Optional[str] = None) -> Dic
     1. Container filesystem (DASHBOARD_DATA_PATH)
     2. S3 bucket
     
-    Final workflow: Combined_top only. No Baseline/Extended variants.
+    Model per cohort: CHD_top, Myocardio_top, Combined_top.
     """
-    # Single model: Combined_top only
     if model_variant == "top" or model_variant is None:
         model_cohort = f"{cohort}_top"
     elif model_variant in ("base", "enhanced"):
@@ -203,7 +200,7 @@ def load_dashboard_data(cohort: str, model_variant: Optional[str] = None) -> Dic
     if cache_key in _dashboard_data_cache:
         return _dashboard_data_cache[cache_key]
     
-    # Try container filesystem: Combined_top (or cohort if present)
+    # Try container filesystem: {cohort}_top (e.g. CHD_top, Combined_top)
     container_path = Path(DASHBOARD_DATA_PATH) / model_cohort / "dashboard_data.json"
     if not container_path.exists():
         fallback_path = Path(DASHBOARD_DATA_PATH) / cohort / "dashboard_data.json"
@@ -443,7 +440,7 @@ def _percentile_to_risk_band(percentile: float) -> str:
 
 
 def _resolve_model_cohort_for_models(model_cohort: str) -> str:
-    """Final workflow: only Combined_top. Legacy base/enhanced resolve to Combined_top if missing."""
+    """Model per cohort: CHD_top, Myocardio_top, Combined_top. Legacy base/enhanced resolve to Combined_top if missing."""
     if model_cohort in ("Combined_base", "Combined_enhanced"):
         top_path = Path(MODEL_BASE_PATH) / "Combined_top"
         if top_path.exists():
@@ -531,7 +528,7 @@ def load_model_metrics(cohort: str) -> Dict[str, Any]:
     Load model metrics from best_model.txt in the container (or S3 if configured).
     Returns dict with best_model, c_index, auc, au_prc, recall, metrics_text, s3_url.
     """
-    model_cohort = "Combined_top" if cohort == "Combined" else cohort
+    model_cohort = cohort if cohort.endswith("_top") else f"{cohort}_top"
     model_cohort = _resolve_model_cohort_for_models(model_cohort)
     out = {
         "best_model": None,
@@ -553,6 +550,18 @@ def load_model_metrics(cohort: str) -> Dict[str, Any]:
         for line in text.splitlines():
             if "Best Model" in line and ":" in line:
                 out["best_model"] = line.split(":", 1)[1].strip()
+            # New format: "  C-index: 0.62 (95% CI: [0.61, 0.64], SD: ...)"
+            elif "C-index:" in line and (out["c_index"] is None or "MC-CV Mean" not in line):
+                try:
+                    after_colon = line.split("C-index:", 1)[-1].strip()
+                    num = after_colon.replace("(", " ").split()[0]
+                    out["c_index"] = float(num)
+                    if "95% CI:" in line and "[" in line:
+                        ci = line[line.index("["):line.index("]") + 1]
+                        out["c_index_ci"] = ci
+                except (ValueError, IndexError):
+                    pass
+            # Old format
             elif "MC-CV Mean C-index:" in line:
                 try:
                     out["c_index"] = float(line.split(":", 1)[1].strip())
@@ -564,19 +573,43 @@ def load_model_metrics(cohort: str) -> Dict[str, Any]:
                     out["c_index_ci"] = part
                 except Exception:
                     pass
-            elif "MC-CV Mean AUC:" in line:
+            # New format: "  Recall:  0.45 ± 0.03" or "  Recall:  N/A"
+            elif line.strip().startswith("Recall:") and "MC-CV Mean" not in line:
                 try:
-                    out["auc"] = float(line.split(":", 1)[1].strip().split()[0])
-                except (ValueError, IndexError):
-                    pass
-            elif "MC-CV Mean AU-PRC:" in line:
-                try:
-                    out["au_prc"] = float(line.split(":", 1)[1].strip().split()[0])
+                    after = line.split("Recall:", 1)[-1].strip()
+                    if after.upper() != "N/A" and after:
+                        out["recall"] = float(after.replace("±", " ").split()[0])
                 except (ValueError, IndexError):
                     pass
             elif "MC-CV Mean Recall:" in line:
                 try:
                     out["recall"] = float(line.split(":", 1)[1].strip().split()[0])
+                except (ValueError, IndexError):
+                    pass
+            # New format: "  AUC:    0.62 ± 0.02" or "  AUC:     N/A"
+            elif line.strip().startswith("AUC:") and "MC-CV Mean" not in line:
+                try:
+                    after = line.split("AUC:", 1)[-1].strip()
+                    if after.upper() != "N/A" and after:
+                        out["auc"] = float(after.replace("±", " ").split()[0])
+                except (ValueError, IndexError):
+                    pass
+            elif "MC-CV Mean AUC:" in line:
+                try:
+                    out["auc"] = float(line.split(":", 1)[1].strip().split()[0])
+                except (ValueError, IndexError):
+                    pass
+            # New format: "  AU-PRC:  0.35 ± 0.02" or "  AU-PRC:  N/A"
+            elif "AU-PRC:" in line and "MC-CV Mean" not in line:
+                try:
+                    after = line.split("AU-PRC:", 1)[-1].strip()
+                    if after.upper() != "N/A" and after:
+                        out["au_prc"] = float(after.replace("±", " ").split()[0])
+                except (ValueError, IndexError):
+                    pass
+            elif "MC-CV Mean AU-PRC:" in line:
+                try:
+                    out["au_prc"] = float(line.split(":", 1)[1].strip().split()[0])
                 except (ValueError, IndexError):
                     pass
     except Exception as e:
@@ -755,11 +788,11 @@ def predict_risk_survival(
     """
     Predict graft loss risk using survival models.
     
-    NOTE: Always uses Combined model regardless of cohort parameter.
-    The cohort parameter is only used for dashboard data (causal factors).
+    Uses the model for the given cohort (CHD_top, Myocardio_top, or Combined_top).
+    Each cohort has its own model and dashboard data (e.g. cohort-specific sec_dx options).
     
     Args:
-        cohort: Cohort name (for dashboard data only - model is always Combined)
+        cohort: Model cohort name (e.g. CHD_top, Combined_top) or base cohort (CHD, Myocardio, Combined)
         features: Dictionary of clinical feature values
         use_best_model_only: If True, use only the best model; if False, use ensemble
     
@@ -769,25 +802,28 @@ def predict_risk_survival(
     if not MODEL_LIBS_AVAILABLE:
         raise RuntimeError("Model libraries not available")
     
-    # Final workflow: use Combined_top when cohort is Combined (or variant in name)
+    # Model per cohort: use {cohort}_top (e.g. CHD_top, Combined_top)
     if cohort.endswith('_top'):
         model_cohort = cohort
         logger.info(f"Using {model_cohort} model (top causal features)")
     elif cohort.endswith('_base') or cohort.endswith('_enhanced'):
         model_cohort = _resolve_model_cohort_for_models(cohort)
         logger.info(f"Using {model_cohort} model (legacy variant requested)")
+    elif cohort in ("CHD", "Myocardio", "Combined"):
+        model_cohort = f"{cohort}_top"
+        logger.info(f"Using {model_cohort} model for cohort {cohort}")
     else:
-        model_cohort = f"{MODEL_COHORT}_top"
-        logger.info(f"Using {model_cohort} model for cohort {cohort} (default: top causal features)")
+        model_cohort = f"{cohort}_top"
+        logger.info(f"Using {model_cohort} model for cohort {cohort} (default: top)")
     
     # Prepare features (create derived variables)
     prepared_features = prepare_features_for_inference(features)
     
-    # Get best model (from Combined)
+    # Get best model for this cohort
     best_model_type = get_best_model(model_cohort)
     
     if use_best_model_only:
-        # Use only the best model (always from Combined)
+        # Use only the best model for this cohort
         model = load_model(model_cohort, best_model_type)
         
         # Get feature names from model
@@ -834,7 +870,7 @@ def predict_risk_survival(
         
         for model_type in ['catboost', 'xgboost', 'xgboost_rf']:
             try:
-                model = load_model(model_cohort, model_type)  # Always use Combined model
+                model = load_model(model_cohort, model_type)
                 
                 if model_type == 'catboost':
                     feature_names = model.feature_names_ if hasattr(model, 'feature_names_') else []
@@ -1018,17 +1054,30 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 def handle_model_metrics(event: Dict[str, Any]) -> Dict[str, Any]:
     """
     GET /model-metrics - Returns deployed model metrics (from best_model.txt in container)
-    and optional S3 URL (METRICS_S3_URL) where metrics are saved.
+    for all cohorts. Standard metrics: C-index, Recall, AUC, AU-PRC.
     """
-    metrics = load_model_metrics("Combined")
+    by_cohort = {}
+    for cohort in AVAILABLE_COHORTS:
+        m = load_model_metrics(cohort)
+        by_cohort[cohort] = {
+            "best_model": m.get("best_model"),
+            "c_index": m.get("c_index"),
+            "c_index_ci": m.get("c_index_ci"),
+            "recall": m.get("recall"),
+            "auc": m.get("auc"),
+            "au_prc": m.get("au_prc"),
+        }
+    # Default/flat view for backward compat (Combined)
+    default = by_cohort.get("Combined", {})
     body = {
-        "best_model": metrics.get("best_model"),
-        "c_index": metrics.get("c_index"),
-        "c_index_ci": metrics.get("c_index_ci"),
-        "auc": metrics.get("auc"),
-        "au_prc": metrics.get("au_prc"),
-        "recall": metrics.get("recall"),
-        "s3_url": metrics.get("s3_url"),
+        "best_model": default.get("best_model"),
+        "c_index": default.get("c_index"),
+        "c_index_ci": default.get("c_index_ci"),
+        "recall": default.get("recall"),
+        "auc": default.get("auc"),
+        "au_prc": default.get("au_prc"),
+        "s3_url": load_model_metrics("Combined").get("s3_url"),
+        "by_cohort": by_cohort,
     }
     return _response(200, body)
 
@@ -1076,6 +1125,7 @@ def handle_metadata(event: Dict[str, Any]) -> Dict[str, Any]:
                     "available_cohorts": AVAILABLE_COHORTS,
                     "causal_factors": dashboard_data.get("top_causal_factors", []),
                     "summary": dashboard_data.get("summary", {}),
+                    "aggregated_feature_importance": dashboard_data.get("aggregated_feature_importance", []),
                     "feature_metadata": feature_metadata,
                     "feature_levels": feature_levels,
                     "feature_level_labels": feature_level_labels,
@@ -1189,7 +1239,7 @@ def handle_risk(event: Dict[str, Any]) -> Dict[str, Any]:
         use_ensemble = body.get("use_ensemble", False)
         model_variant = body.get("model_variant", "top")  # Single model: top 15 features only
 
-        # Model is always Combined_top (top 15 causal/importance features)
+        # Model per cohort: CHD_top, Myocardio_top, or Combined_top
         model_cohort = f"{cohort}_top"
         
         # Predict risk

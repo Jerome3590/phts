@@ -2,7 +2,7 @@
 
 ## Overview
 
-The PHTS Risk Calculator Dashboard is an interactive web application for calculating graft loss risk in pediatric heart transplant patients. It uses a **single model** trained on the **top 15 high causal/importance features** (Combined_top). The dashboard provides:
+The PHTS Risk Calculator Dashboard is an interactive web application for calculating graft loss risk in pediatric heart transplant patients. It uses **one model per cohort** (CHD, Myocardio, Combined), each trained on the **top 15 high causal/importance features** (e.g. CHD_top, Combined_top). Each cohort has its own **sec_dx** (secondary diagnosis) dropdown options and causal factors. The dashboard provides:
 
 1. **Risk Calculator Tab**: Calculate risk scores from clinical features (top-features model only)
 2. **Causal Analysis Tab**: Explore how causal factors affect risk in real-time
@@ -39,8 +39,7 @@ The dashboard accepts the following clinical features:
 - **Mechanical Circulatory Support Device** (`txnomcsd`): Yes/No (binary)
 
 ### Diagnosis & Demographics
-- **CHD: Partial Anomalous Pulmonary Venous Return** (`chd_papvr`): Yes/No (binary)
-- **CHD: Anomaly** (`chd_anom`): Yes/No (binary)
+- **CHD: Single Ventricle** (`chd_sv`): Yes/No (binary). This is the CHD feature supported by the top causal model (SHAP/FFA); other CHD subtypes may appear under "Other model features" if the cohort metadata includes them.
 - **Donor Ischemic Time** (`donisch`): hours, Typical range 2-6
 
 ### Lab Values
@@ -48,6 +47,8 @@ The dashboard accepts the following clinical features:
 - **AST at Transplant** (`txast`): U/L, Normal range 10-40
 
 **Note**: See `README_FINAL_MODELS.md` in the calculator directory for the complete feature list.
+
+**What FFA and SHAP support**: Each cohort’s model is trained on the top 15 features from that cohort’s SHAP/FFA causal importance. Features include: secondary diagnosis (`sec_dx`), donor age, transplant altitude, BUN and eGFR measures, **CHD: Single Ventricle** (`chd_sv`), donor size/weight ratios, prior surgery (`hxsurg`), oxygen saturation, BMI, lab values (e.g. albumin, troponin), and others. **sec_dx** options are cohort-specific: the dropdown and one-hot mapping come from each cohort’s `dashboard_data.json` (`sec_dx_dropdown_options`, `sec_dx_one_hot_map`). Display names and levels come from the API metadata (`feature_display_names`, `feature_levels`) for the selected cohort.
 
 ### Default Values
 
