@@ -692,6 +692,7 @@ def prepare_feature_vector(features: Dict[str, Any], feature_names: List[str]) -
 
 # Model assumptions (for defaults when user does not provide values)
 # Per requirements: donor ischemic time assumed < 240 min when not given; size ratio 70-200%
+DONISCH_DEFAULT_MINUTES = 240.0
 DONOR_RECIPIENT_RATIO_MIN_PCT = 70.0
 DONOR_RECIPIENT_RATIO_MAX_PCT = 200.0
 
@@ -799,6 +800,87 @@ def prepare_features_for_inference(features: Dict[str, Any]) -> Dict[str, Any]:
     return prepared
 
 
+# Wisotzkey et al. variable set (same names as training: wisotzkey_data.WISOTZKEY_FEATURES)
+WISOTZKEY_FEATURE_NAMES = [
+    "CHD", "TXMCSD", "CHD_SV", "HXSURG", "HXMED", "ALBUMIN_UNDER_3", "BUN_UNDER_15",
+    "eGFR_UNDER_60", "TXECMO", "YR_UNDER_2015", "WEIGHT_UNDER_75", "BMI_UNDER_18",
+    "ALT_UNDER_30", "ALT_OVER_50",
+]
+
+
+def prepare_wisotzkey_features_for_inference(features: Dict[str, Any], cohort: str) -> Dict[str, Any]:
+    """
+    Build Wisotzkey-et-al. feature dict from request for inference.
+    Matches wisotzkey_data.make_wisotzkey_data() definitions so the Wisotzkey model gets correct inputs.
+    """
+    def _num(k: str, default: float = 0.0) -> float:
+        v = features.get(k)
+        if v is None:
+            return default
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return default
+
+    # CHD = 1 if Congenital HD (use cohort: CHD cohort -> 1)
+    chd = 1.0 if cohort == "CHD" else 0.0
+    # TXMCSD: mechanical circulatory support at transplant (txnomcsd or txmcsd)
+    txmcsd = 1.0 if (_num("txnomcsd") == 1 or _num("txmcsd") == 1) else 0.0
+    chd_sv = 1.0 if _num("chd_sv") == 1 else 0.0
+    hxsurg = 1.0 if _num("hxsurg") == 1 else 0.0
+    hxmed = 1.0 if _num("hxmed") == 1 else 0.0
+    txsa = _num("txsa_r", 3.0)
+    albumin_under_3 = 1.0 if txsa < 3 else 0.0
+    txbun = _num("txbun_r", 15.0)
+    bun_under_15 = 1.0 if txbun < 15 else 0.0
+    height_cm = _num("height_txpl") * 2.54 if features.get("height_txpl") else 0.0
+    creat = max(_num("txcreat_r"), 0.001)
+    egfr = (0.413 * height_cm / creat) if (height_cm and creat) else 60.0
+    if "egfr_tx" in features and features.get("egfr_tx") is not None:
+        try:
+            egfr = float(features["egfr_tx"])
+        except (TypeError, ValueError):
+            pass
+    egfr_under_60 = 1.0 if egfr < 60 else 0.0
+    txecmo = 1.0 if _num("txecmo") == 1 else 0.0
+    txpl_year = _num("txpl_year", 2020.0)
+    yr_under_2015 = 1.0 if txpl_year < 2015 else 0.0
+    weight = _num("weight_txpl", 75.0)
+    weight_under_75 = 1.0 if weight < 75 else 0.0
+    height_in = _num("height_txpl", 1.0)
+    bmi = (703 * weight / (height_in ** 2)) if height_in and height_in > 0 else 18.0
+    bmi_under_18 = 1.0 if bmi < 18 else 0.0
+    txalt = features.get("txalt") or features.get("txast")
+    if txalt is not None:
+        try:
+            alt = float(txalt)
+            alt_under_30 = 1.0 if alt < 30 else 0.0
+            alt_over_50 = 1.0 if alt >= 50 else 0.0
+        except (TypeError, ValueError):
+            alt_under_30 = 1.0
+            alt_over_50 = 0.0
+    else:
+        alt_under_30 = 1.0
+        alt_over_50 = 0.0
+
+    return {
+        "CHD": chd,
+        "TXMCSD": txmcsd,
+        "CHD_SV": chd_sv,
+        "HXSURG": hxsurg,
+        "HXMED": hxmed,
+        "ALBUMIN_UNDER_3": albumin_under_3,
+        "BUN_UNDER_15": bun_under_15,
+        "eGFR_UNDER_60": egfr_under_60,
+        "TXECMO": txecmo,
+        "YR_UNDER_2015": yr_under_2015,
+        "WEIGHT_UNDER_75": weight_under_75,
+        "BMI_UNDER_18": bmi_under_18,
+        "ALT_UNDER_30": alt_under_30,
+        "ALT_OVER_50": alt_over_50,
+    }
+
+
 def predict_risk_survival(
     cohort: str,
     features: Dict[str, Any],
@@ -837,8 +919,12 @@ def predict_risk_survival(
         model_cohort = f"{cohort}_{variant}"
         logger.info(f"Using {model_cohort} model for cohort {cohort} (deployed variant: {variant})")
     
-    # Prepare features (create derived variables)
-    prepared_features = prepare_features_for_inference(features)
+    # Prepare features: Top models use calculator-derived vars; Wisotzkey models use Wisotzkey-et-al. set
+    base_cohort = cohort if cohort in ("CHD", "Myocardio", "Combined") else (model_cohort.replace("_top", "").replace("_wisotzkey", "") if "_" in model_cohort else "Combined")
+    if model_cohort.endswith("_wisotzkey"):
+        prepared_features = prepare_wisotzkey_features_for_inference(features, base_cohort)
+    else:
+        prepared_features = prepare_features_for_inference(features)
     
     # Get best model for this cohort
     best_model_type = get_best_model(model_cohort)
