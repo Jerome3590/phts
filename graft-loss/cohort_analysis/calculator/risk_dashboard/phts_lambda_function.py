@@ -439,8 +439,23 @@ def _percentile_to_risk_band(percentile: float) -> str:
         return "very_high"
 
 
+def _get_deployed_variant(cohort: str) -> str:
+    """Read deployed variant (top or wisotzkey) for cohort from {cohort}_deployed_variant.txt. Best model is chosen by C-index then AU-PRC (compare_top_vs_wisotzkey.py --set-deployed)."""
+    if cohort in ("Combined_base", "Combined_enhanced"):
+        return "top"
+    path = Path(MODEL_BASE_PATH) / f"{cohort}_deployed_variant.txt"
+    try:
+        if path.exists():
+            v = path.read_text().strip().lower()
+            if v in ("top", "wisotzkey"):
+                return v
+    except Exception as e:
+        logger.warning(f"Could not read deployed variant for {cohort}: {e}")
+    return "top"
+
+
 def _resolve_model_cohort_for_models(model_cohort: str) -> str:
-    """Model per cohort: CHD_top, Myocardio_top, Combined_top. Legacy base/enhanced resolve to Combined_top if missing."""
+    """Model per cohort: CHD_top, Myocardio_top, Combined_top, or CHD_wisotzkey etc. Legacy base/enhanced resolve to Combined_top if missing."""
     if model_cohort in ("Combined_base", "Combined_enhanced"):
         top_path = Path(MODEL_BASE_PATH) / "Combined_top"
         if top_path.exists():
@@ -528,7 +543,11 @@ def load_model_metrics(cohort: str) -> Dict[str, Any]:
     Load model metrics from best_model.txt in the container (or S3 if configured).
     Returns dict with best_model, c_index, auc, au_prc, recall, metrics_text, s3_url.
     """
-    model_cohort = cohort if cohort.endswith("_top") else f"{cohort}_top"
+    if cohort.endswith("_top") or cohort.endswith("_wisotzkey"):
+        model_cohort = cohort
+    else:
+        variant = _get_deployed_variant(cohort)
+        model_cohort = f"{cohort}_{variant}"
     model_cohort = _resolve_model_cohort_for_models(model_cohort)
     out = {
         "best_model": None,
@@ -802,19 +821,21 @@ def predict_risk_survival(
     if not MODEL_LIBS_AVAILABLE:
         raise RuntimeError("Model libraries not available")
     
-    # Model per cohort: use {cohort}_top (e.g. CHD_top, Combined_top)
-    if cohort.endswith('_top'):
+    # Model per cohort: use best of top vs wisotzkey (from {cohort}_deployed_variant.txt, set by compare_top_vs_wisotzkey.py --set-deployed)
+    if cohort.endswith('_top') or cohort.endswith('_wisotzkey'):
         model_cohort = cohort
-        logger.info(f"Using {model_cohort} model (top causal features)")
+        logger.info(f"Using {model_cohort} model (variant explicit)")
     elif cohort.endswith('_base') or cohort.endswith('_enhanced'):
         model_cohort = _resolve_model_cohort_for_models(cohort)
         logger.info(f"Using {model_cohort} model (legacy variant requested)")
     elif cohort in ("CHD", "Myocardio", "Combined"):
-        model_cohort = f"{cohort}_top"
-        logger.info(f"Using {model_cohort} model for cohort {cohort}")
+        variant = _get_deployed_variant(cohort)
+        model_cohort = f"{cohort}_{variant}"
+        logger.info(f"Using {model_cohort} model for cohort {cohort} (deployed variant: {variant})")
     else:
-        model_cohort = f"{cohort}_top"
-        logger.info(f"Using {model_cohort} model for cohort {cohort} (default: top)")
+        variant = _get_deployed_variant(cohort)
+        model_cohort = f"{cohort}_{variant}"
+        logger.info(f"Using {model_cohort} model for cohort {cohort} (deployed variant: {variant})")
     
     # Prepare features (create derived variables)
     prepared_features = prepare_features_for_inference(features)
@@ -1054,12 +1075,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 def handle_model_metrics(event: Dict[str, Any]) -> Dict[str, Any]:
     """
     GET /model-metrics - Returns deployed model metrics (from best_model.txt in container)
-    for all cohorts. Standard metrics: C-index, Recall, AUC, AU-PRC.
+    for all cohorts. Includes which variant (top/wisotzkey) was chosen and best algorithm,
+    plus all standard metrics: C-index, Recall, AUC, AU-PRC.
     """
     by_cohort = {}
     for cohort in AVAILABLE_COHORTS:
+        deployed_variant = _get_deployed_variant(cohort)
         m = load_model_metrics(cohort)
         by_cohort[cohort] = {
+            "deployed_variant": deployed_variant,
             "best_model": m.get("best_model"),
             "c_index": m.get("c_index"),
             "c_index_ci": m.get("c_index_ci"),
@@ -1071,6 +1095,7 @@ def handle_model_metrics(event: Dict[str, Any]) -> Dict[str, Any]:
     default = by_cohort.get("Combined", {})
     body = {
         "best_model": default.get("best_model"),
+        "deployed_variant": default.get("deployed_variant"),
         "c_index": default.get("c_index"),
         "c_index_ci": default.get("c_index_ci"),
         "recall": default.get("recall"),

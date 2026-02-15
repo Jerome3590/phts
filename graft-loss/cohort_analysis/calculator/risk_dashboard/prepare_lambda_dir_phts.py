@@ -52,18 +52,17 @@ def prepare_lambda_directory():
     print(f"Lambda directory: {LAMBDA_DIR}")
     print()
     
-    # Copy models for each cohort (CHD_top, Myocardio_top, Combined_top)
+    # Copy models for each cohort: both _top and _wisotzkey (deployed variant chosen by C-index/AU-PRC in Lambda)
     print("Copying models...")
     models_copied = 0
     for cohort in COHORTS:
         variant_dirs = [
             (MODELS_DIR / f"{cohort}_top", lambda_models_dir / f"{cohort}_top"),
+            (MODELS_DIR / f"{cohort}_wisotzkey", lambda_models_dir / f"{cohort}_wisotzkey"),
         ]
-        
         for cohort_models_dir, cohort_lambda_dir in variant_dirs:
             if not cohort_models_dir.exists():
                 continue
-            
             cohort_lambda_dir.mkdir(parents=True, exist_ok=True)
             
             # Copy model files
@@ -91,6 +90,18 @@ def prepare_lambda_directory():
                 variant_name = cohort_lambda_dir.name
                 print(f"  [OK] {variant_name}: {files_copied} files copied")
                 models_copied += files_copied
+
+        # Deployed variant (best of top vs wisotzkey by C-index then AU-PRC)
+        deployed_file = MODELS_DIR / f"{cohort}_deployed_variant.txt"
+        if deployed_file.exists():
+            variant = deployed_file.read_text().strip().lower()
+            if variant not in ("top", "wisotzkey"):
+                variant = "top"
+        else:
+            variant = "top"
+        lambda_deployed = lambda_models_dir / f"{cohort}_deployed_variant.txt"
+        lambda_deployed.write_text(variant)
+        print(f"  [OK] {cohort}: deployed_variant = {variant}")
     
     if models_copied == 0:
         print(f"  [WARNING] No model files found for any cohort")

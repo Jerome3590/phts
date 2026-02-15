@@ -7,9 +7,14 @@ Reads MC-CV metrics and best_model.txt from:
   outputs/models/{cohort}_wisotzkey/
 and prints a side-by-side comparison (C-index, Recall, AUC, AU-PRC, best model type).
 
+Best-model-chosen logic: per cohort, the deployed model is the variant (top or wisotzkey)
+with higher C-index (then AU-PRC tiebreaker). Use --set-deployed to write
+{cohort}_deployed_variant.txt so Lambda/dashboard use the chosen variant.
+
 Usage:
   python compare_top_vs_wisotzkey.py
   python compare_top_vs_wisotzkey.py --output comparison.csv
+  python compare_top_vs_wisotzkey.py --set-deployed   # write deployed_variant per cohort
 """
 
 import argparse
@@ -75,6 +80,10 @@ def main():
     parser.add_argument(
         "--models-dir", type=str, default=None,
         help=f"Override models directory (default: {MODELS_DIR})",
+    )
+    parser.add_argument(
+        "--set-deployed", action="store_true",
+        help="Write {cohort}_deployed_variant.txt (top or wisotzkey) per cohort for deployment",
     )
     args = parser.parse_args()
     models_dir = Path(args.models_dir) if args.models_dir else MODELS_DIR
@@ -148,6 +157,37 @@ def main():
         out_path = Path(args.output)
         df.to_csv(out_path, index=False)
         print(f"Wrote {out_path}")
+
+    if args.set_deployed:
+        for cohort in COHORTS:
+            top_dir = models_dir / f"{cohort}_top"
+            wis_dir = models_dir / f"{cohort}_wisotzkey"
+            top_metrics = load_mc_cv_metrics(top_dir) if top_dir.exists() else None
+            wis_metrics = load_mc_cv_metrics(wis_dir) if wis_dir.exists() else None
+            top_best = get_best_row_metrics(top_metrics) if top_metrics is not None else {}
+            wis_best = get_best_row_metrics(wis_metrics) if wis_metrics is not None else {}
+            top_c = top_best.get("C_Index_Mean")
+            wis_c = wis_best.get("C_Index_Mean")
+            top_c = float(top_c) if top_c is not None and pd.notna(top_c) else None
+            wis_c = float(wis_c) if wis_c is not None and pd.notna(wis_c) else None
+            if top_c is None and wis_c is None:
+                variant = "top"
+                print(f"  [WARN] {cohort}: no metrics for top or wisotzkey; defaulting to top")
+            elif wis_c is None or (top_c is not None and top_c >= wis_c):
+                if top_c is not None and wis_c is not None and top_c == wis_c:
+                    top_au = top_best.get("AU_PRC_Mean")
+                    wis_au = wis_best.get("AU_PRC_Mean")
+                    if wis_au is not None and (top_au is None or (wis_au is not None and float(wis_au) > float(top_au))):
+                        variant = "wisotzkey"
+                    else:
+                        variant = "top"
+                else:
+                    variant = "top"
+            else:
+                variant = "wisotzkey"
+            out_file = models_dir / f"{cohort}_deployed_variant.txt"
+            out_file.write_text(variant.strip())
+            print(f"  [OK] {cohort}: deployed variant = {variant} -> {out_file.name}")
 
     return 0
 

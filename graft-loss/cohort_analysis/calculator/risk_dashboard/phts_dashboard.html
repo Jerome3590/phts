@@ -672,7 +672,7 @@
             <tr style="border-bottom: 1px solid #e2e8f0;"><td style="padding: 0.75rem;"><strong>AU-PRC</strong></td><td style="padding: 0.75rem;">Area under the precision-recall curve (tiebreaker for best model selection).</td></tr>
           </tbody>
         </table>
-        <p style="font-size: 0.9rem; color: #64748b;">Deployed values (loaded from the API). All model performance metrics (C-index, Recall, AUC, AU-PRC) per cohort:</p>
+        <p style="font-size: 0.9rem; color: #64748b;">Deployed values (loaded from the API). Best model chosen (algorithm + variant: Top or Wisotzkey) and all metrics (C-index, Recall, AUC, AU-PRC) per cohort:</p>
         <div id="doc-model-metrics" style="margin: 1rem 0; padding: 1rem; background: #f8fafc; border-radius: 0.5rem; min-height: 2rem;">
           <span style="color: #64748b;">Loading metrics…</span>
         </div>
@@ -1153,13 +1153,16 @@
     }
     function renderOneCohortMetrics(cohortName, m) {
       const best = m.best_model != null ? m.best_model : '—';
+      const variant = (m.deployed_variant != null && m.deployed_variant !== '') ? String(m.deployed_variant) : 'top';
+      const variantLabel = variant === 'wisotzkey' ? 'Wisotzkey' : 'Top';
+      const bestChosen = best !== '—' ? (escapeHtml(best) + ' <span style="color:#64748b;">(' + escapeHtml(variantLabel) + ')</span>') : '—';
       const cIdx = fmtMetric(m.c_index);
       const cIdxCi = m.c_index_ci || '';
       const recall = fmtMetric(m.recall);
       const auc = fmtMetric(m.auc);
       const auPrc = fmtMetric(m.au_prc);
       let html = '<table style="width: auto; border-collapse: collapse; font-size: 0.9rem;">';
-      html += '<tr><td style="padding: 0.25rem 1rem 0.25rem 0;"><strong>Best model</strong></td><td>' + escapeHtml(best) + '</td></tr>';
+      html += '<tr><td style="padding: 0.25rem 1rem 0.25rem 0;"><strong>Best model chosen</strong></td><td>' + bestChosen + '</td></tr>';
       html += '<tr><td style="padding: 0.25rem 1rem 0.25rem 0;"><strong>C-index</strong></td><td>' + cIdx + (cIdxCi ? ' (' + escapeHtml(cIdxCi) + ')' : '') + '</td></tr>';
       html += '<tr><td style="padding: 0.25rem 1rem 0.25rem 0;"><strong>Recall</strong></td><td>' + recall + '</td></tr>';
       html += '<tr><td style="padding: 0.25rem 1rem 0.25rem 0;"><strong>AUC</strong></td><td>' + auc + '</td></tr>';
@@ -1180,6 +1183,7 @@
       }
       if (!html) {
         html = renderOneCohortMetrics('Combined', {
+          deployed_variant: data.deployed_variant != null ? data.deployed_variant : 'top',
           best_model: data.best_model,
           c_index: data.c_index,
           c_index_ci: data.c_index_ci,
