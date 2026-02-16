@@ -5,9 +5,13 @@ Prepare Lambda directory for PHTS Docker container deployment.
 This script:
 1. Creates lambda_dir_phts/ directory structure
 2. Copies models from outputs/models/
-3. Copies dashboard data from outputs/shap_ffa/
+3. Copies dashboard data from outputs/shap_ffa/ (including Reverse Feature Importance artifacts)
 4. Creates feature schemas
 5. Validates all files are present
+
+Dashboard artifacts copied per cohort/variant (when present):
+- dashboard_data.json, top_causal_factors.csv
+- missed_predictions_drivers.json, missed_predictions_feature_profile.csv/.parquet (Reverse FI)
 """
 
 import csv
@@ -189,7 +193,18 @@ def prepare_lambda_directory():
             if causal_factors_file.exists():
                 shutil.copy2(causal_factors_file, cohort_lambda_dir / "top_causal_factors.csv")
                 data_copied += 1
-    
+            # Reverse Feature Importance artifacts (same build/deploy list as run_shap_ffa_reverse_fi_s3.ipynb)
+            for artifact in (
+                "missed_predictions_drivers.json",
+                "missed_predictions_feature_profile.csv",
+                "missed_predictions_feature_profile.parquet",
+            ):
+                src = cohort_dashboard_dir / artifact
+                if src.exists():
+                    shutil.copy2(src, cohort_lambda_dir / artifact)
+                    data_copied += 1
+                    print(f"  [OK] {variant_name}: {artifact} copied")
+
     print(f"Total dashboard data files copied: {data_copied}")
     print()
     

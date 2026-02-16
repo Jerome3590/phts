@@ -1515,6 +1515,188 @@ def run_calculator_shap_analysis(cohort: str, model_variant: Optional[str] = Non
     return cb_shap_map, xgb_shap_map, cb_shap_df, xgb_shap_df
 
 
+def derive_event_at_horizon(df: pd.DataFrame, horizon_days: int = 365) -> pd.Series:
+    """
+    Derive binary event indicator at a fixed horizon from survival columns.
+    Returns a Series (index = df.index) with 1 = event within horizon, 0 = no event / censored.
+    """
+    if "time" in df.columns and "status" in df.columns:
+        return ((df["time"] <= horizon_days) & (df["status"] == 1)).astype(int)
+    if "ev_type" in df.columns:
+        return (df["ev_type"] == 1).astype(int)
+    if "graft_loss" in df.columns:
+        return df["graft_loss"].fillna(0).astype(int)
+    if "int_graft_loss" in df.columns:
+        return df["int_graft_loss"].fillna(0).astype(int)
+    return pd.Series(0, index=df.index)
+
+
+def compute_missed_drivers(
+    risk_scores: np.ndarray,
+    event_series: pd.Series,
+    instance_explanations: List[Any],
+    feature_names: List[str],
+) -> Dict[str, Any]:
+    """
+    Compute feature support for over-prediction (high risk, no event) and
+    under-prediction (low risk, event) subsets. Aligns with Reverse Feature Importance (README_reverse_feature_importance):
+    support(f) = proportion of instances in subset whose explanation includes f.
+    """
+    from collections import Counter
+    event = event_series.values if hasattr(event_series, "values") else np.asarray(event_series)
+    n = len(risk_scores)
+    if n == 0 or len(event) != n or len(instance_explanations) != n:
+        return {}
+    median_risk = float(np.median(risk_scores))
+    over_mask = (risk_scores >= median_risk) & (event == 0)
+    under_mask = (risk_scores < median_risk) & (event == 1)
+    correct_mask = ~over_mask & ~under_mask
+    n_over, n_under, n_correct = int(over_mask.sum()), int(under_mask.sum()), int(correct_mask.sum())
+
+    def support_for_subset(indices: np.ndarray) -> Dict[str, float]:
+        if len(indices) == 0:
+            return {f: 0.0 for f in feature_names}
+        counts = Counter()
+        for i in indices:
+            exp = instance_explanations[i]
+            if isinstance(exp, set):
+                for f in exp:
+                    if f in feature_names:
+                        counts[f] += 1
+            elif isinstance(exp, (list, tuple)):
+                for f in exp:
+                    if f in feature_names:
+                        counts[f] += 1
+        return {f: counts[f] / len(indices) for f in feature_names}
+
+    over_idx = np.where(over_mask)[0]
+    under_idx = np.where(under_mask)[0]
+    correct_idx = np.where(correct_mask)[0]
+    support_over = support_for_subset(over_idx)
+    support_under = support_for_subset(under_idx)
+    support_correct = support_for_subset(correct_idx)
+
+    over_list = sorted(
+        [{"feature": f, "support": round(support_over[f], 4)} for f in feature_names],
+        key=lambda x: -x["support"],
+    )
+    under_list = sorted(
+        [{"feature": f, "support": round(support_under[f], 4)} for f in feature_names],
+        key=lambda x: -x["support"],
+    )
+    correct_list = sorted(
+        [{"feature": f, "support": round(support_correct[f], 4)} for f in feature_names],
+        key=lambda x: -x["support"],
+    )
+    return {
+        "over_prediction": over_list,
+        "under_prediction": under_list,
+        "correct": correct_list,
+        "n_over_prediction": n_over,
+        "n_under_prediction": n_under,
+        "n_correct": n_correct,
+        "median_risk_threshold": round(float(median_risk), 6),
+    }
+
+
+def add_binomial_ci(
+    ir: Dict[str, float],
+    n: int,
+    z: float = 1.96,
+) -> Tuple[Dict[str, float], Dict[str, float]]:
+    """
+    Large-sample 95% binomial CI for IR: p ± z * sqrt(p*(1-p)/n).
+    Returns (ci_lower, ci_upper) keyed by feature.
+    """
+    from math import sqrt
+    ci_lower, ci_upper = {}, {}
+    for f, p in ir.items():
+        if n <= 0:
+            ci_lower[f], ci_upper[f] = 0.0, 1.0
+            continue
+        se = sqrt(p * (1 - p) / n)
+        ci_lower[f] = max(0.0, p - z * se)
+        ci_upper[f] = min(1.0, p + z * se)
+    return ci_lower, ci_upper
+
+
+def build_feature_profile(
+    feature_names: List[str],
+    support_over: Dict[str, float],
+    support_under: Dict[str, float],
+    support_correct: Dict[str, float],
+    ir_over_remove: Dict[str, float],
+    ir_under_add: Dict[str, float],
+    ir_correct_remove: Dict[str, float],
+    ir_correct_add: Dict[str, float],
+    n_over: int = 0,
+    n_under: int = 0,
+    n_correct: int = 0,
+    add_ci: bool = True,
+    z: float = 1.96,
+) -> pd.DataFrame:
+    """
+    Build feature causal profile DataFrame (Reverse Feature Importance).
+    Columns: feature, support_over, support_under, support_correct,
+    IR_-_over (hallucination risk), IR_+_under (missing-signal risk),
+    IR_-_correct, IR_+_correct, and optional CI columns.
+    """
+    rows = []
+    for f in feature_names:
+        row = {
+            "feature": f,
+            "support_over": support_over.get(f, 0.0),
+            "support_under": support_under.get(f, 0.0),
+            "support_correct": support_correct.get(f, 0.0),
+            "IR_-_over": ir_over_remove.get(f, 0.0),
+            "IR_+_under": ir_under_add.get(f, 0.0),
+            "IR_-_correct": ir_correct_remove.get(f, 0.0),
+            "IR_+_correct": ir_correct_add.get(f, 0.0),
+        }
+        rows.append(row)
+    df = pd.DataFrame(rows)
+    if add_ci and n_over > 0:
+        ci_lo, ci_hi = add_binomial_ci(ir_over_remove, n_over, z)
+        df["IR_-_over_ci_lower"] = df["feature"].map(ci_lo)
+        df["IR_-_over_ci_upper"] = df["feature"].map(ci_hi)
+    if add_ci and n_under > 0:
+        ci_lo, ci_hi = add_binomial_ci(ir_under_add, n_under, z)
+        df["IR_+_under_ci_lower"] = df["feature"].map(ci_lo)
+        df["IR_+_under_ci_upper"] = df["feature"].map(ci_hi)
+    return df
+
+
+def compute_ir_for_subset(
+    indices: np.ndarray,
+    feature_names: List[str],
+    instance_explanations: List[Any],
+    mode: str = "remove",
+    intervene_fn: Optional[Any] = None,
+) -> Dict[str, float]:
+    """
+    Intervention Rate (IR) for a subset: proportion of instances where toggling
+    the feature (add/remove) changes the explanation (Reverse Feature Importance).
+
+    intervene_fn(instance_idx, feature, mode) -> bool: True if explanation changes.
+    If None, uses stub (returns False) until FFA intervention is integrated.
+    """
+    from collections import Counter
+    n = len(indices)
+    counts = Counter({f: 0 for f in feature_names})
+    if n == 0:
+        return {f: 0.0 for f in feature_names}
+    for idx in indices:
+        for f in feature_names:
+            if intervene_fn is not None:
+                changed = intervene_fn(int(idx), f, mode=mode)
+            else:
+                # Stub: real IR requires FFA intervention (recompute explanation with feature toggled)
+                changed = False
+            if changed:
+                counts[f] += 1
+    return {f: counts[f] / n for f in feature_names}
+
+
 def run_ffa_with_shap(
     cohort: str,
     xgboost_model_json: Path,
@@ -1523,7 +1705,8 @@ def run_ffa_with_shap(
     top_k: int = 10,
     shap_values_df: Optional[pd.DataFrame] = None,
     X_test: Optional[pd.DataFrame] = None,
-    use_xgboost_only: bool = False
+    use_xgboost_only: bool = False,
+    event_series: Optional[pd.Series] = None,
 ) -> Tuple[pd.DataFrame, Dict[str, Dict[int, List[int]]]]:
     """
     Run FFA analysis using:
@@ -1534,6 +1717,7 @@ def run_ffa_with_shap(
     Args:
         X_test: Test data DataFrame to apply rules to (required for accurate rule frequency counting)
         use_xgboost_only: If True, uses only XGBoost SHAP (simplified pipeline)
+        event_series: Optional binary event indicator (same length as X_test) for missed-predictions analysis
 
     Note: Rules are extracted from the model JSON, but rule frequencies are counted
     based on how often rules actually fire on test data instances, not just from
@@ -1778,9 +1962,10 @@ def run_ffa_with_shap(
                 logger.warning(f"Could not load XGBoost model for threshold calculation: {e}")
                 logger.info("Proceeding without threshold-based filtering (counting all rule firings)")
 
-            # Count rule firings on test data
+            # Count rule firings on test data; optionally collect per-instance explanations for missed-predictions analysis
             rule_firing_counts = defaultdict(int)  # Count how many times each rule fires
             feature_rule_firing_counts = defaultdict(int)  # Count feature appearances in firing rules
+            instance_explanations = []  # List[Set[str]]: features in firing rules per instance (for missed-predictions FFA)
 
             logger.info(f"Checking rule satisfaction on {len(X_test_array)} test instances...")
             for instance_idx, x_instance in enumerate(X_test_array):
@@ -1901,8 +2086,10 @@ def run_ffa_with_shap(
                     instance_risk = risk_scores[instance_idx]
                     if instance_risk < risk_threshold:
                         # Skip low-risk instances - only count rules firing for high-risk instances
+                        instance_explanations.append(set())  # no features counted for this instance
                         continue
                 
+                instance_feature_set = set()
                 for rule_idx in satisfied_rules:
                     rule_firing_counts[rule_idx] += 1
                     # Get features in this rule
@@ -1916,6 +2103,12 @@ def run_ffa_with_shap(
                                 else:
                                     feat_name = f"feature_{feat_idx}"
                                 feature_rule_firing_counts[feat_name] += 1
+                                instance_feature_set.add(feat_name)
+                instance_explanations.append(instance_feature_set)
+
+            # If we skipped some instances (risk threshold), pad instance_explanations to match len(X_test_array)
+            while len(instance_explanations) < len(X_test_array):
+                instance_explanations.append(set())
 
             logger.info(f"Rules fired on {len(rule_firing_counts)} unique rules out of {len(explainer.rule_clauses)} total rules")
             logger.info(f"Total rule firings: {sum(rule_firing_counts.values())}")
@@ -1931,6 +2124,70 @@ def run_ffa_with_shap(
             # Use test-based rule firing counts instead of rule definition counts
             rule_feature_counts = feature_rule_firing_counts
             logger.info(f"Using rule frequencies from test set: {len(rule_feature_counts)} features with rule firings")
+
+            # Missed-predictions FFA: which features drive over- vs under-prediction (when event_series and risk_scores available)
+            if event_series is not None and risk_scores is not None and len(instance_explanations) == len(risk_scores):
+                try:
+                    # Align event to same row order as X_test (and thus X_test_array)
+                    event_aligned = event_series.reindex(X_test.index).fillna(0).astype(int)
+                    feature_names_list = list(explainer.feature_names.values()) if (hasattr(explainer, "feature_names") and explainer.feature_names) else list(rule_feature_counts.keys())
+                    missed_drivers = compute_missed_drivers(
+                        np.asarray(risk_scores),
+                        event_aligned,
+                        instance_explanations,
+                        feature_names_list,
+                    )
+                    if missed_drivers:
+                        out_path = output_dir / "missed_predictions_drivers.json"
+                        with open(out_path, "w", encoding="utf-8") as f:
+                            json.dump(missed_drivers, f, indent=2)
+                        logger.info(f"Saved missed-predictions drivers to {out_path} (n_over={missed_drivers.get('n_over_prediction', 0)}, n_under={missed_drivers.get('n_under_prediction', 0)})")
+                        # Feature causal profile (support + IR) per Reverse Feature Importance
+                        try:
+                            median_risk = missed_drivers.get("median_risk_threshold", float(np.median(np.asarray(risk_scores))))
+                            event_vals = event_aligned.values
+                            risk_arr = np.asarray(risk_scores)
+                            over_idx = np.where((risk_arr >= median_risk) & (event_vals == 0))[0]
+                            under_idx = np.where((risk_arr < median_risk) & (event_vals == 1))[0]
+                            correct_idx = np.where(
+                                ~((risk_arr >= median_risk) & (event_vals == 0))
+                                & ~((risk_arr < median_risk) & (event_vals == 1))
+                            )[0]
+                            support_over = {x["feature"]: x["support"] for x in missed_drivers["over_prediction"]}
+                            support_under = {x["feature"]: x["support"] for x in missed_drivers["under_prediction"]}
+                            support_correct = {x["feature"]: x["support"] for x in missed_drivers["correct"]}
+                            n_over = missed_drivers.get("n_over_prediction", len(over_idx))
+                            n_under = missed_drivers.get("n_under_prediction", len(under_idx))
+                            n_correct = missed_drivers.get("n_correct", len(correct_idx))
+                            ir_over_remove = compute_ir_for_subset(over_idx, feature_names_list, instance_explanations, mode="remove")
+                            ir_under_add = compute_ir_for_subset(under_idx, feature_names_list, instance_explanations, mode="add")
+                            ir_correct_remove = compute_ir_for_subset(correct_idx, feature_names_list, instance_explanations, mode="remove")
+                            ir_correct_add = compute_ir_for_subset(correct_idx, feature_names_list, instance_explanations, mode="add")
+                            feature_profile = build_feature_profile(
+                                feature_names_list,
+                                support_over,
+                                support_under,
+                                support_correct,
+                                ir_over_remove,
+                                ir_under_add,
+                                ir_correct_remove,
+                                ir_correct_add,
+                                n_over=n_over,
+                                n_under=n_under,
+                                n_correct=n_correct,
+                                add_ci=True,
+                            )
+                            profile_csv = output_dir / "missed_predictions_feature_profile.csv"
+                            feature_profile.to_csv(profile_csv, index=False)
+                            try:
+                                _to_parquet(feature_profile, output_dir / "missed_predictions_feature_profile.parquet")
+                            except Exception:
+                                pass
+                            logger.info(f"Saved feature profile (support + IR) to {profile_csv}")
+                        except Exception as e_profile:
+                            logger.warning(f"Could not build missed-predictions feature profile: {e_profile}")
+                except Exception as e:
+                    logger.warning(f"Could not compute missed-predictions drivers: {e}")
         else:
             logger.warning("X_test not provided - using rule definition counts instead of test set rule firings")
             logger.warning("For accurate FFA analysis, provide test data to count actual rule firings")
@@ -2927,6 +3184,7 @@ def main():
 
                 # Store X_test for FFA analysis (test set data)
                 X_test_for_ffa = X_test.copy()
+                event_series_for_ffa = derive_event_at_horizon(df_clean).reindex(X_test_for_ffa.index).fillna(0).astype(int)
                 logger.info(f"Stored test set for FFA analysis: {len(X_test_for_ffa)} instances")
 
             except Exception as e:

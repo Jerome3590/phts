@@ -17,7 +17,7 @@ This guide provides step-by-step instructions for deploying the PHTS Risk Calcul
 1. **AWS CLI** configured with appropriate permissions
 2. **Docker** installed and running
 3. **Top-features models trained** (one per cohort): `python train_python_models.py --cohort CHD --top_features_only` (repeat for Myocardio, Combined) → `calculator/outputs/models/{cohort}_top/`
-4. **Dashboard data generated** per cohort: `run_shap_ffa_workflow.py --cohort CHD --model-variant top` (repeat for Myocardio, Combined) → `calculator/outputs/shap_ffa/{cohort}_top/` (each has cohort-specific sec_dx options)
+4. **Dashboard data + FFA + Reverse FI** generated per cohort (see **End-to-end** below): `outputs/shap_ffa/{cohort}_top/` includes `dashboard_data.json`, causal factors, and Reverse Feature Importance (`missed_predictions_drivers.json`, `missed_predictions_feature_profile.csv`).
 5. **Risk distributions computed** in `calculator/outputs/risk_distributions/`
 
 ### Docker Setup
@@ -88,6 +88,32 @@ aws s3 cp phts_readme.html s3://YOUR_BUCKET/YOUR_PREFIX/phts_readme.html --conte
 curl "https://YOUR_API_ID.execute-api.us-east-1.amazonaws.com/prod/metadata?cohort=Combined"
 ```
 
+## End-to-end: FFA + Reverse FI + Lambda deployment
+
+After models are trained, a single flow runs **SHAP + FFA + Reverse Feature Importance**, prepares the Lambda directory (including Reverse FI artifacts), and deploys Lambda + API + S3:
+
+```bash
+cd graft-loss/cohort_analysis/calculator
+
+# Full E2E (set deployed variant → run FFA+Reverse FI → prepare Lambda dir → deploy)
+./run_e2e_ffa_lambda_deploy.sh
+
+# Or Python (cross-platform; step 4 still needs bash on Windows for deploy_complete.sh)
+python run_e2e_ffa_lambda_deploy.py
+```
+
+**Options:**
+- `--no-deploy` — Stop after `prepare_lambda_dir_phts.py` (no Docker/Lambda/S3). Then run `cd risk_dashboard && ./deploy_complete.sh` when ready.
+- `--no-ffa` — Skip SHAP/FFA+Reverse FI; use existing `outputs/shap_ffa/` (e.g. after re-training only).
+
+**Steps performed:**
+1. **Set deployed variant** — `compare_top_vs_wisotzkey.py --set-deployed` (best of top vs Wisotzkey per cohort).
+2. **SHAP + FFA + Reverse FI** — `run_shap_ffa_reverse_fi_s3.py --no-upload` (writes to `outputs/shap_ffa/{cohort}_top/`, including `missed_predictions_drivers.json`, `missed_predictions_feature_profile.csv`).
+3. **Prepare Lambda directory** — `prepare_lambda_dir_phts.py` (copies models, dashboard_data, Reverse FI artifacts into `risk_dashboard/lambda_dir_phts/`).
+4. **Deploy** — `risk_dashboard/deploy_complete.sh` (Docker build → push ECR → update Lambda → API Gateway → inject API URL → upload HTML to S3).
+
+The Lambda container and dashboard therefore include **FFA causal factors and Reverse Feature Importance** artifacts; the API/dashboard can be extended later to expose them.
+
 ## Deployment Workflow
 
 ### Step 1: Prepare Lambda Directory
@@ -103,13 +129,14 @@ python prepare_lambda_dir_phts.py
 ```
 lambda_dir_phts/
 ├── models/
-│   ├── CHD/ (catboost_model.cbm, xgboost_model.ubj, best_model.txt, ...)
-│   ├── Combined/
-│   └── Myocardio/
+│   ├── CHD_top/, Myocardio_top/, Combined_top/ (and other variants)
+│   │   (catboost_model.cbm, xgboost_model.ubj, best_model.txt, final_model_json/, ...)
+│   └── {cohort}_deployed_variant.txt
+├── model_features/
+│   └── {variant}/ (feature_metadata.json)
 ├── dashboard_data/
-│   ├── CHD/ (dashboard_data.json, top_causal_factors.csv)
-│   ├── Combined/
-│   └── Myocardio/
+│   └── {variant}/ (dashboard_data.json, top_causal_factors.csv,
+│       missed_predictions_drivers.json, missed_predictions_feature_profile.csv/.parquet)
 └── risk_distributions/
     └── risk_distributions.json
 ```
