@@ -56,17 +56,25 @@ def _col(df: pd.DataFrame, *candidates: str) -> Optional[pd.Series]:
     return None
 
 
+def _normalize_prim_dx(ser: pd.Series) -> pd.Series:
+    """Normalize PRIM_DX to uppercase string for robust comparison (handles bytes, whitespace)."""
+    s = ser.astype(str).str.strip()
+    s = s.str.replace(r"^b['\"]|['\"]$", "", regex=True)
+    return s.str.upper()
+
+
 def _filter_cohort_prim_dx(df: pd.DataFrame, cohort: str) -> pd.DataFrame:
-    """Filter to one cohort by primary diagnosis. Same logic as R filter_cohort_prim_dx."""
+    """Filter to one cohort by primary diagnosis. Case-insensitive, normalizes string/bytes."""
     prim_dx = _col(df, "PRIM_DX", "prim_dx")
     if prim_dx is None:
         return df
+    prim_str = _normalize_prim_dx(prim_dx)
     if cohort == "CHD":
-        return df[prim_dx == "Congenital HD"].copy()
+        return df.loc[prim_str == "CONGENITAL HD"].copy()
     if cohort == "Myocardio":
-        return df[prim_dx.isin(["Cardiomyopathy", "Myocarditis"])].copy()
+        return df.loc[prim_str.isin(["CARDIOMYOPATHY", "MYOCARDITIS"])].copy()
     if cohort == "Combined":
-        return df[prim_dx.isin(["Congenital HD", "Cardiomyopathy", "Myocarditis"])].copy()
+        return df.loc[prim_str.isin(["CONGENITAL HD", "CARDIOMYOPATHY", "MYOCARDITIS"])].copy()
     return df
 
 
@@ -121,7 +129,8 @@ def make_wisotzkey_data(df: pd.DataFrame, cohort: str = "Combined") -> pd.DataFr
     if outcome is not None:
         out["outcome"] = outcome
 
-    out["CHD"] = (1 * (prim_dx == "Congenital HD")) if prim_dx is not None else 0
+    prim_upper = _normalize_prim_dx(prim_dx) if prim_dx is not None else pd.Series(0, index=df.index)
+    out["CHD"] = (1 * (prim_upper == "CONGENITAL HD")) if prim_dx is not None else 0
     out["TXMCSD"] = txmcsd.fillna(0) if txmcsd is not None else 0
     out["CHD_SV"] = chd_sv.fillna(0) if chd_sv is not None else 0
     out["HXSURG"] = hxsurg.fillna(0) if hxsurg is not None else 0

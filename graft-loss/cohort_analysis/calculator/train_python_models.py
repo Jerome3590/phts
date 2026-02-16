@@ -1050,6 +1050,17 @@ def train_models_for_cohort(
         from wisotzkey_data import load_wisotzkey_data_for_training, WISOTZKEY_FEATURES
         logger.info("Loading Wisotzkey-vars data (same SAS dataset as calculator pipeline)...")
         df = load_wisotzkey_data_for_training(cohort)
+        if df.empty:
+            raise ValueError(
+                f"Wisotzkey cohort '{cohort}' has 0 rows after loading. "
+                "Check PRIM_DX in SAS data (expected values: Congenital HD, Cardiomyopathy, Myocarditis; filter is case-insensitive)."
+            )
+        if "time" not in df.columns or "status" not in df.columns:
+            raise ValueError(
+                f"Wisotzkey data for cohort '{cohort}' missing 'time' or 'status' columns. "
+                f"Columns found: {sorted(df.columns)}. "
+                "Ensure SAS has int_dead, int_graft_loss, dtx_patient, graft_loss (or outcome_int_graft_loss, outcome_graft_loss)."
+            )
         df_clean = df[
             df["time"].notna()
             & df["status"].notna()
