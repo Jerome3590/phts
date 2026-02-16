@@ -433,7 +433,7 @@
       <button class="tab active" onclick="switchTab('risk-calculator')">Risk Calculator</button>
       <button class="tab" onclick="switchTab('causal-analysis')">Top Causal Model Features</button>
       <button class="tab" onclick="switchTab('aggregated-importance')">Aggregated Feature Importance</button>
-      <button class="tab" onclick="switchTab('model-improvement')">Model Improvement</button>
+      <button class="tab" onclick="switchTab('model-improvement')">Reverse Feature Importance</button>
       <button class="tab" onclick="switchTab('documentation')">Documentation</button>
     </div>
     
@@ -628,20 +628,27 @@
     </div>
     <!-- End Aggregated Feature Importance Tab -->
     
-    <!-- Model Improvement Tab -->
+    <!-- Reverse Feature Importance Tab (per-model + summary across models) -->
     <div id="model-improvement-tab" class="tab-content">
-      <p class="subtitle" style="margin-bottom: 1rem;">See what the model may have missed: missing data and values that went against typical risk-increasing relationships.</p>
+      <p class="subtitle" style="margin-bottom: 1rem;">Reverse Feature Importance: what drives errors (over/under prediction). Results per model; summary across all models below.</p>
       <div class="control-group" style="margin-bottom: 1.5rem;">
-        <p id="model-improvement-hint" style="color: #64748b; margin: 0 0 1rem 0;">Calculate risk in the Risk Calculator tab first; then this tab will show a breakdown of missing or protective data elements.</p>
-        <h3 style="margin-top: 0;">Missing or default data</h3>
+        <h3 style="margin-top: 0;">Summary across models</h3>
+        <p style="color: #475569; font-size: 0.9rem;">Reverse FI artifacts (missed-prediction drivers and feature profile) per deployed model. Lambda returns these from the metadata API.</p>
+        <div id="reverse-fi-summary-table" style="overflow-x: auto; margin-top: 0.5rem;"></div>
+        <p id="reverse-fi-summary-hint" style="color: #64748b; font-size: 0.875rem; margin-top: 0.5rem;">Loading…</p>
+      </div>
+      <div class="control-group" style="margin-bottom: 1.5rem;">
+        <h3>For your last risk calculation (current cohort)</h3>
+        <p id="model-improvement-hint" style="color: #64748b; margin: 0 0 1rem 0;">Calculate risk in the Risk Calculator tab first; then this section will show missing or protective data elements for that model.</p>
+        <h4 style="margin-top: 0.75rem;">Missing or default data</h4>
         <p style="color: #475569; font-size: 0.9rem;">Top causal factors that were not provided or were left at default/empty. Providing these can improve prediction.</p>
         <ul id="model-improvement-missing" class="improvement-list"></ul>
-        <h3>Values that went against typical risk direction</h3>
+        <h4>Values that went against typical risk direction</h4>
         <p style="color: #475569; font-size: 0.9rem;">Features where your value was in the &quot;protective&quot; or risk-lowering direction (e.g. no ECMO, lower donor age). The model used these as entered.</p>
         <ul id="model-improvement-against" class="improvement-list"></ul>
       </div>
     </div>
-    <!-- End Model Improvement Tab -->
+    <!-- End Reverse Feature Importance Tab -->
     
     <!-- Documentation Tab (inline) -->
     <div id="documentation-tab" class="tab-content">
@@ -686,7 +693,7 @@
           <li><strong>Risk Calculator</strong>: Enter features → risk score and top causal factors.</li>
           <li><strong>Top Causal Model Features</strong>: Importance and causal responsibility; adjust factors and see risk update in real time.</li>
           <li><strong>Aggregated Feature Importance</strong>: Mean importance across CatBoost, XGBoost, and XGBoost RF (MC-CV), per cohort.</li>
-          <li><strong>Model Improvement</strong>: After a risk calculation, see which data were missing or in a protective (risk-lowering) direction.</li>
+          <li><strong>Reverse Feature Importance</strong>: Summary of Reverse FI per model (over/under prediction, feature profile). After a risk calculation, see which data were missing or in a protective (risk-lowering) direction for that model.</li>
           <li><strong>Documentation</strong>: This reference.</li>
         </ul>
       </div>
@@ -1077,6 +1084,7 @@
           riskSecDxOneHotMap = data.sec_dx_one_hot_map || {};
           modelImprovementMetadata.causal_factors = data.causal_factors || [];
           modelImprovementMetadata.feature_display_names = data.feature_display_names || {};
+          modelImprovementMetadata.reverse_fi = data.reverse_fi || null;
           if (Object.keys(riskFeatureLevels).length === 0 && riskSecDxDropdownOptions.length === 0) {
             console.warn('Metadata has no feature_levels; using default [0,1] for ter_dx etc. Re-run SHAP/FFA and redeploy for actual levels.');
           }
@@ -1101,6 +1109,7 @@
           riskSecDxOneHotMap = data.sec_dx_one_hot_map || {};
           modelImprovementMetadata.causal_factors = data.causal_factors || [];
           modelImprovementMetadata.feature_display_names = data.feature_display_names || {};
+          modelImprovementMetadata.reverse_fi = data.reverse_fi || null;
           populateRiskExtraFeatures();
         }
       } catch (error) {
@@ -1131,7 +1140,7 @@
           tab.classList.add('active');
         } else if (tabName === 'aggregated-importance' && tabText === 'Aggregated Feature Importance') {
           tab.classList.add('active');
-        } else if (tabName === 'model-improvement' && tabText === 'Model Improvement') {
+        } else if (tabName === 'model-improvement' && (tabText === 'Model Improvement' || tabText === 'Reverse Feature Importance')) {
           tab.classList.add('active');
         } else if (tabName === 'documentation' && tabText === 'Documentation') {
           tab.classList.add('active');
@@ -1145,6 +1154,7 @@
       }
       if (tabName === 'model-improvement') {
         loadModelImprovement();
+        loadReverseFiSummary();
       }
       if (tabName === 'documentation') {
         loadDocModelMetrics();
@@ -1654,6 +1664,40 @@
       if (dir === 'lower') return num > 40;
       return false;
     }
+    async function loadReverseFiSummary() {
+      const tableEl = document.getElementById('reverse-fi-summary-table');
+      const hintEl = document.getElementById('reverse-fi-summary-hint');
+      if (!tableEl || !hintEl) return;
+      hintEl.textContent = 'Loading…';
+      tableEl.innerHTML = '';
+      try {
+        const response = await fetch(`${LAMBDA_API_URL}/metadata`, { method: 'GET', mode: 'cors' });
+        if (!response.ok) { hintEl.textContent = 'Could not load metadata.'; return; }
+        const data = await response.json();
+        const byModel = data.reverse_fi_by_model || {};
+        const modelIds = Object.keys(byModel).sort();
+        if (modelIds.length === 0) {
+          hintEl.textContent = 'No Reverse FI data per model. Run SHAP/FFA + Reverse FI for each cohort and redeploy.';
+          return;
+        }
+        let html = '<table style="width:100%; border-collapse:collapse; font-size:0.9rem;"><thead><tr style="background:#f1f5f9;"><th style="padding:0.5rem;text-align:left;border:1px solid #e2e8f0;">Model</th><th style="padding:0.5rem;text-align:right;border:1px solid #e2e8f0;">Over-pred.</th><th style="padding:0.5rem;text-align:right;border:1px solid #e2e8f0;">Under-pred.</th><th style="padding:0.5rem;text-align:right;border:1px solid #e2e8f0;">Profile rows</th></tr></thead><tbody>';
+        for (const modelId of modelIds) {
+          const r = byModel[modelId];
+          const drivers = r.drivers || {};
+          const nOver = drivers.n_over_prediction != null ? drivers.n_over_prediction : '—';
+          const nUnder = drivers.n_under_prediction != null ? drivers.n_under_prediction : '—';
+          const profile = r.feature_profile || [];
+          const nProfile = profile.length;
+          html += '<tr><td style="padding:0.5rem;border:1px solid #e2e8f0;">' + escapeHtml(modelId) + '</td><td style="padding:0.5rem;text-align:right;border:1px solid #e2e8f0;">' + nOver + '</td><td style="padding:0.5rem;text-align:right;border:1px solid #e2e8f0;">' + nUnder + '</td><td style="padding:0.5rem;text-align:right;border:1px solid #e2e8f0;">' + nProfile + '</td></tr>';
+        }
+        html += '</tbody></table>';
+        tableEl.innerHTML = html;
+        hintEl.textContent = 'Reverse FI per model (over/under prediction counts and feature profile size). Lambda returns these from the metadata API.';
+      } catch (e) {
+        hintEl.textContent = 'Failed to load Reverse FI summary: ' + (e.message || String(e));
+      }
+    }
+
     function loadModelImprovement() {
       const missingEl = document.getElementById('model-improvement-missing');
       const againstEl = document.getElementById('model-improvement-against');

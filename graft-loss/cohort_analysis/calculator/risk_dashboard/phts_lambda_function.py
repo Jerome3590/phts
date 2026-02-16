@@ -238,6 +238,68 @@ def load_dashboard_data(cohort: str, model_variant: Optional[str] = None) -> Dic
     raise FileNotFoundError(f"Dashboard data not found for cohort: {model_cohort} (tried fallback {cohort})")
 
 
+def load_reverse_fi_data(cohort: str, model_variant: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """
+    Load Reverse Feature Importance artifacts for a model (cohort × variant).
+    Returns dict with "drivers" (missed_predictions_drivers.json) and "feature_profile" (list of rows from CSV),
+    or None if either file is missing (no Reverse FI for this model).
+    Tries container first, then S3.
+    """
+    import csv
+    v = (model_variant or "top").strip()
+    if v.lower() == "full":
+        v = "FULL"
+    elif v.lower() not in ("base", "enhanced", "top", "wisotzkey"):
+        v = "top"
+    model_cohort = f"{cohort}_{v}"
+    drivers_data = None
+    profile_rows: List[Dict[str, Any]] = []
+    # Try container
+    for base_name in [model_cohort, f"{cohort}_top", cohort]:
+        base = Path(DASHBOARD_DATA_PATH) / base_name
+        drivers_path = base / "missed_predictions_drivers.json"
+        profile_path = base / "missed_predictions_feature_profile.csv"
+        if drivers_path.exists():
+            try:
+                with open(drivers_path, "r", encoding="utf-8") as f:
+                    drivers_data = json.load(f)
+            except Exception as e:
+                logger.warning(f"Could not load Reverse FI drivers for {model_cohort}: {e}")
+        if profile_path.exists():
+            try:
+                with open(profile_path, "r", encoding="utf-8", newline="") as f:
+                    reader = csv.DictReader(f)
+                    profile_rows = [dict(row) for row in reader]
+            except Exception as e:
+                logger.warning(f"Could not load Reverse FI feature profile for {model_cohort}: {e}")
+        if drivers_data is not None or profile_rows:
+            break
+    # Try S3 if nothing found in container
+    if drivers_data is None and not profile_rows and s3_client is not None:
+        for key_prefix in [f"{S3_PREFIX}/dashboard_data/{model_cohort}", f"{S3_PREFIX}/dashboard_data/{cohort}_top", f"{S3_PREFIX}/dashboard_data/{cohort}"]:
+            try:
+                r = s3_client.get_object(Bucket=S3_BUCKET, Key=f"{key_prefix}/missed_predictions_drivers.json")
+                drivers_data = json.loads(r["Body"].read().decode("utf-8"))
+            except (ClientError, Exception):
+                pass
+            try:
+                r = s3_client.get_object(Bucket=S3_BUCKET, Key=f"{key_prefix}/missed_predictions_feature_profile.csv")
+                import io
+                reader = csv.DictReader(io.StringIO(r["Body"].read().decode("utf-8")))
+                profile_rows = [dict(row) for row in reader]
+            except (ClientError, Exception):
+                pass
+            if drivers_data is not None or profile_rows:
+                break
+    if drivers_data is None and not profile_rows:
+        return None
+    return {
+        "model_id": model_cohort,
+        "drivers": drivers_data,
+        "feature_profile": profile_rows,
+    }
+
+
 def load_risk_distribution(cohort: str) -> Optional[Dict[str, Any]]:
     """
     Load risk score distribution for a cohort (for normalization).
@@ -1276,6 +1338,7 @@ def handle_metadata(event: Dict[str, Any]) -> Dict[str, Any]:
                 sec_dx_dropdown_options = dashboard_data.get("sec_dx_dropdown_options", SEC_DX_LEVELS)
                 sec_dx_one_hot_map = dashboard_data.get("sec_dx_one_hot_map", {lev: _sec_dx_col(lev) for lev in SEC_DX_LEVELS})
                 feature_display_names = dashboard_data.get("feature_display_names", {})
+                reverse_fi = load_reverse_fi_data(cohort, model_variant=model_variant)
                 return _response(200, {
                     "cohort": cohort,
                     "model_variant": model_variant,
@@ -1283,6 +1346,7 @@ def handle_metadata(event: Dict[str, Any]) -> Dict[str, Any]:
                     "causal_factors": dashboard_data.get("top_causal_factors", []),
                     "summary": dashboard_data.get("summary", {}),
                     "aggregated_feature_importance": dashboard_data.get("aggregated_feature_importance", []),
+                    "reverse_fi": reverse_fi,
                     "feature_metadata": feature_metadata,
                     "feature_levels": feature_levels,
                     "feature_level_labels": feature_level_labels,
@@ -1306,8 +1370,9 @@ def handle_metadata(event: Dict[str, Any]) -> Dict[str, Any]:
                     "metrics_s3_url": metrics_s3_url
                 })
         else:
-            # Return all cohorts (gracefully handle missing data)
+            # Return all cohorts (gracefully handle missing data); include Reverse FI per model for dashboard summary
             all_causal_factors = {}
+            reverse_fi_by_model: Dict[str, Any] = {}
             available_cohorts_with_data = []
             
             for c in AVAILABLE_COHORTS:
@@ -1316,20 +1381,18 @@ def handle_metadata(event: Dict[str, Any]) -> Dict[str, Any]:
                     dashboard_data = load_dashboard_data(c)
                     feature_metadata = get_feature_metadata(c)
                     feature_levels = dashboard_data.get("feature_levels", {})
-                    feature_level_labels = dashboard_data.get("feature_level_labels", {})
                     all_causal_factors[c] = {
                         "top_causal_factors": dashboard_data.get("top_causal_factors", []),
                         "summary": dashboard_data.get("summary", {}),
                         "feature_metadata": feature_metadata,
                         "feature_levels": feature_levels,
-                        "feature_level_labels": feature_level_labels,
+                        "feature_level_labels": dashboard_data.get("feature_level_labels", {}),
                         "feature_display_names": dashboard_data.get("feature_display_names", {})
                     }
                     available_cohorts_with_data.append(c)
                     logger.info(f"Successfully loaded dashboard data for {c}")
                 except FileNotFoundError as e:
                     logger.warning(f"Dashboard data file not found for {c}: {e}")
-                    # Still include the cohort but with empty data
                     all_causal_factors[c] = {
                         "top_causal_factors": [],
                         "summary": {},
@@ -1337,17 +1400,24 @@ def handle_metadata(event: Dict[str, Any]) -> Dict[str, Any]:
                     }
                 except Exception as e:
                     logger.error(f"Error loading dashboard data for {c}: {e}", exc_info=True)
-                    # Still include the cohort but with empty data
                     all_causal_factors[c] = {
                         "top_causal_factors": [],
                         "summary": {},
                         "error": f"Error loading data: {str(e)}"
                     }
+                # Load Reverse FI per model (default variant per cohort)
+                try:
+                    rfi = load_reverse_fi_data(c, model_variant="top")
+                    if rfi:
+                        reverse_fi_by_model[rfi["model_id"]] = rfi
+                except Exception as e:
+                    logger.debug(f"No Reverse FI for {c}: {e}")
             
             return _response(200, {
                 "available_cohorts": AVAILABLE_COHORTS,
                 "cohorts_with_data": available_cohorts_with_data,
                 "causal_factors_by_cohort": all_causal_factors,
+                "reverse_fi_by_model": reverse_fi_by_model,
                 "api_url": api_url,
                 "metrics_s3_url": metrics_s3_url
             })
