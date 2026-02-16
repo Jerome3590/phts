@@ -15,6 +15,7 @@ This directory contains calculator training and the risk dashboard. The **deploy
 ## Quick Reference
 
 - **Train top-features model** (for dashboard): `python train_python_models.py --top_features_only`
+- **Train FULL variants** (calculator + R replication vars for C-index comparison): `python train_python_models.py --train-full-variants` → `Combined_FULL`, `CHD_FULL`, `Myocardio_FULL`
 - **SHAP/FFA for Combined_top**: Run workflow for `Combined_top`; output to `outputs/shap_ffa/Combined_top/`
 - **Dashboard**: `risk_dashboard/phts_dashboard.html` (single model: top 15 features)
 - **Lambda**: `risk_dashboard/phts_lambda_function.py` (uses `Combined_top` only)

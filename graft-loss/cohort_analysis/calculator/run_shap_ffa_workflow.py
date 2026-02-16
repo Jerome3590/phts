@@ -771,6 +771,17 @@ def prepare_calculator_features(df: pd.DataFrame) -> pd.DataFrame:
             df["txalt_high"] = (df["TXALT"] > 90).astype(int)
             logger.info("Created txalt_high from TXALT")
 
+    # DONISCH dichotomous (donor ischemic time): > 4 hours (>240 min) = 1, else 0
+    # Matches README_ready_to_run / feature importance replication (variable name remains donisch, now binary)
+    if "donisch" in df.columns:
+        # If already 0/1 (e.g. from prior run), only convert where values look like minutes (>1)
+        raw = df["donisch"]
+        if (raw.dropna() > 1).any():
+            df["donisch"] = (raw > 240).astype(int)
+            df.loc[raw.isna(), "donisch"] = 0  # missing -> assume <= 240 min
+            logger.info("Created dichotomous donisch (>240 min = 1, <=240 = 0)")
+        # else leave as-is if already binary
+
     # ECMO dichotomous (txecmo OR slecmo)
     if "txecmo" in df.columns and "slecmo" in df.columns:
         df["ecmo_combined"] = ((df["txecmo"] == 1) | (df["slecmo"] == 1)).astype(int)

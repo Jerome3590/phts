@@ -7,14 +7,15 @@ Reads MC-CV metrics and best_model.txt from:
   outputs/models/{cohort}_wisotzkey/
 and prints a side-by-side comparison (C-index, Recall, AUC, AU-PRC, best model type).
 
-Best-model-chosen logic: per cohort, the deployed model is the variant (top or wisotzkey)
-with higher C-index (then AU-PRC tiebreaker). Use --set-deployed to write
+Best-model-chosen logic: per cohort, the deployed model is the variant (base, enhanced, top, wisotzkey, or FULL)
+with highest C-index (then AU-PRC tiebreaker). Use --set-deployed to write
 {cohort}_deployed_variant.txt so Lambda/dashboard use the chosen variant.
 
 Usage:
-  python compare_top_vs_wisotzkey.py
+  python compare_top_vs_wisotzkey.py                  # default: all variants (base, enhanced, top, wisotzkey, FULL)
+  python compare_top_vs_wisotzkey.py --top-wisotzkey-only   # only top and wisotzkey
   python compare_top_vs_wisotzkey.py --output comparison.csv
-  python compare_top_vs_wisotzkey.py --set-deployed   # write deployed_variant per cohort
+  python compare_top_vs_wisotzkey.py --set-deployed   # write deployed_variant per cohort (best of all five variants)
 """
 
 import argparse
@@ -27,7 +28,8 @@ import pandas as pd
 CALCULATOR_DIR = Path(__file__).parent
 MODELS_DIR = CALCULATOR_DIR / "outputs" / "models"
 COHORTS = ["CHD", "Myocardio", "Combined"]
-VARIANTS = ["_top", "_wisotzkey"]
+VARIANTS_TOP_WIS = ["_top", "_wisotzkey"]
+VARIANTS_ALL = ["_base", "_enhanced", "_top", "_wisotzkey", "_FULL"]
 
 
 def load_best_model_name(cohort_dir: Path) -> str:
@@ -83,21 +85,27 @@ def main():
     )
     parser.add_argument(
         "--set-deployed", action="store_true",
-        help="Write {cohort}_deployed_variant.txt (top or wisotzkey) per cohort for deployment",
+        help="Write {cohort}_deployed_variant.txt (best of base/enhanced/top/wisotzkey/FULL) per cohort for deployment",
+    )
+    parser.add_argument(
+        "--top-wisotzkey-only", action="store_true",
+        help="Restrict comparison table to top and wisotzkey only (default is all five variants)",
     )
     args = parser.parse_args()
     models_dir = Path(args.models_dir) if args.models_dir else MODELS_DIR
+    variants = VARIANTS_TOP_WIS if args.top_wisotzkey_only else VARIANTS_ALL
 
     if not models_dir.exists():
         print(f"Models directory not found: {models_dir}", file=sys.stderr)
-        print("Train both sets first, e.g.:", file=sys.stderr)
+        print("Train models first, e.g.:", file=sys.stderr)
         print("  python train_python_models.py --cohort CHD --top_features_only", file=sys.stderr)
         print("  python train_python_models.py --cohort CHD --wisotzkey_vars_only", file=sys.stderr)
+        print("  python train_python_models.py --train-full-variants  # for all variants", file=sys.stderr)
         sys.exit(1)
 
     rows = []
     for cohort in COHORTS:
-        for variant in VARIANTS:
+        for variant in variants:
             name = f"{cohort}{variant}"
             cohort_dir = models_dir / name
             if not cohort_dir.exists():
@@ -136,7 +144,10 @@ def main():
 
     # Print table
     print("=" * 100)
-    print("Comparison: Top-15 causal feature models vs Wisotzkey-vars models")
+    if not args.top_wisotzkey_only:
+        print("Comparison: All variants (base, enhanced, top, wisotzkey, FULL)")
+    else:
+        print("Comparison: Top-15 causal feature models vs Wisotzkey-vars models")
     print("=" * 100)
     for cohort in COHORTS:
         sub = df[df["cohort"] == cohort]
@@ -159,35 +170,31 @@ def main():
         print(f"Wrote {out_path}")
 
     if args.set_deployed:
+        # Deployed variant = best of all five (base, enhanced, top, wisotzkey, FULL) by C-index then AU-PRC
         for cohort in COHORTS:
-            top_dir = models_dir / f"{cohort}_top"
-            wis_dir = models_dir / f"{cohort}_wisotzkey"
-            top_metrics = load_mc_cv_metrics(top_dir) if top_dir.exists() else None
-            wis_metrics = load_mc_cv_metrics(wis_dir) if wis_dir.exists() else None
-            top_best = get_best_row_metrics(top_metrics) if top_metrics is not None else {}
-            wis_best = get_best_row_metrics(wis_metrics) if wis_metrics is not None else {}
-            top_c = top_best.get("C_Index_Mean")
-            wis_c = wis_best.get("C_Index_Mean")
-            top_c = float(top_c) if top_c is not None and pd.notna(top_c) else None
-            wis_c = float(wis_c) if wis_c is not None and pd.notna(wis_c) else None
-            if top_c is None and wis_c is None:
-                variant = "top"
-                print(f"  [WARN] {cohort}: no metrics for top or wisotzkey; defaulting to top")
-            elif wis_c is None or (top_c is not None and top_c >= wis_c):
-                if top_c is not None and wis_c is not None and top_c == wis_c:
-                    top_au = top_best.get("AU_PRC_Mean")
-                    wis_au = wis_best.get("AU_PRC_Mean")
-                    if wis_au is not None and (top_au is None or (wis_au is not None and float(wis_au) > float(top_au))):
-                        variant = "wisotzkey"
-                    else:
-                        variant = "top"
-                else:
-                    variant = "top"
-            else:
-                variant = "wisotzkey"
+            best_variant = "top"
+            best_c = None
+            best_au = None
+            for v in VARIANTS_ALL:
+                variant_name = v.lstrip("_")  # base, enhanced, top, wisotzkey, FULL
+                variant_dir = models_dir / f"{cohort}{v}"
+                if not variant_dir.exists():
+                    continue
+                metrics_df = load_mc_cv_metrics(variant_dir)
+                m = get_best_row_metrics(metrics_df) if metrics_df is not None else {}
+                c = m.get("C_Index_Mean")
+                au = m.get("AU_PRC_Mean")
+                c = float(c) if c is not None and pd.notna(c) else None
+                au = float(au) if au is not None and pd.notna(au) else None
+                if c is None:
+                    continue
+                if best_c is None or c > best_c or (c == best_c and au is not None and (best_au is None or au > best_au)):
+                    best_c = c
+                    best_au = au
+                    best_variant = variant_name
             out_file = models_dir / f"{cohort}_deployed_variant.txt"
-            out_file.write_text(variant.strip())
-            print(f"  [OK] {cohort}: deployed variant = {variant} -> {out_file.name}")
+            out_file.write_text(best_variant.strip())
+            print(f"  [OK] {cohort}: deployed variant = {best_variant} (C-index={best_c:.4f}) -> {out_file.name}")
 
     return 0
 

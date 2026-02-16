@@ -67,7 +67,7 @@ DASHBOARD_DATA_PATH = os.environ.get("DASHBOARD_DATA_PATH", "/var/task/dashboard
 RISK_DISTRIBUTION_PATH = os.environ.get("RISK_DISTRIBUTION_PATH", "/var/task/risk_distributions")
 MODEL_CACHE_TTL = int(os.environ.get("MODEL_CACHE_TTL", "3600"))
 
-# Model per cohort: CHD_top, Myocardio_top, Combined_top (each has its own sec_dx options and causal factors)
+# Model per cohort × variant: CHD_top, Myocardio_base, Combined_FULL, etc. (all cohorts: CHD, Myocardio, Combined; all variants: base, enhanced, top, wisotzkey, FULL)
 AVAILABLE_COHORTS = ["CHD", "Myocardio", "Combined"]
 COHORTS_WITH_DATA = ["CHD", "Myocardio", "Combined"]
 MODEL_VARIANT_DEFAULT = "top"  # cohort_top (e.g. CHD_top, Combined_top)
@@ -179,29 +179,31 @@ def load_dashboard_data(cohort: str, model_variant: Optional[str] = None) -> Dic
     
     Args:
         cohort: Base cohort name (e.g., "Combined")
-        model_variant: Model variant ("top" only for final workflow; "base"/"enhanced" ignored)
+        model_variant: One of base, enhanced, top, wisotzkey, FULL; default top.
     
     Tries:
-    1. Container filesystem (DASHBOARD_DATA_PATH)
-    2. S3 bucket
+    1. Container filesystem (DASHBOARD_DATA_PATH) for {cohort}_{variant}
+    2. Fallback to {cohort}_top then cohort
+    3. S3 bucket
     
-    Model per cohort: CHD_top, Myocardio_top, Combined_top.
+    Model per cohort: CHD_top, CHD_base, CHD_FULL, etc.
     """
-    if model_variant == "top" or model_variant is None:
-        model_cohort = f"{cohort}_top"
-    elif model_variant in ("base", "enhanced"):
-        # Legacy variants no longer deployed; treat as top
-        model_cohort = f"{cohort}_top"
-    else:
-        model_cohort = f"{cohort}_top"
+    v = (model_variant or "top").strip()
+    if v.lower() == "full":
+        v = "FULL"
+    elif v.lower() not in ("base", "enhanced", "top", "wisotzkey"):
+        v = "top"
+    model_cohort = f"{cohort}_{v}"
     
     # Use model_cohort as cache key
     cache_key = model_cohort
     if cache_key in _dashboard_data_cache:
         return _dashboard_data_cache[cache_key]
     
-    # Try container filesystem: {cohort}_top (e.g. CHD_top, Combined_top)
+    # Try container filesystem: {cohort}_{variant}; fallback to _top then cohort
     container_path = Path(DASHBOARD_DATA_PATH) / model_cohort / "dashboard_data.json"
+    if not container_path.exists():
+        container_path = Path(DASHBOARD_DATA_PATH) / f"{cohort}_top" / "dashboard_data.json"
     if not container_path.exists():
         fallback_path = Path(DASHBOARD_DATA_PATH) / cohort / "dashboard_data.json"
         if fallback_path.exists():
@@ -439,27 +441,34 @@ def _percentile_to_risk_band(percentile: float) -> str:
         return "very_high"
 
 
+DEPLOYED_VARIANTS = ("base", "enhanced", "top", "wisotzkey", "FULL")
+
+
 def _get_deployed_variant(cohort: str) -> str:
-    """Read deployed variant (top or wisotzkey) for cohort from {cohort}_deployed_variant.txt. Best model is chosen by C-index then AU-PRC (compare_top_vs_wisotzkey.py --set-deployed)."""
-    if cohort in ("Combined_base", "Combined_enhanced"):
-        return "top"
+    """Read deployed variant for cohort from {cohort}_deployed_variant.txt. One of base, enhanced, top, wisotzkey, FULL (best by C-index then AU-PRC via compare_top_vs_wisotzkey.py --set-deployed)."""
     path = Path(MODEL_BASE_PATH) / f"{cohort}_deployed_variant.txt"
     try:
         if path.exists():
-            v = path.read_text().strip().lower()
-            if v in ("top", "wisotzkey"):
-                return v
+            v = path.read_text().strip()
+            v_lower = v.lower()
+            if v_lower in ("base", "enhanced", "top", "wisotzkey"):
+                return v_lower
+            if v_lower == "full":
+                return "FULL"
     except Exception as e:
         logger.warning(f"Could not read deployed variant for {cohort}: {e}")
     return "top"
 
 
 def _resolve_model_cohort_for_models(model_cohort: str) -> str:
-    """Model per cohort: CHD_top, Myocardio_top, Combined_top, or CHD_wisotzkey etc. Legacy base/enhanced resolve to Combined_top if missing."""
+    """Model per cohort: CHD_top, Myocardio_top, CHD_base, CHD_FULL, etc. If requested variant dir missing, fall back to Combined_top for legacy."""
+    path = Path(MODEL_BASE_PATH) / model_cohort
+    if path.exists():
+        return model_cohort
     if model_cohort in ("Combined_base", "Combined_enhanced"):
         top_path = Path(MODEL_BASE_PATH) / "Combined_top"
         if top_path.exists():
-            logger.info(f"Using Combined_top for legacy variant {model_cohort}")
+            logger.info(f"Using Combined_top for missing variant {model_cohort}")
             return "Combined_top"
     return model_cohort
 
@@ -543,7 +552,7 @@ def load_model_metrics(cohort: str) -> Dict[str, Any]:
     Load model metrics from best_model.txt in the container (or S3 if configured).
     Returns dict with best_model, c_index, auc, au_prc, recall, metrics_text, s3_url.
     """
-    if cohort.endswith("_top") or cohort.endswith("_wisotzkey"):
+    if any(cohort.endswith(f"_{v}") for v in DEPLOYED_VARIANTS):
         model_cohort = cohort
     else:
         variant = _get_deployed_variant(cohort)
@@ -636,6 +645,33 @@ def load_model_metrics(cohort: str) -> Dict[str, Any]:
     return out
 
 
+def load_all_models_performance_summary() -> List[Dict[str, Any]]:
+    """
+    Load metrics for every cohort × variant model present in the container.
+    Returns a list of dicts: cohort, variant, best_model, c_index, c_index_ci, recall, auc, au_prc.
+    """
+    result = []
+    base = Path(MODEL_BASE_PATH)
+    for cohort in AVAILABLE_COHORTS:
+        for variant in DEPLOYED_VARIANTS:
+            model_cohort = f"{cohort}_{variant}"
+            best_path = base / model_cohort / "best_model.txt"
+            if not best_path.exists():
+                continue
+            m = load_model_metrics(model_cohort)
+            result.append({
+                "cohort": cohort,
+                "variant": variant,
+                "best_model": m.get("best_model"),
+                "c_index": m.get("c_index"),
+                "c_index_ci": m.get("c_index_ci"),
+                "recall": m.get("recall"),
+                "auc": m.get("auc"),
+                "au_prc": m.get("au_prc"),
+            })
+    return result
+
+
 def get_best_model(cohort: str) -> str:
     """Get the best model type for a cohort from best_model.txt."""
     cohort = _resolve_model_cohort_for_models(cohort)
@@ -721,9 +757,17 @@ def prepare_features_for_inference(features: Dict[str, Any]) -> Dict[str, Any]:
     """
     prepared = features.copy()
     
-    # Donor ischemic time (DONISCH): if not provided, assume < 240 minutes (per model assumption)
-    if "donisch" not in prepared or prepared.get("donisch") is None:
-        prepared["donisch"] = DONISCH_DEFAULT_MINUTES
+    # Donor ischemic time (DONISCH): dichotomous per README_ready_to_run (>240 min = 1, else 0)
+    # If not provided, assume <= 240 minutes (0). Otherwise convert minutes to binary.
+    raw_donisch = prepared.get("donisch")
+    if raw_donisch is None:
+        prepared["donisch"] = 0
+    else:
+        try:
+            minutes = float(raw_donisch)
+            prepared["donisch"] = 1 if minutes > DONISCH_DEFAULT_MINUTES else 0
+        except (TypeError, ValueError):
+            prepared["donisch"] = 0
     
     # VAD combined (txvad OR slvad) - prioritize at transplant (txvad) over at listing (slvad)
     if "txvad" in prepared or "slvad" in prepared:
@@ -903,24 +947,24 @@ def predict_risk_survival(
     if not MODEL_LIBS_AVAILABLE:
         raise RuntimeError("Model libraries not available")
     
-    # Model per cohort: use best of top vs wisotzkey (from {cohort}_deployed_variant.txt, set by compare_top_vs_wisotzkey.py --set-deployed)
-    if cohort.endswith('_top') or cohort.endswith('_wisotzkey'):
-        model_cohort = cohort
-        logger.info(f"Using {model_cohort} model (variant explicit)")
-    elif cohort.endswith('_base') or cohort.endswith('_enhanced'):
+    # Model per cohort: use deployed variant (base, enhanced, top, wisotzkey, FULL) from {cohort}_deployed_variant.txt
+    if any(cohort.endswith(f"_{v}") for v in DEPLOYED_VARIANTS):
         model_cohort = _resolve_model_cohort_for_models(cohort)
-        logger.info(f"Using {model_cohort} model (legacy variant requested)")
+        logger.info(f"Using {model_cohort} model (variant explicit)")
     elif cohort in ("CHD", "Myocardio", "Combined"):
         variant = _get_deployed_variant(cohort)
-        model_cohort = f"{cohort}_{variant}"
+        model_cohort = _resolve_model_cohort_for_models(f"{cohort}_{variant}")
         logger.info(f"Using {model_cohort} model for cohort {cohort} (deployed variant: {variant})")
     else:
         variant = _get_deployed_variant(cohort)
-        model_cohort = f"{cohort}_{variant}"
+        model_cohort = _resolve_model_cohort_for_models(f"{cohort}_{variant}")
         logger.info(f"Using {model_cohort} model for cohort {cohort} (deployed variant: {variant})")
     
-    # Prepare features: Top models use calculator-derived vars; Wisotzkey models use Wisotzkey-et-al. set
-    base_cohort = cohort if cohort in ("CHD", "Myocardio", "Combined") else (model_cohort.replace("_top", "").replace("_wisotzkey", "") if "_" in model_cohort else "Combined")
+    # Prepare features: Wisotzkey uses Wisotzkey-et-al. set; base, enhanced, top, FULL use calculator-derived
+    base_cohort = cohort if cohort in ("CHD", "Myocardio", "Combined") else next(
+        (model_cohort[: -len(f"_{v}")] for v in DEPLOYED_VARIANTS if model_cohort.endswith(f"_{v}")),
+        "Combined"
+    )
     if model_cohort.endswith("_wisotzkey"):
         prepared_features = prepare_wisotzkey_features_for_inference(features, base_cohort)
     else:
@@ -1161,8 +1205,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 def handle_model_metrics(event: Dict[str, Any]) -> Dict[str, Any]:
     """
     GET /model-metrics - Returns deployed model metrics (from best_model.txt in container)
-    for all cohorts. Includes which variant (top/wisotzkey) was chosen and best algorithm,
-    plus all standard metrics: C-index, Recall, AUC, AU-PRC.
+    for all cohorts (CHD, Myocardio, Combined). Includes which variant (base, enhanced, top, wisotzkey, or FULL) was chosen and best algorithm, plus all standard metrics: C-index, Recall, AUC, AU-PRC.
     """
     by_cohort = {}
     for cohort in AVAILABLE_COHORTS:
@@ -1177,6 +1220,8 @@ def handle_model_metrics(event: Dict[str, Any]) -> Dict[str, Any]:
             "auc": m.get("auc"),
             "au_prc": m.get("au_prc"),
         }
+    # Performance summary for all models (all cohorts × variants present in container)
+    performance_summary = load_all_models_performance_summary()
     # Default/flat view for backward compat (Combined)
     default = by_cohort.get("Combined", {})
     body = {
@@ -1189,6 +1234,7 @@ def handle_model_metrics(event: Dict[str, Any]) -> Dict[str, Any]:
         "au_prc": default.get("au_prc"),
         "s3_url": load_model_metrics("Combined").get("s3_url"),
         "by_cohort": by_cohort,
+        "performance_summary": performance_summary,
     }
     return _response(200, body)
 
@@ -1348,15 +1394,20 @@ def handle_risk(event: Dict[str, Any]) -> Dict[str, Any]:
             return _response(400, {"error": "No features provided"})
         
         use_ensemble = body.get("use_ensemble", False)
-        model_variant = body.get("model_variant", "top")  # Single model: top 15 features only
+        # Use requested variant if valid, else deployed (best of base/enhanced/top/wisotzkey/FULL)
+        requested = (body.get("model_variant") or "top").strip()
+        if requested.lower() == "full":
+            requested = "FULL"
+        if requested.lower() in ("base", "enhanced", "top", "wisotzkey") or requested == "FULL":
+            model_variant = requested if requested == "FULL" else requested.lower()
+        else:
+            model_variant = _get_deployed_variant(cohort)
+        model_cohort = f"{cohort}_{model_variant}"
 
-        # Model per cohort: CHD_top, Myocardio_top, or Combined_top
-        model_cohort = f"{cohort}_top"
-        
-        # Predict risk
+        # Predict risk (uses model for this cohort × variant)
         result = predict_risk_survival(model_cohort, features, use_best_model_only=not use_ensemble)
         
-        # Load causal factors for the specific model variant
+        # Load causal factors for this variant (fallback to _top if variant dir missing)
         try:
             dashboard_data = load_dashboard_data(cohort, model_variant=model_variant)
             top_causal = dashboard_data.get("top_causal_factors", [])

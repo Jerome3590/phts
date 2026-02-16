@@ -232,6 +232,18 @@ def get_recommended_additional_features() -> List[str]:
     ]
 
 
+# R top-20 / replication variables not in calculator UI (used for FULL model variant only).
+# Enables comparison: calculator (restricted) vs FULL feature set to explain C-index by cohort segregation.
+FULL_EXTRA_VARS = [
+    "durcarst",   # Duration of cardiac support (e.g. days)
+    "hxrenins",   # History renin inhibitor
+    "ltg_r",      # Triglycerides at listing
+    "rec_t3",     # Recipient T3
+    "txaboinc",   # ABO incompatible at transplant
+    "txtdsxm",    # T-cell crossmatch at transplant
+]
+
+
 def get_all_calculator_features(include_recommended: bool = False) -> Set[str]:
     """
     Get all calculator features (base + derived, optionally + recommended).
@@ -251,6 +263,39 @@ def get_all_calculator_features(include_recommended: bool = False) -> Set[str]:
         features.update(recommended)
     
     return features
+
+
+def get_full_feature_set() -> Set[str]:
+    """
+    Get FULL feature set: calculator (base + derived + recommended) + R replication extras.
+    Used for Combined_FULL / CHD_FULL / Myocardio_FULL to compare C-index vs calculator-only.
+    """
+    calc = set(get_all_calculator_features(include_recommended=True))
+    calc.update(FULL_EXTRA_VARS)
+    calc.update(get_sec_dx_one_hot_columns())
+    return calc
+
+
+def filter_to_full_features(df, feature_cols: List[str]) -> List[str]:
+    """
+    Filter feature columns to FULL set (calculator + R extras).
+    Use for _FULL cohort variants to test C-index with R top-20–aligned features.
+    """
+    full_set = get_full_feature_set()
+    full_set_lower = {f.lower() for f in full_set}
+    filtered = [
+        col for col in feature_cols
+        if col.lower() in full_set_lower
+    ]
+    chd_features = [col for col in feature_cols if col.lower().startswith("chd_")]
+    for chd_feat in chd_features:
+        if chd_feat.lower() not in {c.lower() for c in filtered}:
+            filtered.append(chd_feat)
+    sec_dx_one_hot = [col for col in feature_cols if col.lower().startswith("sec_dx_")]
+    for col in sec_dx_one_hot:
+        if col not in filtered:
+            filtered.append(col)
+    return filtered
 
 
 def filter_to_calculator_features(df, feature_cols: List[str], include_recommended: bool = False) -> List[str]:

@@ -27,8 +27,10 @@ DASHBOARD_DIR = CALCULATOR_DIR / "outputs" / "shap_ffa"
 RISK_DIST_DIR = CALCULATOR_DIR / "outputs" / "risk_distributions"
 LAMBDA_DIR = Path(__file__).parent / "lambda_dir_phts"
 
-# Model per cohort: deploy CHD_top, Myocardio_top, Combined_top (copy whichever exist)
+# Model per cohort: deploy all variants for each cohort (copy whichever exist)
 COHORTS = ["CHD", "Myocardio", "Combined"]
+VARIANTS = ["_base", "_enhanced", "_top", "_wisotzkey", "_FULL"]
+VALID_DEPLOYED_VARIANTS = ("base", "enhanced", "top", "wisotzkey", "FULL")
 
 
 def prepare_lambda_directory():
@@ -52,13 +54,13 @@ def prepare_lambda_directory():
     print(f"Lambda directory: {LAMBDA_DIR}")
     print()
     
-    # Copy models for each cohort: both _top and _wisotzkey (deployed variant chosen by C-index/AU-PRC in Lambda)
-    print("Copying models...")
+    # Copy models for each cohort × variant (base, enhanced, top, wisotzkey, FULL); Lambda uses deployed_variant.txt to choose which to run
+    print("Copying models (all cohorts × variants)...")
     models_copied = 0
     for cohort in COHORTS:
         variant_dirs = [
-            (MODELS_DIR / f"{cohort}_top", lambda_models_dir / f"{cohort}_top"),
-            (MODELS_DIR / f"{cohort}_wisotzkey", lambda_models_dir / f"{cohort}_wisotzkey"),
+            (MODELS_DIR / f"{cohort}{v}", lambda_models_dir / f"{cohort}{v}")
+            for v in VARIANTS
         ]
         for cohort_models_dir, cohort_lambda_dir in variant_dirs:
             if not cohort_models_dir.exists():
@@ -91,11 +93,11 @@ def prepare_lambda_directory():
                 print(f"  [OK] {variant_name}: {files_copied} files copied")
                 models_copied += files_copied
 
-        # Deployed variant (best of top vs wisotzkey by C-index then AU-PRC)
+        # Deployed variant (best of base/enhanced/top/wisotzkey/FULL by C-index then AU-PRC)
         deployed_file = MODELS_DIR / f"{cohort}_deployed_variant.txt"
         if deployed_file.exists():
-            variant = deployed_file.read_text().strip().lower()
-            if variant not in ("top", "wisotzkey"):
+            variant = deployed_file.read_text().strip()
+            if variant.lower() not in (v.lower() for v in VALID_DEPLOYED_VARIANTS):
                 variant = "top"
         else:
             variant = "top"
@@ -109,17 +111,16 @@ def prepare_lambda_directory():
     print(f"Total model files copied: {models_copied}")
     print()
     
-    # Copy feature metadata per cohort
-    print("Copying feature metadata...")
+    # Copy feature metadata per cohort × variant (when source exists)
+    print("Copying feature metadata (all cohorts × variants when present)...")
     features_copied = 0
     for cohort in COHORTS:
-        variant_dirs = [
-            (DASHBOARD_DIR / f"{cohort}_top", lambda_model_features_dir / f"{cohort}_top"),
-        ]
-        for cohort_dashboard_dir, cohort_features_dir in variant_dirs:
+        for v in VARIANTS:
+            variant_name = f"{cohort}{v}"
+            cohort_dashboard_dir = DASHBOARD_DIR / variant_name
+            cohort_features_dir = lambda_model_features_dir / variant_name
             if not cohort_dashboard_dir.exists():
                 continue
-            
             # Load dashboard_data.json to extract feature_metadata
             dashboard_data_file = cohort_dashboard_dir / "dashboard_data.json"
             if dashboard_data_file.exists():
@@ -136,39 +137,31 @@ def prepare_lambda_directory():
                         with open(feature_metadata_file, 'w') as f:
                             json.dump(feature_metadata, f, indent=2)
                         features_copied += 1
-                        variant_name = cohort_features_dir.name
                         print(f"  [OK] {variant_name}: feature_metadata.json copied ({len(feature_metadata)} features)")
                     else:
-                        variant_name = cohort_features_dir.name
                         print(f"  [WARNING] {variant_name}: No feature_metadata in dashboard_data.json")
                 except Exception as e:
-                    variant_name = cohort_features_dir.name
                     print(f"  [ERROR] {variant_name}: Failed to extract feature_metadata: {e}")
     
     print(f"Total feature metadata files copied: {features_copied}")
     print()
     
-    # Copy dashboard data
-    # Handle both variant (Combined_base, Combined_enhanced) and non-variant structures
-    print("Copying dashboard data...")
+    # Copy dashboard data for all cohorts × variants (when source exists)
+    print("Copying dashboard data (all cohorts × variants when present)...")
     data_copied = 0
     for cohort in COHORTS:
-        variant_dirs = [
-            (DASHBOARD_DIR / f"{cohort}_top", lambda_dashboard_dir / f"{cohort}_top"),
-        ]
-        for cohort_dashboard_dir, cohort_lambda_dir in variant_dirs:
+        for v in VARIANTS:
+            variant_name = f"{cohort}{v}"
+            cohort_dashboard_dir = DASHBOARD_DIR / variant_name
+            cohort_lambda_dir = lambda_dashboard_dir / variant_name
             if not cohort_dashboard_dir.exists():
                 continue
-            
             cohort_lambda_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Copy dashboard_data.json and merge aggregated feature importance if available
             dashboard_data_file = cohort_dashboard_dir / "dashboard_data.json"
             if dashboard_data_file.exists():
                 with open(dashboard_data_file, "r", encoding="utf-8") as f:
                     dashboard_data = json.load(f)
-                # Merge MC-CV aggregated feature importance from training output (one row per feature, mean ± std across models)
-                agg_path = MODELS_DIR / f"{cohort}_top" / "mc_cv_aggregated_feature_importance.csv"
+                agg_path = MODELS_DIR / variant_name / "mc_cv_aggregated_feature_importance.csv"
                 if agg_path.exists():
                     try:
                         with open(agg_path, "r", encoding="utf-8", newline="") as af:
@@ -191,10 +184,7 @@ def prepare_lambda_directory():
                 with open(cohort_lambda_dir / "dashboard_data.json", "w", encoding="utf-8") as f:
                     json.dump(dashboard_data, f, indent=2)
                 data_copied += 1
-                variant_name = cohort_lambda_dir.name
                 print(f"  [OK] {variant_name}: dashboard_data.json copied")
-            
-            # Copy top_causal_factors.csv
             causal_factors_file = cohort_dashboard_dir / "top_causal_factors.csv"
             if causal_factors_file.exists():
                 shutil.copy2(causal_factors_file, cohort_lambda_dir / "top_causal_factors.csv")

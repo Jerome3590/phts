@@ -672,11 +672,14 @@
             <tr style="border-bottom: 1px solid #e2e8f0;"><td style="padding: 0.75rem;"><strong>AU-PRC</strong></td><td style="padding: 0.75rem;">Area under the precision-recall curve (tiebreaker for best model selection).</td></tr>
           </tbody>
         </table>
-        <p style="font-size: 0.9rem; color: #64748b;">Deployed values (loaded from the API). Best model chosen (algorithm + variant: Top or Wisotzkey) and all metrics (C-index, Recall, AUC, AU-PRC) per cohort:</p>
+        <p style="font-size: 0.9rem; color: #64748b;">Deployed values (loaded from the API). Best model chosen (algorithm + variant) and all metrics (C-index, Recall, AUC, AU-PRC) per cohort:</p>
         <div id="doc-model-metrics" style="margin: 1rem 0; padding: 1rem; background: #f8fafc; border-radius: 0.5rem; min-height: 2rem;">
           <span style="color: #64748b;">Loading metrics…</span>
         </div>
         <p id="doc-metrics-s3-link" style="font-size: 0.9rem; color: #64748b; display: none;"></p>
+        <h3 style="color: #1e40af; margin-top: 1.5rem;">Performance summary – all models</h3>
+        <p style="font-size: 0.9rem; color: #64748b;">C-index, Recall, AUC, and AU-PRC for every cohort × variant available in the deployed package (base, enhanced, top, wisotzkey, FULL).</p>
+        <div id="doc-performance-summary" style="margin: 1rem 0; overflow-x: auto;"></div>
 
         <h3 style="color: #1e40af; margin-top: 1.5rem;">Tabs</h3>
         <ul style="margin-left: 1.5rem;">
@@ -1154,7 +1157,8 @@
     function renderOneCohortMetrics(cohortName, m) {
       const best = m.best_model != null ? m.best_model : '—';
       const variant = (m.deployed_variant != null && m.deployed_variant !== '') ? String(m.deployed_variant) : 'top';
-      const variantLabel = variant === 'wisotzkey' ? 'Wisotzkey' : 'Top';
+      const variantLabels = { base: 'Base', enhanced: 'Enhanced', top: 'Top', wisotzkey: 'Wisotzkey', FULL: 'FULL' };
+      const variantLabel = variantLabels[variant] || variant;
       const bestChosen = best !== '—' ? (escapeHtml(best) + ' <span style="color:#64748b;">(' + escapeHtml(variantLabel) + ')</span>') : '—';
       const cIdx = fmtMetric(m.c_index);
       const cIdxCi = m.c_index_ci || '';
@@ -1169,6 +1173,11 @@
       html += '<tr><td style="padding: 0.25rem 1rem 0.25rem 0;"><strong>AU-PRC</strong></td><td>' + auPrc + '</td></tr>';
       html += '</table>';
       return html;
+    }
+    function fmtMetricSummary(v) {
+      if (v == null || (typeof v === 'number' && isNaN(v))) return '—';
+      if (typeof v === 'number') return v.toFixed(4);
+      return escapeHtml(String(v));
     }
     function renderDocModelMetrics(data, el, s3El) {
       let html = '';
@@ -1198,6 +1207,41 @@
         s3El.style.display = 'block';
       } else {
         s3El.style.display = 'none';
+      }
+      var summaryEl = document.getElementById('doc-performance-summary');
+      if (summaryEl && data.performance_summary && Array.isArray(data.performance_summary) && data.performance_summary.length > 0) {
+        var rows = data.performance_summary;
+        var order = ['CHD', 'Myocardio', 'Combined'];
+        var variantOrder = ['base', 'enhanced', 'top', 'wisotzkey', 'FULL'];
+        var tbl = '<table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">';
+        tbl += '<thead><tr style="background: #f1f5f9;">';
+        tbl += '<th style="padding: 0.5rem; text-align: left; border: 1px solid #cbd5e1;">Cohort</th>';
+        tbl += '<th style="padding: 0.5rem; text-align: left; border: 1px solid #cbd5e1;">Variant</th>';
+        tbl += '<th style="padding: 0.5rem; text-align: left; border: 1px solid #cbd5e1;">Best model</th>';
+        tbl += '<th style="padding: 0.5rem; text-align: right; border: 1px solid #cbd5e1;">C-index</th>';
+        tbl += '<th style="padding: 0.5rem; text-align: right; border: 1px solid #cbd5e1;">Recall</th>';
+        tbl += '<th style="padding: 0.5rem; text-align: right; border: 1px solid #cbd5e1;">AUC</th>';
+        tbl += '<th style="padding: 0.5rem; text-align: right; border: 1px solid #cbd5e1;">AU-PRC</th>';
+        tbl += '</tr></thead><tbody>';
+        order.forEach(function(cohort) {
+          variantOrder.forEach(function(variant) {
+            var r = rows.find(function(x) { return x.cohort === cohort && x.variant === variant; });
+            if (!r) return;
+            tbl += '<tr style="border-bottom: 1px solid #e2e8f0;">';
+            tbl += '<td style="padding: 0.5rem; border: 1px solid #e2e8f0;">' + escapeHtml(r.cohort) + '</td>';
+            tbl += '<td style="padding: 0.5rem; border: 1px solid #e2e8f0;">' + escapeHtml(r.variant) + '</td>';
+            tbl += '<td style="padding: 0.5rem; border: 1px solid #e2e8f0;">' + (r.best_model ? escapeHtml(r.best_model) : '—') + '</td>';
+            tbl += '<td style="padding: 0.5rem; text-align: right; border: 1px solid #e2e8f0;">' + fmtMetricSummary(r.c_index) + '</td>';
+            tbl += '<td style="padding: 0.5rem; text-align: right; border: 1px solid #e2e8f0;">' + fmtMetricSummary(r.recall) + '</td>';
+            tbl += '<td style="padding: 0.5rem; text-align: right; border: 1px solid #e2e8f0;">' + fmtMetricSummary(r.auc) + '</td>';
+            tbl += '<td style="padding: 0.5rem; text-align: right; border: 1px solid #e2e8f0;">' + fmtMetricSummary(r.au_prc) + '</td>';
+            tbl += '</tr>';
+          });
+        });
+        tbl += '</tbody></table>';
+        summaryEl.innerHTML = tbl;
+      } else if (summaryEl) {
+        summaryEl.innerHTML = '<span style="color: #64748b;">No performance summary available (API may not include all models).</span>';
       }
     }
 

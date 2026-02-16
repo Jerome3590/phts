@@ -1008,6 +1008,7 @@ def train_models_for_cohort(
     include_recommended_features: bool = False,
     top_feature_names: Optional[List[str]] = None,
     use_wisotzkey_vars_only: bool = False,
+    use_full_feature_set: bool = False,
     force: bool = True,
 ):
     """
@@ -1034,6 +1035,9 @@ def train_models_for_cohort(
             features so that top features like sec_dx, lsbaosat are available.
         use_wisotzkey_vars_only: If True, train on Wisotzkey et al. variable set (same SAS data).
             Output: cohort_wisotzkey. Use with top-15 models for comparison.
+        use_full_feature_set: If True, use FULL feature set (calculator + R replication vars: durcarst,
+            hxrenins, ltg_r, rec_t3, txaboinc, txtdsxm). Output: cohort_FULL (e.g. Combined_FULL).
+            Enables C-index comparison to confirm drop due to cohort segregation vs feature restriction.
         force: If True (default), re-run training even when outputs exist. If False, skip when outputs exist (idempotent).
     """
     logger.info(f"\n{'='*80}")
@@ -1156,9 +1160,17 @@ def train_models_for_cohort(
             df_clean['txpl_year'] = txpl_year_values
 
         all_feature_cols = [col for col in df_clean.columns if col not in ['time', 'status', 'txpl_year']]
-        from calculator_features import filter_to_calculator_features
-        use_recommended_for_filter = include_recommended_features or (top_feature_names is not None)
-        feature_cols = filter_to_calculator_features(df_clean, all_feature_cols, include_recommended=use_recommended_for_filter)
+        if use_full_feature_set:
+            from calculator_features import filter_to_full_features
+            feature_cols = filter_to_full_features(df_clean, all_feature_cols)
+            logger.info(f"Filtered to FULL feature set (calculator + R replication vars): {len(feature_cols)} features (from {len(all_feature_cols)} total)")
+            full_extra = [c for c in feature_cols if c.lower() in {"durcarst", "hxrenins", "ltg_r", "rec_t3", "txaboinc", "txtdsxm"}]
+            if full_extra:
+                logger.info(f"FULL extras in data: {full_extra}")
+        else:
+            from calculator_features import filter_to_calculator_features
+            use_recommended_for_filter = include_recommended_features or (top_feature_names is not None)
+            feature_cols = filter_to_calculator_features(df_clean, all_feature_cols, include_recommended=use_recommended_for_filter)
 
         if top_feature_names is not None:
             from calculator_features import get_sec_dx_one_hot_columns
@@ -1193,10 +1205,11 @@ def train_models_for_cohort(
             logger.info(f"Restricted to top causal/importance features: {len(feature_cols)} features")
         else:
             feature_set_name = "calculator features (with recommended)" if include_recommended_features else "base calculator features"
-            logger.info(f"Filtered to {feature_set_name}: {len(feature_cols)} features (from {len(all_feature_cols)} total)")
+            if not use_full_feature_set:
+                logger.info(f"Filtered to {feature_set_name}: {len(feature_cols)} features (from {len(all_feature_cols)} total)")
         if len(feature_cols) < len(all_feature_cols):
             removed = set(all_feature_cols) - set(feature_cols)
-            logger.info(f"Removed {len(removed)} non-calculator features (e.g., {', '.join(list(removed)[:10])}...)")
+            logger.info(f"Removed {len(removed)} features not in {'FULL' if use_full_feature_set else 'calculator'} set (e.g., {', '.join(list(removed)[:10])}...)")
 
         if include_recommended_features and top_feature_names is None:
             from calculator_features import get_recommended_additional_features
@@ -1272,9 +1285,11 @@ def train_models_for_cohort(
     # Prepare signed time labels for full dataset (for MC CV splits)
     y_all = prepare_survival_labels(time, status)
     
-    # Create output directory (with suffix for top / wisotzkey / enhanced / base)
+    # Create output directory (with suffix for top / wisotzkey / FULL / enhanced / base)
     if use_wisotzkey_vars_only:
         feature_suffix = "_wisotzkey"
+    elif use_full_feature_set:
+        feature_suffix = "_FULL"
     elif top_feature_names is not None:
         feature_suffix = "_top"
     else:
@@ -2055,6 +2070,7 @@ def train_models_for_cohort(
     # Save best model info (same four metrics for all models: C-Index, Recall, AUC, AU-PRC)
     best_model_path = cohort_output_dir / "best_model.txt"
     with open(best_model_path, 'w') as f:
+        f.write(f"Variant: {cohort_output_dir.name}\n")
         f.write(f"Best Model (MC-CV): {best_model_name}\n")
         f.write(f"Selection Criteria: C-index (primary), AU-PRC (tiebreaker)\n")
         f.write(f"Standard metrics (all models): C-index, Recall, AUC, AU-PRC\n")
@@ -2117,6 +2133,10 @@ if __name__ == "__main__":
                        help="Train only on top causal/importance features from SHAP/FFA (output: {cohort}_top)")
     parser.add_argument("--wisotzkey_vars_only", action="store_true",
                        help="Train on Wisotzkey et al. variable set only (output: {cohort}_wisotzkey; compare with _top models)")
+    parser.add_argument("--full", action="store_true",
+                       help="Use FULL feature set (calculator + R replication vars: durcarst, hxrenins, ltg_r, rec_t3, txaboinc, txtdsxm). Output: {cohort}_FULL (e.g. Combined_FULL).")
+    parser.add_argument("--train-full-variants", action="store_true",
+                       help="Train all three cohort FULL variants (Combined_FULL, CHD_FULL, Myocardio_FULL) then exit. Ignores --cohort.")
     parser.add_argument("--top_features_file", type=str, default=None,
                        help="CSV/JSON file with 'feature' or 'variable' column for top features (used with --top_features_only; default: built-in list)")
     parser.add_argument("--force", action="store_true", default=True,
@@ -2154,20 +2174,44 @@ if __name__ == "__main__":
             top_feature_names = get_top_causal_features()
             logger.info(f"Using built-in top causal features: {len(top_feature_names)} features")
 
-    feature_set_name = "top causal/importance features only" if top_feature_names else ("enhanced (with recommended features)" if args.include_recommended else "base calculator")
-    logger.info(f"\n{'='*80}")
-    logger.info(f"Training with {feature_set_name} feature set")
-    logger.info(f"{'='*80}")
-    
-    if args.wisotzkey_vars_only:
-        logger.info("Using Wisotzkey et al. variable set (wisotzkey_data.WISOTZKEY_FEATURES)")
-    train_models_for_cohort(
-        cohort=args.cohort,
-        n_mc_splits=args.n_mc_splits,
-        train_prop=args.train_prop,
-        n_jobs=args.n_jobs,
-        include_recommended_features=args.include_recommended,
-        top_feature_names=top_feature_names,
-        use_wisotzkey_vars_only=args.wisotzkey_vars_only,
-        force=args.force
-    )
+    use_full = getattr(args, "full", False)
+    if getattr(args, "train_full_variants", False):
+        logger.info("\n" + "="*80)
+        logger.info("Training all cohort FULL variants (Combined_FULL, CHD_FULL, Myocardio_FULL)")
+        logger.info("="*80)
+        for c in ["Combined", "CHD", "Myocardio"]:
+            train_models_for_cohort(
+                cohort=c,
+                n_mc_splits=args.n_mc_splits,
+                train_prop=args.train_prop,
+                n_jobs=args.n_jobs,
+                include_recommended_features=args.include_recommended,
+                top_feature_names=top_feature_names,
+                use_wisotzkey_vars_only=args.wisotzkey_vars_only,
+                use_full_feature_set=True,
+                force=args.force
+            )
+    else:
+        feature_set_name = (
+            "FULL (calculator + R replication vars)" if use_full else
+            "top causal/importance features only" if top_feature_names else
+            "enhanced (with recommended features)" if args.include_recommended else "base calculator"
+        )
+        logger.info("\n" + "="*80)
+        logger.info(f"Training with {feature_set_name} feature set")
+        logger.info("="*80)
+        if args.wisotzkey_vars_only:
+            logger.info("Using Wisotzkey et al. variable set (wisotzkey_data.WISOTZKEY_FEATURES)")
+        if use_full:
+            logger.info("Using FULL feature set (calculator + durcarst, hxrenins, ltg_r, rec_t3, txaboinc, txtdsxm)")
+        train_models_for_cohort(
+            cohort=args.cohort,
+            n_mc_splits=args.n_mc_splits,
+            train_prop=args.train_prop,
+            n_jobs=args.n_jobs,
+            include_recommended_features=args.include_recommended,
+            top_feature_names=top_feature_names,
+            use_wisotzkey_vars_only=args.wisotzkey_vars_only,
+            use_full_feature_set=use_full,
+            force=args.force
+        )
