@@ -256,30 +256,34 @@ except ImportError:
         remove_leakage_predictors = None
 
 
+# All model variants per cohort (must match prepare_lambda_dir_phts.VARIANTS / VALID_DEPLOYED_VARIANTS)
+VALID_MODEL_VARIANTS = ("base", "enhanced", "top", "wisotzkey", "FULL")
+
+
 def get_model_cohort_name(cohort: str, model_variant: Optional[str] = None) -> str:
     """
     Get the model directory name based on cohort and variant.
     
     Args:
         cohort: Base cohort name (e.g., "Combined")
-        model_variant: Model variant ("base", "enhanced", or None for auto-detect)
+        model_variant: Model variant: "base", "enhanced", "top", "wisotzkey", "FULL" (or "full"), or None/"auto" for auto-detect
     
     Returns:
-        Model directory name (e.g., "Combined_top" for final workflow)
+        Model directory name (e.g., "Combined_top", "CHD_wisotzkey", "Myocardio_FULL")
     """
     if model_variant is None or model_variant == "auto":
-        # Final workflow: prefer _top only; fallback to plain cohort if _top missing
+        # Prefer _top if it exists; else cohort (legacy)
         top_path = CALCULATOR_DIR / "outputs" / "models" / f"{cohort}_top" / "best_model.txt"
         if top_path.exists():
             return f"{cohort}_top"
         return cohort
-    elif model_variant == "top":
-        return f"{cohort}_top"
-    elif model_variant in ("base", "enhanced"):
-        # Legacy: map to _top for final workflow
-        return f"{cohort}_top"
-    else:
-        return cohort
+    v = (model_variant or "").strip()
+    if v.lower() == "full":
+        return f"{cohort}_FULL"
+    if v in ("base", "enhanced", "top", "wisotzkey", "FULL"):
+        return f"{cohort}_{v}" if v != "FULL" else f"{cohort}_FULL"
+    # Unknown variant: treat as literal suffix (e.g. custom variant)
+    return f"{cohort}_{v}" if v else cohort
 
 
 def get_best_model(cohort: str, model_variant: Optional[str] = None) -> Optional[str]:
@@ -2126,11 +2130,19 @@ def run_ffa_with_shap(
             logger.info(f"Using rule frequencies from test set: {len(rule_feature_counts)} features with rule firings")
 
             # Missed-predictions FFA: which features drive over- vs under-prediction (when event_series and risk_scores available)
+            # Use same feature set and order as forward causal results (rule_feature_counts + shap_map) so Reverse FI aligns with top_causal_factors / dashboard_data.
             if event_series is not None and risk_scores is not None and len(instance_explanations) == len(risk_scores):
                 try:
                     # Align event to same row order as X_test (and thus X_test_array)
                     event_aligned = event_series.reindex(X_test.index).fillna(0).astype(int)
-                    feature_names_list = list(explainer.feature_names.values()) if (hasattr(explainer, "feature_names") and explainer.feature_names) else list(rule_feature_counts.keys())
+                    # Canonical feature list: same set and order as causal_df (causal responsibility = rule_freq_norm * shap_importance)
+                    total_rf = sum(rule_feature_counts.values()) if rule_feature_counts else 1
+                    feature_names_list = sorted(
+                        rule_feature_counts.keys(),
+                        key=lambda f: -((rule_feature_counts.get(f, 0) / total_rf) * shap_map.get(f, 0.0)),
+                    )
+                    if not feature_names_list and hasattr(explainer, "feature_names") and explainer.feature_names:
+                        feature_names_list = list(explainer.feature_names.values())
                     missed_drivers = compute_missed_drivers(
                         np.asarray(risk_scores),
                         event_aligned,
@@ -2897,8 +2909,8 @@ def main():
         "--model-variant",
         type=str,
         default="auto",
-        choices=["base", "enhanced", "top", "auto"],
-        help="Model variant: 'base', 'enhanced', 'top' (top 15 features only), or 'auto' to auto-detect (default: auto)"
+        choices=["base", "enhanced", "top", "wisotzkey", "FULL", "full", "auto"],
+        help="Model variant per cohort: base, enhanced, top, wisotzkey, FULL, or auto (default: auto). Use same names as prepare_lambda_dir_phts."
     )
     parser.add_argument(
         "--force",
@@ -2926,6 +2938,9 @@ def main():
         args.weight_catboost /= total
         args.weight_xgboost /= total
 
+    # Normalize variant (e.g. "full" -> "FULL") for directory naming
+    if (args.model_variant or "").strip().lower() == "full":
+        args.model_variant = "FULL"
     # Determine model cohort name (with variant suffix)
     model_cohort = get_model_cohort_name(args.cohort, args.model_variant)
     logger.info(f"Using model variant: {args.model_variant} -> model directory: {model_cohort}")

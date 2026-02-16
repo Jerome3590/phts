@@ -37,7 +37,8 @@ ARTIFACTS = [
 
 DEFAULT_COHORTS = ["CHD", "Myocardio", "Combined"]
 DEFAULT_TOP_K = 15
-DEFAULT_VARIANTS = ["top"]
+# Default: run all model variants per cohort (same set as prepare_lambda_dir_phts.VALID_DEPLOYED_VARIANTS)
+DEFAULT_VARIANTS = ["base", "enhanced", "top", "wisotzkey", "FULL"]
 
 
 def run_workflow(cohorts, variants, top_k, upload_to_s3, s3_bucket, s3_prefix):
@@ -136,7 +137,7 @@ def main():
         action="append",
         dest="variants",
         metavar="VARIANT",
-        help=f"Model variant per cohort (repeat for multiple). Default: {', '.join(DEFAULT_VARIANTS)}. Enables multiple models (e.g. CHD_top, CHD_base).",
+        help=f"Model variant per cohort (repeat for multiple). Default: all variants ({', '.join(DEFAULT_VARIANTS)}). Omit to run all; or pass e.g. --variant top to run only top.",
     )
     parser.add_argument(
         "--no-upload",
@@ -183,7 +184,7 @@ if __name__ == "__main__" and len(sys.argv) <= 1:
     # Interactive config: edit and run this cell, then run the cell below.
     # Run over multiple models: set COHORTS and VARIANTS; each cohort × variant gets its own outputs (Lambda returns per-model Reverse FI).
     COHORTS = ["CHD", "Myocardio", "Combined"]
-    VARIANTS = ["top"]  # e.g. ["top", "base"] to run multiple models per cohort
+    VARIANTS = ["base", "enhanced", "top", "wisotzkey", "FULL"]  # default: all variants; override to run a subset
     TOP_K = 15
     UPLOAD_TO_S3 = True
     S3_BUCKET = os.environ.get("PHTS_BUCKET", "jerome-dixon.io")

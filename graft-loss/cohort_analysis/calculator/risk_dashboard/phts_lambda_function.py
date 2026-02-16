@@ -1405,13 +1405,14 @@ def handle_metadata(event: Dict[str, Any]) -> Dict[str, Any]:
                         "summary": {},
                         "error": f"Error loading data: {str(e)}"
                     }
-                # Load Reverse FI per model (default variant per cohort)
-                try:
-                    rfi = load_reverse_fi_data(c, model_variant="top")
-                    if rfi:
-                        reverse_fi_by_model[rfi["model_id"]] = rfi
-                except Exception as e:
-                    logger.debug(f"No Reverse FI for {c}: {e}")
+                # Load Reverse FI for all cohort × variant models (so dashboard shows all variants, not just top)
+                for variant in DEPLOYED_VARIANTS:
+                    try:
+                        rfi = load_reverse_fi_data(c, model_variant=variant)
+                        if rfi:
+                            reverse_fi_by_model[rfi["model_id"]] = rfi
+                    except Exception as e:
+                        logger.debug(f"No Reverse FI for {c} {variant}: {e}")
             
             return _response(200, {
                 "available_cohorts": AVAILABLE_COHORTS,

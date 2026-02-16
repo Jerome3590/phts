@@ -437,15 +437,27 @@
       <button class="tab" onclick="switchTab('documentation')">Documentation</button>
     </div>
     
-    <!-- Risk Calculator Tab (top causal model features) -->
+    <!-- Risk Calculator Tab (all 15 models: cohort × variant) -->
     <div id="risk-calculator-tab" class="tab-content active">
-      <div class="cohort-selector">
-      <label for="cohort">Cohort:</label>
-      <select id="cohort">
-        <option value="CHD">CHD</option>
-        <option value="Myocardio">Myocardio</option>
-        <option value="Combined" selected>Combined</option>
-      </select>
+      <div class="cohort-selector" style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: center;">
+      <div>
+        <label for="cohort">Cohort:</label>
+        <select id="cohort">
+          <option value="CHD">CHD</option>
+          <option value="Myocardio">Myocardio</option>
+          <option value="Combined" selected>Combined</option>
+        </select>
+      </div>
+      <div>
+        <label for="variant">Model variant:</label>
+        <select id="variant">
+          <option value="base">Base</option>
+          <option value="enhanced">Enhanced</option>
+          <option value="top" selected>Top</option>
+          <option value="wisotzkey">Wisotzkey</option>
+          <option value="FULL">FULL</option>
+        </select>
+      </div>
     </div>
     
     <div class="controls">
@@ -549,16 +561,28 @@
     </div>
     <!-- End Risk Calculator Tab -->
     
-    <!-- Top Causal Model Features Tab -->
+    <!-- Top Causal Model Features Tab (all 15 models: cohort × variant) -->
     <div id="causal-analysis-tab" class="tab-content">
-      <p class="subtitle" style="margin-bottom: 1rem;">Explore importance and causal responsibility for the top 15 causal features model.</p>
-      <div class="cohort-selector">
-        <label for="cohort-causal">Cohort:</label>
-        <select id="cohort-causal">
-          <option value="CHD">CHD</option>
-          <option value="Myocardio">Myocardio</option>
-          <option value="Combined" selected>Combined</option>
-        </select>
+      <p class="subtitle" style="margin-bottom: 1rem;">Explore importance and causal responsibility per model (cohort × variant).</p>
+      <div class="cohort-selector" style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: center;">
+        <div>
+          <label for="cohort-causal">Cohort:</label>
+          <select id="cohort-causal">
+            <option value="CHD">CHD</option>
+            <option value="Myocardio">Myocardio</option>
+            <option value="Combined" selected>Combined</option>
+          </select>
+        </div>
+        <div>
+          <label for="variant-causal">Model variant:</label>
+          <select id="variant-causal">
+            <option value="base">Base</option>
+            <option value="enhanced">Enhanced</option>
+            <option value="top" selected>Top</option>
+            <option value="wisotzkey">Wisotzkey</option>
+            <option value="FULL">FULL</option>
+          </select>
+        </div>
       </div>
       
       <div class="causal-analysis">
@@ -628,17 +652,28 @@
     </div>
     <!-- End Aggregated Feature Importance Tab -->
     
-    <!-- Reverse Feature Importance Tab (per-model + summary across models) -->
+    <!-- Reverse Feature Importance Tab: review and compare all 15 reverse feature sets -->
     <div id="model-improvement-tab" class="tab-content">
-      <p class="subtitle" style="margin-bottom: 1rem;">Reverse Feature Importance: what drives errors (over/under prediction). Results per model; summary across all models below.</p>
+      <p class="subtitle" style="margin-bottom: 1rem;">Review and compare the 15 reverse feature sets (cohort × variant): what drives errors (over/under prediction) per model.</p>
       <div class="control-group" style="margin-bottom: 1.5rem;">
-        <h3 style="margin-top: 0;">Summary across models</h3>
-        <p style="color: #475569; font-size: 0.9rem;">Reverse FI artifacts (missed-prediction drivers and feature profile) per deployed model. Lambda returns these from the metadata API.</p>
+        <h3 style="margin-top: 0;">Summary across all 15 models</h3>
+        <p style="color: #475569; font-size: 0.9rem;">Compare over-prediction count, under-prediction count, and feature profile size for each model. Use the dropdown below to review one model’s full reverse feature set.</p>
         <div id="reverse-fi-summary-table" style="overflow-x: auto; margin-top: 0.5rem;"></div>
         <p id="reverse-fi-summary-hint" style="color: #64748b; font-size: 0.875rem; margin-top: 0.5rem;">Loading…</p>
       </div>
       <div class="control-group" style="margin-bottom: 1.5rem;">
-        <h3>For your last risk calculation (current cohort)</h3>
+        <h3>Review one model’s reverse feature set</h3>
+        <p style="color: #475569; font-size: 0.9rem;">Select a model to see its missed-prediction drivers (support per feature for over/under/correct) and feature profile (support + IR).</p>
+        <div style="margin-top: 0.5rem;">
+          <label for="reverse-fi-model-select">Model: </label>
+          <select id="reverse-fi-model-select" style="min-width: 12rem; padding: 0.35rem;">
+            <option value="">— Select after summary loads —</option>
+          </select>
+        </div>
+        <div id="reverse-fi-detail" style="margin-top: 1rem;"></div>
+      </div>
+      <div class="control-group" style="margin-bottom: 1.5rem;">
+        <h3>For your last risk calculation (current cohort × variant)</h3>
         <p id="model-improvement-hint" style="color: #64748b; margin: 0 0 1rem 0;">Calculate risk in the Risk Calculator tab first; then this section will show missing or protective data elements for that model.</p>
         <h4 style="margin-top: 0.75rem;">Missing or default data</h4>
         <p style="color: #475569; font-size: 0.9rem;">Top causal factors that were not provided or were left at default/empty. Providing these can improve prediction.</p>
@@ -693,7 +728,7 @@
           <li><strong>Risk Calculator</strong>: Enter features → risk score and top causal factors.</li>
           <li><strong>Top Causal Model Features</strong>: Importance and causal responsibility; adjust factors and see risk update in real time.</li>
           <li><strong>Aggregated Feature Importance</strong>: Mean importance across CatBoost, XGBoost, and XGBoost RF (MC-CV), per cohort.</li>
-          <li><strong>Reverse Feature Importance</strong>: Summary of Reverse FI per model (over/under prediction, feature profile). After a risk calculation, see which data were missing or in a protective (risk-lowering) direction for that model.</li>
+          <li><strong>Reverse Feature Importance</strong>: Review and compare all 15 reverse feature sets (cohort × variant). Summary table of over/under prediction and profile size per model; select a model to see its full feature profile (support, IR). After a risk calculation, see which data were missing or in a protective direction for that model.</li>
           <li><strong>Documentation</strong>: This reference.</li>
         </ul>
       </div>
@@ -839,7 +874,7 @@
             cohort: cohort,
             features: features,
             use_ensemble: false,
-            model_variant: 'top'  // Single model: top 15 features only
+            model_variant: getVariant()
           }),
           mode: 'cors'  // Explicitly set CORS mode
         });
@@ -1071,11 +1106,20 @@
       wrapper.style.display = added ? 'block' : 'none';
     }
 
+    function getVariant() {
+      const el = document.getElementById('variant');
+      return el ? el.value : 'top';
+    }
+    function getVariantCausal() {
+      const el = document.getElementById('variant-causal');
+      return el ? el.value : 'top';
+    }
     async function loadMetadataForRiskTab() {
       if (!LAMBDA_API_URL) return;
       const cohort = document.getElementById('cohort').value;
+      const modelVariant = getVariant();
       try {
-        const response = await fetch(`${LAMBDA_API_URL}/metadata?cohort=${cohort}`);
+        const response = await fetch(`${LAMBDA_API_URL}/metadata?cohort=${encodeURIComponent(cohort)}&model_variant=${encodeURIComponent(modelVariant)}`);
         if (response.ok) {
           const data = await response.json();
           riskFeatureLevels = data.feature_levels || {};
@@ -1095,14 +1139,14 @@
       }
     }
 
-    // Load causal factors and feature levels on cohort change
-    document.getElementById('cohort').addEventListener('change', async function() {
-      const cohort = this.value;
-      try {
-        const response = await fetch(`${LAMBDA_API_URL}/metadata?cohort=${cohort}`);
-        if (response.ok) {
-          const data = await response.json();
-          console.log('Causal factors loaded:', data.causal_factors);
+    // Load causal factors and feature levels on cohort or variant change
+    function onCohortOrVariantChange() {
+      const cohort = document.getElementById('cohort').value;
+      const modelVariant = getVariant();
+      fetch(`${LAMBDA_API_URL}/metadata?cohort=${encodeURIComponent(cohort)}&model_variant=${encodeURIComponent(modelVariant)}`)
+        .then(function(response) { return response.ok ? response.json() : null; })
+        .then(function(data) {
+          if (!data) return;
           riskFeatureLevels = data.feature_levels || {};
           riskFeatureLevelLabels = data.feature_level_labels || {};
           riskSecDxDropdownOptions = data.sec_dx_dropdown_options || [];
@@ -1111,11 +1155,12 @@
           modelImprovementMetadata.feature_display_names = data.feature_display_names || {};
           modelImprovementMetadata.reverse_fi = data.reverse_fi || null;
           populateRiskExtraFeatures();
-        }
-      } catch (error) {
-        console.error('Error loading causal factors:', error);
-      }
-    });
+        })
+        .catch(function(error) { console.error('Error loading metadata:', error); });
+    }
+    document.getElementById('cohort').addEventListener('change', onCohortOrVariantChange);
+    var variantEl = document.getElementById('variant');
+    if (variantEl) variantEl.addEventListener('change', onCohortOrVariantChange);
     
     // Tab switching
     function switchTab(tabName) {
@@ -1333,10 +1378,10 @@
     let responsibilityChart = null;
     let causalFactorControls = {};
     
-    // Load causal analysis data
+    // Load causal analysis data (for selected cohort × variant)
     async function loadCausalAnalysis() {
       const cohort = document.getElementById('cohort-causal').value;
-      const modelVariant = 'top'; // Single model: top 15 features only
+      const modelVariant = getVariantCausal();
       
       // Show loading state
       const controlsList = document.getElementById('causal-controls-list');
@@ -1664,17 +1709,51 @@
       if (dir === 'lower') return num > 40;
       return false;
     }
+    var reverseFiByModelCache = {};
+    function renderReverseFiDetail(modelId) {
+      const detailEl = document.getElementById('reverse-fi-detail');
+      if (!detailEl) return;
+      const r = reverseFiByModelCache[modelId];
+      if (!r) {
+        detailEl.innerHTML = '<p style="color:#64748b;">Select a model above.</p>';
+        return;
+      }
+      const drivers = r.drivers || {};
+      const profile = r.feature_profile || [];
+      let html = '<div style="font-size:0.9rem;">';
+      html += '<p><strong>Counts:</strong> Over-prediction ' + (drivers.n_over_prediction != null ? drivers.n_over_prediction : '—') + ', Under-prediction ' + (drivers.n_under_prediction != null ? drivers.n_under_prediction : '—') + ', Correct ' + (drivers.n_correct != null ? drivers.n_correct : '—') + (drivers.median_risk_threshold != null ? ' (median risk threshold: ' + drivers.median_risk_threshold + ')' : '') + '</p>';
+      if (profile.length > 0) {
+        const cols = Object.keys(profile[0]);
+        html += '<p><strong>Feature profile (top 20):</strong></p><div style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse; font-size:0.8rem;"><thead><tr style="background:#f1f5f9;">';
+        cols.forEach(function(c) { html += '<th style="padding:0.35rem;text-align:left;border:1px solid #e2e8f0;">' + escapeHtml(c) + '</th>'; });
+        html += '</tr></thead><tbody>';
+        profile.slice(0, 20).forEach(function(row) {
+          html += '<tr>';
+          cols.forEach(function(c) { html += '<td style="padding:0.35rem;border:1px solid #e2e8f0;">' + escapeHtml(String(row[c] != null ? row[c] : '')) + '</td>'; });
+          html += '</tr>';
+        });
+        html += '</tbody></table></div>';
+        if (profile.length > 20) html += '<p style="color:#64748b;">Showing 20 of ' + profile.length + ' rows.</p>';
+      } else {
+        html += '<p style="color:#64748b;">No feature profile rows for this model.</p>';
+      }
+      html += '</div>';
+      detailEl.innerHTML = html;
+    }
     async function loadReverseFiSummary() {
       const tableEl = document.getElementById('reverse-fi-summary-table');
       const hintEl = document.getElementById('reverse-fi-summary-hint');
+      const selectEl = document.getElementById('reverse-fi-model-select');
       if (!tableEl || !hintEl) return;
       hintEl.textContent = 'Loading…';
       tableEl.innerHTML = '';
+      if (selectEl) { selectEl.innerHTML = '<option value="">— Select after summary loads —</option>'; }
       try {
         const response = await fetch(`${LAMBDA_API_URL}/metadata`, { method: 'GET', mode: 'cors' });
         if (!response.ok) { hintEl.textContent = 'Could not load metadata.'; return; }
         const data = await response.json();
         const byModel = data.reverse_fi_by_model || {};
+        reverseFiByModelCache = byModel;
         const modelIds = Object.keys(byModel).sort();
         if (modelIds.length === 0) {
           hintEl.textContent = 'No Reverse FI data per model. Run SHAP/FFA + Reverse FI for each cohort and redeploy.';
@@ -1692,7 +1771,11 @@
         }
         html += '</tbody></table>';
         tableEl.innerHTML = html;
-        hintEl.textContent = 'Reverse FI per model (over/under prediction counts and feature profile size). Lambda returns these from the metadata API.';
+        hintEl.textContent = 'Reverse FI for all ' + modelIds.length + ' models. Select a model below to review its full reverse feature set.';
+        if (selectEl) {
+          selectEl.innerHTML = '<option value="">— Select model —</option>';
+          modelIds.forEach(function(id) { selectEl.appendChild(new Option(id, id)); });
+        }
       } catch (e) {
         hintEl.textContent = 'Failed to load Reverse FI summary: ' + (e.message || String(e));
       }
@@ -1810,6 +1893,10 @@
     
     // Load causal analysis when cohort or model variant changes in causal tab
     document.getElementById('cohort-causal').addEventListener('change', loadCausalAnalysis);
+    var variantCausalEl = document.getElementById('variant-causal');
+    if (variantCausalEl) variantCausalEl.addEventListener('change', loadCausalAnalysis);
+    var reverseFiSelectEl = document.getElementById('reverse-fi-model-select');
+    if (reverseFiSelectEl) reverseFiSelectEl.addEventListener('change', function() { renderReverseFiDetail(this.value); });
 
     // Aggregated Feature Importance tab
     let aggregatedImportanceChart = null;

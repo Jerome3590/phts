@@ -4,6 +4,8 @@ We call this **Reverse** Feature Importance: instead of “which features drive 
 
 **You can start from model predictions.** The pipeline only needs (1) predictions and (2) true labels to define error subsets (FP/FN/correct). Per-instance explanations (which features to use for support/IR) can then come from SHAP (e.g. top-k per instance), FFA rules, or any other explainer.
 
+**Implementation alignment:** In the calculator SHAP/FFA workflow, Reverse FI uses the **same feature set and order** as the forward causal results: features that have rule firings on the test set, ordered by causal responsibility (rule frequency × SHAP importance). So `missed_predictions_drivers.json`, `missed_predictions_feature_profile.csv`, and the dashboard’s top causal factors all refer to the same features in a consistent order.
+
 ---
 
 ## Example: Computing IR for Missed Predictions

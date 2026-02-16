@@ -12,6 +12,17 @@ This directory contains calculator training and the risk dashboard. The **deploy
 2. **Combined Model** - All primary diagnoses
 3. **Myocardio Model** - Cardiomyopathy and Myocarditis cohort only
 
+## Updated workflow (prediction artifacts → Reverse FI)
+
+1. **Run [calculator_workflow.ipynb](calculator_workflow.ipynb)**  
+   Train models, run SHAP/FFA, and upload **prediction artifacts to S3** (dashboard data, causal factors, etc.).
+
+2. **Run [run_shap_ffa_reverse_fi_s3.ipynb](run_shap_ffa_reverse_fi_s3.ipynb)**  
+   **Reverse Feature Importance**: compute causal factors that drive **missed predictions** (over- and under-prediction), plus feature profile (support and intervention rates). The workflow supports **all model variants per cohort** (e.g. `top`, `base`, `enhanced`, `wisotzkey`, `FULL`). Set `VARIANTS` in the notebook or use `--variant` repeatedly in the script to run multiple variants. Upload Reverse FI artifacts to S3 so the dashboard can show them per model and summarized.
+
+3. **Outcome**  
+   This pipeline **identifies areas where better data is needed to improve the model**—e.g. features that frequently appear in wrong-prediction subsets or have high intervention rate on errors.
+
 ## Quick Reference
 
 - **Train top-features model** (for dashboard): `python train_python_models.py --top_features_only`
