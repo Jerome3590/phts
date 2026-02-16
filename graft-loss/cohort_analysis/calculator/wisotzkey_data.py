@@ -181,13 +181,27 @@ def make_wisotzkey_data_for_training(df: pd.DataFrame, cohort: str = "Combined")
     else:
         ev_time = _col(raw_filtered, "outcome_int_graft_loss", "ev_time")
         if ev_time is None:
-            raise ValueError("Cannot derive ev_time: need int_dead and int_graft_loss in SAS data")
+            logger.error(
+                "ev_time: expected one of int_dead+int_graft_loss or outcome_int_graft_loss. Columns found: %s",
+                sorted(raw_filtered.columns),
+            )
+            raise ValueError(
+                "Cannot derive ev_time: need int_dead and int_graft_loss (or outcome_int_graft_loss) in SAS data. "
+                "Columns found: " + ", ".join(sorted(raw_filtered.columns))
+            )
     if dtx_patient is not None and graft_loss is not None:
         ev_type = pd.concat([dtx_patient, graft_loss], axis=1).max(axis=1, skipna=True)
     else:
         ev_type = _col(raw_filtered, "outcome_graft_loss", "ev_type")
         if ev_type is None:
-            raise ValueError("Cannot derive ev_type: need dtx_patient and graft_loss in SAS data")
+            logger.error(
+                "ev_type: expected one of dtx_patient+graft_loss or outcome_graft_loss. Columns found: %s",
+                sorted(raw_filtered.columns),
+            )
+            raise ValueError(
+                "Cannot derive ev_type: need dtx_patient and graft_loss (or outcome_graft_loss) in SAS data. "
+                "Columns found: " + ", ".join(sorted(raw_filtered.columns))
+            )
 
     out = out.copy()
     out["ev_time"] = ev_time.reindex(out.index).values

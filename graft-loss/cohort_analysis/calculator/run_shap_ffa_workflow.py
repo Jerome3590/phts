@@ -914,16 +914,31 @@ def load_calculator_data_for_shap(cohort: str, use_parquet_cache: bool = True) -
                     "Install with: pip install pyreadstat"
                 )
 
-    # Filter by cohort
+    logger.info("Columns found: %d (%s)", len(df.columns), sorted(df.columns))
+
+    # Filter by cohort (case-insensitive column lookup; normalize values for string/bytes)
+    _prim_dx = None
+    for c in df.columns:
+        if c.upper() == "PRIM_DX":
+            _prim_dx = df[c]
+            break
     if cohort == "CHD":
-        prim_dx_col = df.get('PRIM_DX', df.get('prim_dx', None))
-        if prim_dx_col is not None:
-            df = df[prim_dx_col == "Congenital HD"]
+        if _prim_dx is None:
+            logger.error("Columns expected for cohort filter: PRIM_DX (or prim_dx). Columns found: %s", sorted(df.columns))
+            raise ValueError("Cohort CHD requires PRIM_DX (or prim_dx) in the data. Columns found: " + ", ".join(sorted(df.columns)))
+        prim_str = _prim_dx.astype(str).str.strip().str.replace("^b['\"]|['\"]$", "", regex=True)
+        df = df.loc[prim_str.str.upper() == "CONGENITAL HD"].copy()
     elif cohort == "Myocardio":
-        prim_dx_col = df.get('PRIM_DX', df.get('prim_dx', None))
-        if prim_dx_col is not None:
-            df = df[prim_dx_col.isin(["Cardiomyopathy", "Myocarditis"])]
-    # Combined uses all data
+        if _prim_dx is None:
+            logger.error("Columns expected for cohort filter: PRIM_DX (or prim_dx). Columns found: %s", sorted(df.columns))
+            raise ValueError("Cohort Myocardio requires PRIM_DX (or prim_dx) in the data. Columns found: " + ", ".join(sorted(df.columns)))
+        prim_str = _prim_dx.astype(str).str.strip().str.replace("^b['\"]|['\"]$", "", regex=True)
+        df = df.loc[prim_str.str.upper().isin(["CARDIOMYOPATHY", "MYOCARDITIS"])].copy()
+    elif cohort == "Combined":
+        if _prim_dx is not None:
+            prim_str = _prim_dx.astype(str).str.strip().str.replace("^b['\"]|['\"]$", "", regex=True)
+            df = df.loc[prim_str.str.upper().isin(["CONGENITAL HD", "CARDIOMYOPATHY", "MYOCARDITIS"])].copy()
+    # else leave df unchanged
 
     logger.info(f"Loaded {len(df)} rows for cohort {cohort}")
 

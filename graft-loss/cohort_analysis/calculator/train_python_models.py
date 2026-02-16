@@ -1058,8 +1058,22 @@ def train_models_for_cohort(
         ].copy()
         feature_cols = [f for f in WISOTZKEY_FEATURES if f in df_clean.columns]
         missing = set(WISOTZKEY_FEATURES) - set(feature_cols)
+        logger.info(
+            "Wisotzkey columns: expected=%d (%s), found=%d (%s), missing=%d (%s)",
+            len(WISOTZKEY_FEATURES), sorted(WISOTZKEY_FEATURES),
+            len(feature_cols), sorted(feature_cols),
+            len(missing), sorted(missing) if missing else "none",
+        )
         if missing:
-            raise ValueError(f"Wisotzkey data missing columns: {missing}")
+            raise ValueError(
+                f"Wisotzkey data missing columns: {sorted(missing)}. "
+                f"Expected: {sorted(WISOTZKEY_FEATURES)}. Found in data: {sorted(df_clean.columns)}."
+            )
+        if len(df_clean) < 2:
+            raise ValueError(
+                f"Wisotzkey cohort '{cohort}' has too few rows with valid survival data ({len(df_clean)}). "
+                "Check PRIM_DX (or prim_dx) and time/status in the SAS data."
+            )
         logger.info(f"Valid survival data: {len(df_clean)} rows (Wisotzkey vars: {len(feature_cols)} features)")
         if "txpl_year" not in df_clean.columns:
             df_clean["txpl_year"] = 2020
@@ -1117,6 +1131,11 @@ def train_models_for_cohort(
         df = df[
             df['time'].notna() & df['status'].notna() & (df['time'] > 0) & (df['status'].isin([0, 1]))
         ].copy()
+        if len(df) < 2:
+            raise ValueError(
+                f"Calculator cohort '{cohort}' has too few rows with valid survival data ({len(df)}). "
+                "Check time/status (or int_dead, int_graft_loss, dtx_patient, graft_loss) in the data."
+            )
         logger.info(f"Valid survival data: {len(df)} rows")
 
         txpl_year_values = df['txpl_year'].values if 'txpl_year' in df.columns else None
@@ -1141,7 +1160,15 @@ def train_models_for_cohort(
             if "sec_dx" in top_feature_names:
                 logger.info(f"Expanded sec_dx to one-hot columns: {get_sec_dx_one_hot_columns()}")
             missing = set(expanded_top) - set(feature_cols)
+            found_top = [f for f in expanded_top if f in feature_cols]
+            logger.info(
+                "Top features: expected=%d, found in data=%d, missing=%d",
+                len(expanded_top), len(found_top), len(missing),
+            )
             if missing:
+                logger.info("Top features expected: %s", sorted(expanded_top))
+                logger.info("Top features found in data: %s", sorted(found_top))
+                logger.info("Top features missing: %s", sorted(missing))
                 sec_dx_missing = [c for c in missing if c.startswith("sec_dx_")]
                 if sec_dx_missing:
                     for col in sec_dx_missing:
@@ -1173,21 +1200,27 @@ def train_models_for_cohort(
     time = df_clean['time'].values
     status = df_clean['status'].values
     
-    # Remove constant columns (keep sec_dx_* one-hot columns so model always has same feature set for inference)
-    from calculator_features import get_sec_dx_one_hot_columns
-    sec_dx_cols_keep = set(get_sec_dx_one_hot_columns())
-    constant_cols = []
-    for col in X.columns:
-        if col in sec_dx_cols_keep:
-            continue  # never drop one-hot sec_dx_* so dashboard/inference feature set is stable
-        unique_vals = X[col].dropna().unique()
-        if len(unique_vals) < 2:
-            constant_cols.append(col)
-    
-    if constant_cols:
-        logger.info(f"Removing {len(constant_cols)} constant columns (sec_dx_* one-hot kept for stable feature set)")
-        X = X.drop(columns=constant_cols)
-        feature_cols = [col for col in feature_cols if col not in constant_cols]
+    # Remove constant columns for calculator/top models only (keep sec_dx_* for stable inference).
+    # For Wisotzkey, keep all WISOTZKEY_FEATURES so every cohort uses the same feature set at inference.
+    if not use_wisotzkey_vars_only:
+        from calculator_features import get_sec_dx_one_hot_columns
+        sec_dx_cols_keep = set(get_sec_dx_one_hot_columns())
+        constant_cols = []
+        for col in X.columns:
+            if col in sec_dx_cols_keep:
+                continue  # never drop one-hot sec_dx_* so dashboard/inference feature set is stable
+            unique_vals = X[col].dropna().unique()
+            if len(unique_vals) < 2:
+                constant_cols.append(col)
+        if constant_cols:
+            logger.info(f"Removing {len(constant_cols)} constant columns (sec_dx_* one-hot kept for stable feature set)")
+            X = X.drop(columns=constant_cols)
+            feature_cols = [col for col in feature_cols if col not in constant_cols]
+        if len(feature_cols) == 0:
+            raise ValueError(
+                f"Cohort '{cohort}' has no non-constant features after filtering. "
+                "Check that top_causal_features / calculator features have variation in this cohort."
+            )
     
     # Fill NaN values
     X = X.fillna(0)
