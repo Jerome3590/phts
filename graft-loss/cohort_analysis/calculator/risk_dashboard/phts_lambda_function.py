@@ -884,11 +884,13 @@ def prepare_features_for_inference(features: Dict[str, Any]) -> Dict[str, Any]:
             prepared["ecmo_combined"] = 1 if (txecmo == 1 or slecmo == 1) else 0
     
     # eGFR calculation (if height and creatinine provided but eGFR not)
+    # PHTS height is in inches; Schwartz formula requires height in cm: eGFR = 0.413 * height_cm / creatinine
     if "egfr_tx" not in prepared and "height_txpl" in prepared and "txcreat_r" in prepared:
-        height = prepared.get("height_txpl")
+        height_in = prepared.get("height_txpl")
         creat = prepared.get("txcreat_r")
-        if height and creat and creat > 0:
-            prepared["egfr_tx"] = 0.413 * height / creat
+        if height_in and creat and creat > 0:
+            height_cm = float(height_in) * 2.54
+            prepared["egfr_tx"] = 0.413 * height_cm / creat
 
     # sec_dx: one-hot from single dropdown value (e.g. "sec_dx": "Dilated" -> sec_dx_Dilated=1, others=0)
     if "sec_dx" in prepared:

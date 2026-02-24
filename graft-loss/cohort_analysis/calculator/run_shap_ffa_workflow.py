@@ -677,28 +677,31 @@ def prepare_calculator_features(df: pd.DataFrame) -> pd.DataFrame:
     # ============================================================================
 
     # Calculate eGFR at transplant using Schwartz formula
+    # PHTS height is in inches; Schwartz requires height in cm: eGFR = 0.413 * height_cm / creatinine
     if "height_txpl" in df.columns and "txcreat_r" in df.columns:
         if "egfr_tx" not in df.columns:
             df["egfr_tx"] = np.nan
         mask = df["height_txpl"].notna() & df["txcreat_r"].notna() & (df["txcreat_r"] > 0)
-        df.loc[mask, "egfr_tx"] = 0.413 * df.loc[mask, "height_txpl"] / df.loc[mask, "txcreat_r"]
-        logger.info("Calculated egfr_tx using Schwartz formula")
+        height_cm = df.loc[mask, "height_txpl"] * 2.54
+        df.loc[mask, "egfr_tx"] = 0.413 * height_cm / df.loc[mask, "txcreat_r"]
+        logger.info("Calculated egfr_tx using Schwartz formula (height converted in->cm)")
 
-    # Calculate eGFR at listing
+    # Calculate eGFR at listing (PHTS height in inches -> cm for Schwartz)
     if "height_listing" in df.columns and "lcreat_r" in df.columns:
         if "egfr_listing" not in df.columns:
             df["egfr_listing"] = np.nan
         mask = df["height_listing"].notna() & df["lcreat_r"].notna() & (df["lcreat_r"] > 0)
-        df.loc[mask, "egfr_listing"] = 0.413 * df.loc[mask, "height_listing"] / df.loc[mask, "lcreat_r"]
-        logger.info("Calculated egfr_listing using Schwartz formula")
+        height_cm = df.loc[mask, "height_listing"] * 2.54
+        df.loc[mask, "egfr_listing"] = 0.413 * height_cm / df.loc[mask, "lcreat_r"]
+        logger.info("Calculated egfr_listing using Schwartz formula (height converted in->cm)")
 
-    # Calculate BMI
+    # Calculate BMI: PHTS uses weight in lbs and height in inches; BMI = 703 * weight_lb / height_in^2
     if "weight_txpl" in df.columns and "height_txpl" in df.columns:
         if "bmi_txpl" not in df.columns:
             df["bmi_txpl"] = np.nan
         mask = df["weight_txpl"].notna() & df["height_txpl"].notna() & (df["height_txpl"] > 0)
         df.loc[mask, "bmi_txpl"] = (df.loc[mask, "weight_txpl"] / (df.loc[mask, "height_txpl"] ** 2)) * 703
-        logger.info("Calculated bmi_txpl")
+        logger.info("Calculated bmi_txpl (weight lbs, height in)")
 
     # Calculate age_txpl_months if not present
     if "age_txpl_months" not in df.columns and "age_txpl" in df.columns:
